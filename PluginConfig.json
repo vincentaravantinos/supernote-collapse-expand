@@ -1,0 +1,11 @@
+{
+  "name": "CollapseExpand",
+  "desc": "Collapse and expand handwritten notes",
+  "iconPath": "assets/icon_plus.png",
+  "versionName": "1.0.0",
+  "versionCode": "1",
+  "pluginID": "com.supernote.plugin.collapseexpand",
+  "pluginKey": "CollapseExpand",
+  "jsMainPath": "index",
+  "supportTypes": ["NOTE"]
+}
