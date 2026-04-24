@@ -46,7 +46,7 @@ export async function handleMainAction() {
           await expandAction(section, iconElement, filePath, page);
         }
       } else {
-        await collapseAction(filePath, page);
+        await collapseAction(filePath, page, elements);
       }
     } finally {
       for (const el of elements) {

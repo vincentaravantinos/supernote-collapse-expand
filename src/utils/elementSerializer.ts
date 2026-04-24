@@ -1,8 +1,6 @@
-import { PluginCommAPI, PluginNoteAPI } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginNoteAPI, Point, Rect } from 'sn-plugin-lib';
 import { ELEMENT_TYPES, LOG } from '../constants';
 import {
-  Point,
-  Rect,
   SerializedElement,
   SerializedGeometry,
   SerializedLink,

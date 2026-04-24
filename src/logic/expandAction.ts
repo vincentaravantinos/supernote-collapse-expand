@@ -17,7 +17,8 @@ import {
   BORDER_PEN_WIDTH,
   getRectPoints,
 } from '../utils/geometryHelpers';
-import { CollapseSection, Rect } from '../model/types';
+import { Rect } from 'sn-plugin-lib';
+import { CollapseSection } from '../model/types';
 
 function currentIconRect(iconElement: any, fallback: Rect): Rect {
   const pRect = iconElement?.picture?.rect;
@@ -93,6 +94,7 @@ export async function expandAction(
     }
   }
 
+  let borderAssignedNum: number | undefined;
   const borderRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.GEO);
   if (!borderRes?.success || !borderRes.result) {
     console.error(`${LOG} createElement(GEO) failed res=${JSON.stringify(borderRes)}`);
@@ -108,15 +110,21 @@ export async function expandAction(
     borderEl.pageNum = page;
     borderEl.numInPage = nextNum++;
     borderEl.userData = CE_BORDER_PREFIX;
+    borderAssignedNum = borderEl.numInPage;
     fileElements.push(borderEl);
   }
 
+  let borderActualNum: number | undefined;
   if (fileElements.length > 0) {
     const ins: any = await PluginFileAPI.insertElements(filePath, page, fileElements);
     if (!ins?.success) {
       console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
     } else {
       console.log(`${LOG} insertElements ok result=${JSON.stringify(ins.result)} count=${fileElements.length}`);
+      if (borderAssignedNum !== undefined && Array.isArray(ins.result) && ins.result.length > 0) {
+        const last = ins.result[ins.result.length - 1];
+        borderActualNum = typeof last === 'number' ? last : borderAssignedNum;
+      }
     }
     for (const el of fileElements) {
       try { el.recycle?.(); } catch { /* ignore */ }
@@ -125,6 +133,7 @@ export async function expandAction(
 
   section.isExpanded = true;
   section.iconRect = iconRectNow;
+  section.borderNumInPage = borderActualNum ?? borderAssignedNum;
 
   const pluginDir = await PluginManager.getPluginDirPath();
   if (pluginDir && iconElement?.picture) {

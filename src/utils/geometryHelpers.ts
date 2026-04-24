@@ -1,4 +1,4 @@
-import { Point, Rect } from '../model/types';
+import { Point, Rect } from 'sn-plugin-lib';
 
 export function getRectPoints(rect: Rect): Point[] {
   return [

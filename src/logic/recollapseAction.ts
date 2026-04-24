@@ -7,7 +7,8 @@ import {
 } from '../constants';
 import { serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
-import { CollapseSection, CollapsedElement, Rect } from '../model/types';
+import { Rect } from 'sn-plugin-lib';
+import { CollapseSection, CollapsedElement } from '../model/types';
 
 function currentIconRect(iconElement: any, fallback: Rect): Rect {
   const pRect = iconElement?.picture?.rect;
@@ -43,7 +44,7 @@ export async function recollapseAction(
   const lassoed: any[] = elementsRes?.success ? (elementsRes.result ?? []) : [];
 
   const newCollapsed: CollapsedElement[] = [];
-  const numsToDelete: number[] = [];
+  const numSet = new Set<number>();
 
   // 2. Scan lassoed elements: serialize content and collect indices for deletion
   for (const el of lassoed) {
@@ -54,7 +55,7 @@ export async function recollapseAction(
 
     // Collect indices for deletion (including the border)
     if (typeof el.numInPage === 'number') {
-      numsToDelete.push(el.numInPage);
+      numSet.add(el.numInPage);
     }
 
     // Only serialize non-border content
@@ -66,12 +67,22 @@ export async function recollapseAction(
     }
   }
 
+  // The lasso draws on the same rect as the border polygon, so the border's
+  // edges sit exactly on the boundary and getLassoElements may skip it.
+  // Fall back to the explicit numInPage stored at expand time.
+  if (typeof section.borderNumInPage === 'number') {
+    numSet.add(section.borderNumInPage);
+  }
+
+  const numsToDelete = Array.from(numSet);
+
   // 3. Update section state
   const updatedSection: CollapseSection = {
     ...section,
     collapsedElements: newCollapsed,
     isExpanded: false,
     iconRect: iconRectNow,
+    borderNumInPage: undefined,
   };
 
   const payload = CE_PLUG_PREFIX + JSON.stringify(updatedSection);

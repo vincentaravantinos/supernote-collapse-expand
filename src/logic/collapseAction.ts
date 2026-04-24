@@ -9,9 +9,10 @@ import {
   SCHEMA_VERSION,
 } from '../constants';
 import { serializeElement } from '../utils/elementSerializer';
-import { CollapseSection, CollapsedElement, Rect } from '../model/types';
+import { Rect } from 'sn-plugin-lib';
+import { CollapseSection, CollapsedElement } from '../model/types';
 
-export async function collapseAction(filePath: string, page: number) {
+export async function collapseAction(filePath: string, page: number, elements: any[]) {
   const lassoRes: any = await PluginCommAPI.getLassoRect();
   if (!lassoRes?.success || !lassoRes.result) {
     alert('Please make a selection first.');
@@ -19,13 +20,6 @@ export async function collapseAction(filePath: string, page: number) {
   }
   const lasso = lassoRes.result;
   console.log(`${LOG} collapse lassoRect=${JSON.stringify(lasso)}`);
-
-  const elementsRes: any = await PluginCommAPI.getLassoElements();
-  const elements: any[] = elementsRes?.success ? (elementsRes.result ?? []) : [];
-  if (elements.length === 0) {
-    alert('Nothing collapsable in selection.');
-    return;
-  }
 
   const collapsed: CollapsedElement[] = [];
   let skippedPicture = false;
@@ -78,7 +72,7 @@ export async function collapseAction(filePath: string, page: number) {
     return;
   }
 
-  await PluginNoteAPI.saveCurrentNote();
+  //await PluginNoteAPI.saveCurrentNote();
 
   const pluginDir = await PluginManager.getPluginDirPath();
   if (!pluginDir) {
@@ -100,7 +94,7 @@ export async function collapseAction(filePath: string, page: number) {
   }
   const iconEl: any = createRes.result;
   iconEl.picture = { picturePath: iconAbsPath, rect: iconRect };
-  iconEl.userData = CE_PLUG_PREFIX + JSON.stringify(section);
+  iconEl.userData = payload;
   iconEl.pageNum = page;
   iconEl.numInPage = nextNum;
 
@@ -112,7 +106,7 @@ export async function collapseAction(filePath: string, page: number) {
     return;
   }
 
-  try { iconEl.recycle?.(); } catch { /* ignore */ }
+  //try { iconEl.recycle?.(); } catch { /* ignore */ }
 
   if (skippedPicture) {
     console.log(`${LOG} skipped picture elements in selection`);

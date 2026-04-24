@@ -1,14 +1,4 @@
-export interface Point {
-  x: number;
-  y: number;
-}
-
-export interface Rect {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
+import type { Point, Rect } from 'sn-plugin-lib';
 
 export interface RelativeRect {
   left: number;
@@ -85,4 +75,5 @@ export interface CollapseSection {
   relativeRect: RelativeRect;
   collapsedElements: CollapsedElement[];
   isExpanded: boolean;
+  borderNumInPage?: number;
 }
