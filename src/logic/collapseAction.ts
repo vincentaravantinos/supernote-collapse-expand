@@ -51,7 +51,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
     iconRect,
     relativeRect: {
       left: 0,
-      top: Math.round(lasso.top) - iconTop,
+      top: 0,
       width: Math.round(lasso.right - lasso.left),
       height: Math.round(lasso.bottom - lasso.top),
     },
@@ -72,7 +72,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  //await PluginNoteAPI.saveCurrentNote();
+  await PluginNoteAPI.saveCurrentNote();
 
   const pluginDir = await PluginManager.getPluginDirPath();
   if (!pluginDir) {
@@ -106,11 +106,9 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  //try { iconEl.recycle?.(); } catch { /* ignore */ }
+  await PluginNoteAPI.saveCurrentNote();
 
   if (skippedPicture) {
     console.log(`${LOG} skipped picture elements in selection`);
   }
-
-  await PluginCommAPI.reloadFile();
 }

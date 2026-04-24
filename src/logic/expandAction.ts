@@ -20,26 +20,13 @@ import {
 import { Rect } from 'sn-plugin-lib';
 import { CollapseSection } from '../model/types';
 
-function currentIconRect(iconElement: any, fallback: Rect): Rect {
-  const pRect = iconElement?.picture?.rect;
-  if (pRect && typeof pRect.left === 'number') {
-    return {
-      left: Math.round(pRect.left),
-      top: Math.round(pRect.top),
-      right: Math.round(pRect.right),
-      bottom: Math.round(pRect.bottom),
-    };
-  }
-  return fallback;
-}
-
 export async function expandAction(
   section: CollapseSection,
   iconElement: any,
   filePath: string,
   page: number,
 ) {
-  const iconRectNow = currentIconRect(iconElement, section.iconRect);
+  const iconRectNow = iconElement?.picture?.rect;
 
   const contentRect: Rect = {
     left: iconRectNow.left + section.relativeRect.left,
