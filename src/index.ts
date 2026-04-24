@@ -1,70 +1,60 @@
-import { PluginCommAPI, PluginNoteAPI } from 'sn-plugin-lib';
+import { PluginCommAPI } from 'sn-plugin-lib';
+import { LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
 import { collapseAction } from './logic/collapseAction';
 import { expandAction } from './logic/expandAction';
 import { recollapseAction } from './logic/recollapseAction';
-import { CollapseSection, BorderUserData } from './model/types';
 
 export async function handleMainAction() {
   try {
-    // 1. Show "Processing…" indicator (can be a toast if API exists)
+    const filePathRes: any = await PluginCommAPI.getCurrentFilePath();
+    const pageRes: any = await PluginCommAPI.getCurrentPageNum();
+    if (!filePathRes?.success || typeof filePathRes.result !== 'string') {
+      alert('Unable to determine current file path.');
+      return;
+    }
+    if (!pageRes?.success || typeof pageRes.result !== 'number') {
+      alert('Unable to determine current page.');
+      return;
+    }
+    const filePath = filePathRes.result as string;
+    const page = pageRes.result as number;
 
-    // 2. Get lassoed elements
-    const elementsRes = await PluginCommAPI.getLassoElements();
-    if (!elementsRes.success || !elementsRes.result || elementsRes.result.length === 0) {
-      alert("Please make a selection first");
+    const elementsRes: any = await PluginCommAPI.getLassoElements();
+    const elements: any[] = elementsRes?.success ? (elementsRes.result ?? []) : [];
+    if (elements.length === 0) {
+      alert('Please make a selection first.');
       return;
     }
 
-    const elements = elementsRes.result;
-    let managedIcon: { section: CollapseSection, uuid: string } | null = null;
-
-    // 3. Context Detection
+    let iconElement: any = null;
+    let section = null;
     for (const el of elements) {
-      const data = readUserData(el);
-      if (data) {
-        if (data.schemaVersion) {
-          // Found a "+" icon element
-          managedIcon = { section: data as CollapseSection, uuid: el.uuid };
-          break;
-        } else if (data.type === 'collapseExpandBorder') {
-          // Found a border element
-          const borderData = data as BorderUserData;
-          // Locate the icon element by UUID
-          const iconElRes = await PluginNoteAPI.getElement(borderData.iconElementUuid);
-          if (iconElRes.success && iconElRes.result) {
-            const iconData = readUserData(iconElRes.result);
-            if (iconData) {
-              managedIcon = { section: iconData as CollapseSection, uuid: borderData.iconElementUuid };
-            }
-            iconElRes.result.recycle();
-          }
-          if (managedIcon) break;
+      const ud = readUserData(el);
+      if (ud?.kind === 'section') {
+        iconElement = el;
+        section = ud.section;
+        break;
+      }
+    }
+
+    try {
+      if (iconElement && section) {
+        if (section.isExpanded) {
+          await recollapseAction(section, iconElement, filePath, page);
+        } else {
+          await expandAction(section, iconElement, filePath, page);
         }
-      }
-    }
-
-    // 4. Dispatch to flows
-    if (managedIcon) {
-      if (managedIcon.section.isExpanded) {
-        // FLOW 3: Collapse Again
-        await recollapseAction(managedIcon.section, managedIcon.uuid);
       } else {
-        // FLOW 2: Expand
-        await expandAction(managedIcon.section, managedIcon.uuid);
+        await collapseAction(filePath, page);
       }
-    } else {
-      // FLOW 1: Fresh Collapse
-      await collapseAction();
+    } finally {
+      for (const el of elements) {
+        try { el.recycle?.(); } catch { /* ignore */ }
+      }
     }
-
-    // 5. Cleanup
-    for (const el of elements) {
-      el.recycle();
-    }
-
   } catch (error) {
-    console.error("Plugin action failed:", error);
-    alert("An error occurred during processing.");
+    console.error(`${LOG} Plugin action failed:`, error);
+    alert('An error occurred during processing.');
   }
 }

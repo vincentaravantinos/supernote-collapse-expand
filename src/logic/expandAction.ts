@@ -1,99 +1,140 @@
-import { PluginCommAPI, PluginNoteAPI } from 'sn-plugin-lib';
-import { restoreElement } from '../utils/elementSerializer';
-import { writeUserData } from '../utils/userDataManager';
-import { CollapseSection, CollapsedElement } from '../model/types';
-import { serializeElement } from '../utils/elementSerializer';
-import { ELEMENT_TYPES, MAX_USERDATA_BYTES } from '../constants';
-import { getRectPoints, DASHED_PEN_TYPE, BORDER_PEN_WIDTH, BORDER_PEN_COLOR } from '../utils/geometryHelpers';
+import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, PointUtils } from 'sn-plugin-lib';
+import {
+  CE_BORDER_PREFIX,
+  DEFAULT_ICON_FILENAME,
+  ELEMENT_TYPES,
+  LOG,
+} from '../constants';
+import {
+  buildStrokeElement,
+  restoreNonStrokeElement,
+  StrokeBuildContext,
+} from '../utils/elementSerializer';
+import { writeSection } from '../utils/userDataManager';
+import {
+  BORDER_PEN_COLOR,
+  BORDER_PEN_TYPE,
+  BORDER_PEN_WIDTH,
+  getRectPoints,
+} from '../utils/geometryHelpers';
+import { CollapseSection, Rect } from '../model/types';
 
-export async function expandAction(section: CollapseSection, iconElementUuid: string) {
-  // 2. Get current icon position
-  const lassoRes = await PluginCommAPI.getLassoRect();
-  if (!lassoRes.success || !lassoRes.result) {
-    alert("Please select the icon or border");
-    return;
+function currentIconRect(iconElement: any, fallback: Rect): Rect {
+  const pRect = iconElement?.picture?.rect;
+  if (pRect && typeof pRect.left === 'number') {
+    return {
+      left: Math.round(pRect.left),
+      top: Math.round(pRect.top),
+      right: Math.round(pRect.right),
+      bottom: Math.round(pRect.bottom),
+    };
   }
+  return fallback;
+}
 
-  // If we came from a border, we might need to find the icon's current rect.
-  // For now, assume the lasso contains the icon or the border which gives us a reference.
-  const currentIconOrigin = { x: lassoRes.result.left, y: lassoRes.result.top };
+export async function expandAction(
+  section: CollapseSection,
+  iconElement: any,
+  filePath: string,
+  page: number,
+) {
+  const iconRectNow = currentIconRect(iconElement, section.iconRect);
 
-  // 3. Compute translation delta
-  const dx = currentIconOrigin.x - section.originalIconOrigin.x;
-  const dy = currentIconOrigin.y - section.originalIconOrigin.y;
-
-  // 4. Compute actual content rect
-  const actualRect = {
-    left:   currentIconOrigin.x + section.relativeRect.left,
-    top:    currentIconOrigin.y + section.relativeRect.top,
-    right:  currentIconOrigin.x + section.relativeRect.left + section.relativeRect.width,
-    bottom: currentIconOrigin.y + section.relativeRect.top  + section.relativeRect.height
+  const contentRect: Rect = {
+    left: iconRectNow.left + section.relativeRect.left,
+    top: iconRectNow.top + section.relativeRect.top,
+    right: iconRectNow.left + section.relativeRect.left + section.relativeRect.width,
+    bottom: iconRectNow.top + section.relativeRect.top + section.relativeRect.height,
   };
 
-  // 5. Save overlap elements
-  await PluginCommAPI.lassoElements(actualRect);
-  const elementsRes = await PluginCommAPI.getLassoElements();
-  const overlapElements: CollapsedElement[] = [];
+  const dx = iconRectNow.left - section.iconRect.left;
+  const dy = iconRectNow.top - section.iconRect.top;
 
-  if (elementsRes.success && elementsRes.result) {
-    for (const el of elementsRes.result) {
-      if (el.type === ELEMENT_TYPES.PICTURE || el.uuid === iconElementUuid || el.userData?.startsWith('CE_PLUG:')) {
-        el.recycle();
-        continue;
+  const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
+  const pageSize: { width: number; height: number } =
+    sizeRes?.success && sizeRes.result
+      ? { width: sizeRes.result.width, height: sizeRes.result.height }
+      : { width: 1404, height: 1872 };
+
+  let targetMaxX = 15819;
+  let targetMaxY = 11864;
+  try {
+    targetMaxX = PointUtils.getRealMaxX(pageSize);
+    targetMaxY = PointUtils.getRealMaxY(pageSize);
+  } catch (e) {
+    console.error(`${LOG} PointUtils.getRealMaxX failed pageSize=${JSON.stringify(pageSize)}`, e);
+  }
+
+  const mapX = targetMaxX / (pageSize.height - 1);
+  const mapY = targetMaxY / (pageSize.width - 1);
+  const dEmrX = dy * mapX;
+  const dEmrY = -dx * mapY;
+  const strokeCtx: StrokeBuildContext = { targetMaxX, targetMaxY, dEmrX, dEmrY };
+
+  console.log(`${LOG} expand iconSaved=${JSON.stringify(section.iconRect)} iconNow=${JSON.stringify(iconRectNow)} dxScreen=${dx} dyScreen=${dy} pageSize=${JSON.stringify(pageSize)} target=(${targetMaxX},${targetMaxY}) dEmr=(${dEmrX.toFixed(1)},${dEmrY.toFixed(1)}) numStrokes=${section.collapsedElements.filter(c => c.data.kind === 'stroke').length}`);
+
+  const numsRes: any = await PluginFileAPI.getElementNumList(filePath, page);
+  const existingNums: number[] = numsRes?.success ? (numsRes.result ?? []) : [];
+  let nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 0;
+
+  const fileElements: any[] = [];
+  for (const ce of section.collapsedElements) {
+    if (ce.data.kind === 'stroke') {
+      const el = await buildStrokeElement(ce.data, page, strokeCtx);
+      if (el) {
+        el.numInPage = nextNum++;
+        fileElements.push(el);
+      } else {
+        console.error(`${LOG} buildStrokeElement returned null`);
       }
-      const serialized = serializeElement(el);
-      if (serialized) {
-        overlapElements.push(serialized);
-      }
-      el.recycle();
+    } else {
+      const ok = await restoreNonStrokeElement(ce.data, dx, dy);
+      if (!ok) console.error(`${LOG} restoreNonStrokeElement failed for kind=${ce.data.kind}`);
     }
   }
 
-  if (overlapElements.length > 0) {
-    section.overlapElements = overlapElements;
-    // Delete them
-    for (const ce of overlapElements) {
-      await PluginNoteAPI.deleteElement(ce.uuid);
-    }
+  const borderRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.GEO);
+  if (!borderRes?.success || !borderRes.result) {
+    console.error(`${LOG} createElement(GEO) failed res=${JSON.stringify(borderRes)}`);
   } else {
-    section.overlapElements = null;
+    const borderEl: any = borderRes.result;
+    borderEl.geometry = {
+      type: 'GEO_polygon',
+      points: getRectPoints(contentRect),
+      penColor: BORDER_PEN_COLOR,
+      penType: BORDER_PEN_TYPE,
+      penWidth: BORDER_PEN_WIDTH,
+    };
+    borderEl.pageNum = page;
+    borderEl.numInPage = nextNum++;
+    borderEl.userData = CE_BORDER_PREFIX;
+    fileElements.push(borderEl);
   }
 
-  // 6. Restore original elements
-  const sortedElements = [...section.collapsedElements].sort((a, b) => a.numInPage - b.numInPage);
-  for (const ce of sortedElements) {
-    await restoreElement(ce, dx, dy);
-  }
-
-  // 7. Insert dashed border
-  const borderRes = await PluginNoteAPI.insertGeometry({
-    type: 'GEO_polygon',
-    points: getRectPoints(actualRect),
-    penColor: BORDER_PEN_COLOR,
-    penWidth: BORDER_PEN_WIDTH,
-    penType: DASHED_PEN_TYPE,
-  });
-
-  if (borderRes.success) {
-    // 8. Locate border and write userData
-    await PluginCommAPI.lassoElements(actualRect);
-    const newElementsRes = await PluginCommAPI.getLassoElements();
-    const borderElement = newElementsRes.result.find((el: any) => el.type === ELEMENT_TYPES.GEO && !el.userData?.startsWith('CE_PLUG:'));
-
-    if (borderElement) {
-      section.borderElementUuid = borderElement.uuid;
-      await writeUserData(borderElement, { type: 'collapseExpandBorder', iconElementUuid });
-      borderElement.recycle();
+  if (fileElements.length > 0) {
+    const ins: any = await PluginFileAPI.insertElements(filePath, page, fileElements);
+    if (!ins?.success) {
+      console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
+    } else {
+      console.log(`${LOG} insertElements ok result=${JSON.stringify(ins.result)} count=${fileElements.length}`);
+    }
+    for (const el of fileElements) {
+      try { el.recycle?.(); } catch { /* ignore */ }
     }
   }
 
-  // 9. Update icon element
   section.isExpanded = true;
-  section.originalIconOrigin = currentIconOrigin;
+  section.iconRect = iconRectNow;
 
-  // Re-find the icon element to update its userData
-  // We can't rely on the old reference if reload wasn't called, but we have its UUID.
-  await PluginNoteAPI.setElementUserData(iconElementUuid, 'CE_PLUG:' + JSON.stringify(section));
+  const pluginDir = await PluginManager.getPluginDirPath();
+  if (pluginDir && iconElement?.picture) {
+    iconElement.picture.picturePath = `${pluginDir}/${DEFAULT_ICON_FILENAME}`;
+  }
+
+  await PluginNoteAPI.saveCurrentNote();
+
+  const ok = await writeSection(filePath, page, iconElement, section);
+  if (!ok) console.error(`${LOG} failed to update section userData after expand`);
 
   await PluginCommAPI.reloadFile();
 }

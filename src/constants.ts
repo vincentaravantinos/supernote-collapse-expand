@@ -1,19 +1,22 @@
-export const ICON_SIZE = 80; // pixels
-export const DEFAULT_ICON_PATH = 'assets/icons/icon_plus.png';
+export const LOG = '[CollapseExpand]';
+
+export const ICON_SIZE = 50; // pixels
+export const DEFAULT_ICON_FILENAME = 'icon_plus.png';
 export const SCHEMA_VERSION = 1;
 export const CE_PLUG_PREFIX = 'CE_PLUG:';
+export const CE_BORDER_PREFIX = 'CE_BORDER:';
 export const MAX_USERDATA_BYTES = 48 * 1024; // 48 KB limit
 
 export const PLUGIN_BUTTON_NAME = 'Collapse / Expand';
-export const PLUGIN_BUTTON_ID = 200;
+export const PLUGIN_MENU_ID = 200;
 
 export const ELEMENT_TYPES = {
   STROKE: 0,
+  TITLE: 100,
   PICTURE: 200,
   TEXT: 500,
   TEXT_DIGEST_QUOTE: 501,
   TEXT_DIGEST_CREATE: 502,
   LINK: 600,
   GEO: 700,
-  TITLE: 100,
 };

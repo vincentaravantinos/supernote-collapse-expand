@@ -1,20 +1,6 @@
-/**
- * Geometry helpers for building point arrays for border rectangles.
- */
+import { Point, Rect } from '../model/types';
 
-export interface Rect {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
-
-/**
- * Creates a point array for a rectangle.
- * @param rect The rectangle bounds.
- * @returns Array of 5 points (closing back to start).
- */
-export function getRectPoints(rect: Rect) {
+export function getRectPoints(rect: Rect): Point[] {
   return [
     { x: rect.left, y: rect.top },
     { x: rect.right, y: rect.top },
@@ -24,12 +10,6 @@ export function getRectPoints(rect: Rect) {
   ];
 }
 
-/**
- * penType for dashed lines:
- * Based on experimentation in Supernote SDK:
- * Value 4, 6, or 7 typically represent dashed/dotted lines.
- * We'll use 4 as a starting point.
- */
-export const DASHED_PEN_TYPE = 4;
-export const BORDER_PEN_WIDTH = 100; // SDK units
-export const BORDER_PEN_COLOR = 0x50; // Greyish
+export const BORDER_PEN_TYPE = 10;
+export const BORDER_PEN_WIDTH = 500;
+export const BORDER_PEN_COLOR = 0x9D;
