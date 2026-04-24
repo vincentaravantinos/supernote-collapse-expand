@@ -72,8 +72,6 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  //await PluginNoteAPI.saveCurrentNote();
-
   const pluginDir = await PluginManager.getPluginDirPath();
   if (!pluginDir) {
     console.error(`${LOG} getPluginDirPath returned empty`);
@@ -105,8 +103,6 @@ export async function collapseAction(filePath: string, page: number, elements: a
     try { iconEl.recycle?.(); } catch { /* ignore */ }
     return;
   }
-
-  //try { iconEl.recycle?.(); } catch { /* ignore */ }
 
   if (skippedPicture) {
     console.log(`${LOG} skipped picture elements in selection`);
