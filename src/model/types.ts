@@ -14,9 +14,9 @@ export interface SerializedStroke {
   penType: number;
   points: Point[];
   pressures: number[];
-  emrPointAxis?: number;
-  factorResize?: number;
   layerNum?: number;
+  // Coordinate space the points live in. Restoring without these makes the
+  // native side default to the page's maxX/maxY, which scales the stroke.
   maxX?: number;
   maxY?: number;
 }
@@ -71,9 +71,9 @@ export interface CollapsedElement {
 
 export interface CollapseSection {
   schemaVersion: number;
+  id: string;
   iconRect: Rect;
   relativeRect: RelativeRect;
   collapsedElements: CollapsedElement[];
   isExpanded: boolean;
-  borderNumInPage?: number;
 }

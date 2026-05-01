@@ -1,7 +1,6 @@
-import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
 import {
   CE_PLUG_PREFIX,
-  DEFAULT_ICON_FILENAME,
   ELEMENT_TYPES,
   ICON_SIZE,
   LOG,
@@ -9,8 +8,12 @@ import {
   SCHEMA_VERSION,
 } from '../constants';
 import { serializeElement } from '../utils/elementSerializer';
-import { Rect } from 'sn-plugin-lib';
+import { readUserData } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
+
+function generateSectionId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export async function collapseAction(filePath: string, page: number, elements: any[]) {
   const lassoRes: any = await PluginCommAPI.getLassoRect();
@@ -19,13 +22,13 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
   const lasso = lassoRes.result;
-  console.log(`${LOG} collapse lassoRect=${JSON.stringify(lasso)}`);
 
   const collapsed: CollapsedElement[] = [];
-  let skippedPicture = false;
   for (const el of elements) {
-    if (el.type === ELEMENT_TYPES.PICTURE) { skippedPicture = true; continue; }
+    if (el.type === ELEMENT_TYPES.PICTURE) continue;
     if (el.type === ELEMENT_TYPES.TITLE) continue;
+    // Skip our own section icons.
+    if (readUserData(el)?.kind === 'section') continue;
     const data = await serializeElement(el);
     if (data) {
       collapsed.push({ numInPage: el.numInPage, data });
@@ -48,6 +51,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   const section: CollapseSection = {
     schemaVersion: SCHEMA_VERSION,
+    id: generateSectionId(),
     iconRect,
     relativeRect: {
       left: 0,
@@ -74,29 +78,26 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   await PluginNoteAPI.saveCurrentNote();
 
-  const pluginDir = await PluginManager.getPluginDirPath();
-  if (!pluginDir) {
-    console.error(`${LOG} getPluginDirPath returned empty`);
-    alert('Unable to resolve plugin icon path.');
-    return;
-  }
-  const iconAbsPath = `${pluginDir}/${DEFAULT_ICON_FILENAME}`;
-
-  const numsRes: any = await PluginFileAPI.getElementNumList(filePath, page);
-  const existingNums: number[] = numsRes?.success ? (numsRes.result ?? []) : [];
-  const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 0;
-
-  const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.PICTURE);
+  const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.TEXT);
   if (!createRes?.success || !createRes.result) {
     console.error(`${LOG} createElement failed res=${JSON.stringify(createRes)}`);
     alert('Failed to create icon element.');
     return;
   }
   const iconEl: any = createRes.result;
-  iconEl.picture = { picturePath: iconAbsPath, rect: iconRect };
+  iconEl.textBox = {
+    textContentFull: '+',
+    textRect: iconRect,
+    fontSize: 24,
+    textAlign: 1,
+    textBold: 1,
+    textItalics: 0,
+    textFrameWidthType: 0,
+    textFrameStyle: 0,
+    textEditable: 1,
+  };
   iconEl.userData = payload;
   iconEl.pageNum = page;
-  iconEl.numInPage = nextNum;
 
   const insertRes: any = await PluginFileAPI.insertElements(filePath, page, [iconEl]);
   if (!insertRes?.success) {
@@ -107,8 +108,4 @@ export async function collapseAction(filePath: string, page: number, elements: a
   }
 
   await PluginNoteAPI.saveCurrentNote();
-
-  if (skippedPicture) {
-    console.log(`${LOG} skipped picture elements in selection`);
-  }
 }

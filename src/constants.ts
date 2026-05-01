@@ -2,9 +2,10 @@ export const LOG = '[CollapseExpand]';
 
 export const ICON_SIZE = 50; // pixels
 export const DEFAULT_ICON_FILENAME = 'icon_plus.png';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const CE_PLUG_PREFIX = 'CE_PLUG:';
 export const CE_BORDER_PREFIX = 'CE_BORDER:';
+export const CE_PART_PREFIX = 'CE_PART:';
 export const MAX_USERDATA_BYTES = 48 * 1024; // 48 KB limit
 
 export const PLUGIN_BUTTON_NAME = 'Collapse / Expand';
