@@ -1,5 +1,5 @@
 import { PluginCommAPI, Point, Rect } from 'sn-plugin-lib';
-import { CE_PART_PREFIX, ELEMENT_TYPES } from '../constants';
+import { ELEMENT_TYPES } from '../constants';
 import {
   SerializedElement,
   SerializedGeometry,
@@ -130,24 +130,24 @@ export async function serializeElement(el: any): Promise<SerializedElement | nul
 export async function buildElement(
   data: SerializedElement,
   page: number,
-  sectionId: string,
+  userData: string | null,
   emrDelta: Point,
   pageMaxX: number,
   pageMaxY: number,
   dxPx: number,
   dyPx: number,
 ): Promise<any | null> {
-  if (data.kind === 'stroke') return buildStroke(data, page, sectionId, emrDelta, pageMaxX, pageMaxY);
-  if (data.kind === 'text') return buildText(data, page, sectionId, dxPx, dyPx);
-  if (data.kind === 'link') return buildLink(data, page, sectionId, dxPx, dyPx);
-  if (data.kind === 'geometry') return buildGeometry(data, page, sectionId, dxPx, dyPx);
+  if (data.kind === 'stroke') return buildStroke(data, page, userData, emrDelta, pageMaxX, pageMaxY);
+  if (data.kind === 'text') return buildText(data, page, userData, dxPx, dyPx);
+  if (data.kind === 'link') return buildLink(data, page, userData, dxPx, dyPx);
+  if (data.kind === 'geometry') return buildGeometry(data, page, userData, dxPx, dyPx);
   return null;
 }
 
 async function buildStroke(
   data: SerializedStroke,
   page: number,
-  sectionId: string,
+  userData: string | null,
   emrDelta: Point,
   pageMaxX: number,
   pageMaxY: number,
@@ -159,7 +159,7 @@ async function buildStroke(
   element.thickness = data.thickness;
   element.pageNum = page;
   element.layerNum = data.layerNum ?? 0;
-  element.userData = CE_PART_PREFIX + sectionId;
+  if (userData !== null) element.userData = userData;
   if (!element.stroke) element.stroke = {};
   element.stroke.penColor = data.penColor;
   element.stroke.penType = data.penType;
@@ -185,7 +185,7 @@ async function buildStroke(
 async function buildText(
   data: SerializedText,
   page: number,
-  sectionId: string,
+  userData: string | null,
   dx: number,
   dy: number,
 ): Promise<any | null> {
@@ -205,14 +205,14 @@ async function buildText(
     textEditable: data.textEditable,
   };
   element.pageNum = page;
-  element.userData = CE_PART_PREFIX + sectionId;
+  if (userData !== null) element.userData = userData;
   return element;
 }
 
 async function buildLink(
   data: SerializedLink,
   page: number,
-  sectionId: string,
+  userData: string | null,
   dx: number,
   dy: number,
 ): Promise<any | null> {
@@ -237,14 +237,14 @@ async function buildLink(
     italic: data.italic,
   };
   element.pageNum = page;
-  element.userData = CE_PART_PREFIX + sectionId;
+  if (userData !== null) element.userData = userData;
   return element;
 }
 
 async function buildGeometry(
   data: SerializedGeometry,
   page: number,
-  sectionId: string,
+  userData: string | null,
   dx: number,
   dy: number,
 ): Promise<any | null> {
@@ -260,6 +260,6 @@ async function buildGeometry(
     penWidth: data.penWidth,
   };
   element.pageNum = page;
-  element.userData = CE_PART_PREFIX + sectionId;
+  if (userData !== null) element.userData = userData;
   return element;
 }

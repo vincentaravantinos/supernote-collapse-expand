@@ -1,10 +1,11 @@
-import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import {
   LOG,
   MAX_USERDATA_BYTES,
   CE_PLUG_PREFIX,
 } from '../constants';
-import { serializeElement } from '../utils/elementSerializer';
+import { dumpElements } from '../utils/diagnostics';
+import { buildElement, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -26,6 +27,12 @@ export async function recollapseAction(
   page: number,
 ) {
   const iconRectNow = iconElement?.textBox?.textRect ?? section.iconRect;
+
+  // Flush any in-memory edits to the file so getElements below sees strokes
+  // the user drew while the section was expanded.
+  await PluginNoteAPI.saveCurrentNote();
+
+  await dumpElements('DIAG recollapse entry', filePath, page);
 
   // 1. Find every element belonging to this section via userData id.
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
@@ -71,13 +78,16 @@ export async function recollapseAction(
 
   if (typeof borderEl?.numInPage === 'number') numSet.add(borderEl.numInPage);
 
-  // 3. Update section state.
+  // 3. Update section state. hiddenElements get put back on the page below,
+  //    so the persisted section should not retain a stale copy.
+  const hiddenToRestore = section.hiddenElements ?? [];
   const updatedSection: CollapseSection = {
     ...section,
     collapsedElements: newCollapsed,
     isExpanded: false,
     iconRect: iconRectNow,
   };
+  delete updatedSection.hiddenElements;
 
   const payload = CE_PLUG_PREFIX + JSON.stringify(updatedSection);
   if (payload.length > MAX_USERDATA_BYTES) {
@@ -95,7 +105,33 @@ export async function recollapseAction(
     await PluginNoteAPI.saveCurrentNote();
   }
 
-  // 5. Update icon userData.
+  // 5. Restore previously-hidden content at its original absolute coordinates.
+  if (hiddenToRestore.length > 0) {
+    const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
+    const pageSize = sizeRes?.success && sizeRes.result
+      ? { width: sizeRes.result.width, height: sizeRes.result.height }
+      : { width: 1404, height: 1872 };
+    const pageMaxX = PointUtils.getRealMaxX(pageSize);
+    const pageMaxY = PointUtils.getRealMaxY(pageSize);
+    const zero = { x: 0, y: 0 };
+
+    const restored: any[] = [];
+    for (const he of hiddenToRestore) {
+      const el = await buildElement(he.data, page, he.userData ?? null, zero, pageMaxX, pageMaxY, 0, 0);
+      if (el) restored.push(el);
+      else console.error(`${LOG} buildElement returned null restoring hidden kind=${he.data.kind}`);
+    }
+    if (restored.length > 0) {
+      const ins: any = await PluginFileAPI.insertElements(filePath, page, restored);
+      if (!ins?.success) {
+        console.error(`${LOG} insertElements (restore hidden) failed res=${JSON.stringify(ins)}`);
+      }
+      for (const el of restored) { try { el.recycle?.(); } catch { /* ignore */ } }
+      await PluginNoteAPI.saveCurrentNote();
+    }
+  }
+
+  // 6. Update icon userData.
   const ok = await writeSection(filePath, page, iconElement, updatedSection);
   if (!ok) console.error(`${LOG} failed to update section userData after recollapse`);
 

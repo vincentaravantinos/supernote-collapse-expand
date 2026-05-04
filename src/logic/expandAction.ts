@@ -1,10 +1,13 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import {
   CE_BORDER_PREFIX,
+  CE_PLUG_PREFIX,
   ELEMENT_TYPES,
   LOG,
+  MAX_USERDATA_BYTES,
 } from '../constants';
-import { buildElement } from '../utils/elementSerializer';
+import { dumpElements } from '../utils/diagnostics';
+import { buildElement, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import {
   BORDER_PEN_COLOR,
@@ -12,7 +15,7 @@ import {
   BORDER_PEN_WIDTH,
   getRectPoints,
 } from '../utils/geometryHelpers';
-import { CollapseSection } from '../model/types';
+import { CollapseSection, HiddenElement } from '../model/types';
 
 export async function expandAction(
   section: CollapseSection,
@@ -21,7 +24,6 @@ export async function expandAction(
   page: number,
 ) {
   const iconRectNow = iconElement?.textBox?.textRect ?? section.iconRect;
-
   const contentRect: Rect = {
     left: iconRectNow.left + section.relativeRect.left,
     top: iconRectNow.top + section.relativeRect.top,
@@ -31,6 +33,50 @@ export async function expandAction(
 
   const dx = iconRectNow.left - section.iconRect.left;
   const dy = iconRectNow.top - section.iconRect.top;
+
+  // Capture content sitting inside contentRect so we can hide it for the
+  // duration of the expansion and restore it on recollapse. Other sections'
+  // icons (and their tagged borders/parts) get hidden along with plain user
+  // strokes; only this section's own icon is skipped.
+  const hiddenElements: HiddenElement[] = [];
+  const numsToHide = new Set<number>();
+  await PluginCommAPI.lassoElements(contentRect);
+  const hideLassoRes: any = await PluginCommAPI.getLassoElements();
+  const hideLassoed: any[] = hideLassoRes?.success ? (hideLassoRes.result ?? []) : [];
+  for (const el of hideLassoed) {
+    const ud = readUserData(el);
+    if (ud?.kind === 'section' && ud.section.id === section.id) continue;
+    const data = await serializeElement(el);
+    if (!data) continue;
+    const entry: HiddenElement = { data };
+    if (typeof el.userData === 'string' && el.userData.length > 0) {
+      entry.userData = el.userData;
+    }
+    hiddenElements.push(entry);
+    if (typeof el.numInPage === 'number') numsToHide.add(el.numInPage);
+  }
+  for (const el of hideLassoed) { try { el.recycle?.(); } catch { /* ignore */ } }
+
+  // Pre-flight: make sure the section + new hiddenElements still fits in
+  // userData before we destructively delete anything from the page.
+  const probeSection: CollapseSection = {
+    ...section,
+    iconRect: iconRectNow,
+    hiddenElements,
+    isExpanded: true,
+  };
+  const probePayload = CE_PLUG_PREFIX + JSON.stringify(probeSection);
+  if (probePayload.length > MAX_USERDATA_BYTES) {
+    alert('Content underneath the section is too large to hide. Move it out of the way before expanding.');
+    return;
+  }
+
+  if (numsToHide.size > 0) {
+    const hideDelRes: any = await PluginFileAPI.deleteElements(filePath, page, Array.from(numsToHide));
+    if (!hideDelRes?.success) {
+      console.error(`${LOG} deleteElements (hide) failed res=${JSON.stringify(hideDelRes)}`);
+    }
+  }
 
   const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
   const pageSize = sizeRes?.success && sizeRes.result
@@ -76,11 +122,15 @@ export async function expandAction(
       try { el.recycle?.(); } catch { /* ignore */ }
     }
   }
+  await dumpElements('DIAG expand after insert', filePath, page);
 
   await PluginNoteAPI.saveCurrentNote();
+  await dumpElements('DIAG expand after save', filePath, page);
 
   section.isExpanded = true;
   section.iconRect = iconRectNow;
+  if (hiddenElements.length > 0) section.hiddenElements = hiddenElements;
+  else delete section.hiddenElements;
 
   const ok = await writeSection(filePath, page, iconElement, section);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
