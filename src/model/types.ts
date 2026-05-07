@@ -69,22 +69,16 @@ export interface CollapsedElement {
   data: SerializedElement;
 }
 
-export interface HiddenElement {
-  data: SerializedElement;
-  // Original userData string preserved verbatim, so other sections' icons (or
-  // any tagged element that happened to sit under the contentRect) round-trip
-  // intact when restored.
-  userData?: string;
-}
-
 export interface CollapseSection {
   schemaVersion: number;
   id: string;
   iconRect: Rect;
   relativeRect: RelativeRect;
   collapsedElements: CollapsedElement[];
-  // Content that lived inside the section's rectangle at expand time. Hidden
-  // during expansion, restored at original page coordinates on recollapse.
-  hiddenElements?: HiddenElement[];
   isExpanded: boolean;
+  // numInPage of pre-existing untagged elements that were sitting under the
+  // section when it was expanded. Recollapse uses this to skip them in the
+  // "absorb untagged strokes from contentRect" step. Set on expand, cleared
+  // on recollapse.
+  preservedNums?: number[];
 }

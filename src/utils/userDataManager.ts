@@ -1,6 +1,6 @@
 import { PluginFileAPI } from 'sn-plugin-lib';
 import {
-  CE_BORDER_PREFIX,
+  CE_MASK_PREFIX,
   CE_PART_PREFIX,
   CE_PLUG_PREFIX,
   LOG,
@@ -9,8 +9,8 @@ import { CollapseSection } from '../model/types';
 
 export type UserDataKind =
   | { kind: 'section'; section: CollapseSection }
-  | { kind: 'border'; id: string }
   | { kind: 'part'; id: string }
+  | { kind: 'mask'; id: string }
   | null;
 
 export function readUserData(element: any): UserDataKind {
@@ -27,12 +27,12 @@ export function readUserData(element: any): UserDataKind {
     }
   }
 
-  if (udata.startsWith(CE_BORDER_PREFIX)) {
-    return { kind: 'border', id: udata.substring(CE_BORDER_PREFIX.length) };
-  }
-
   if (udata.startsWith(CE_PART_PREFIX)) {
     return { kind: 'part', id: udata.substring(CE_PART_PREFIX.length) };
+  }
+
+  if (udata.startsWith(CE_MASK_PREFIX)) {
+    return { kind: 'mask', id: udata.substring(CE_MASK_PREFIX.length) };
   }
 
   return null;

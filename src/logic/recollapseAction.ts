@@ -1,24 +1,13 @@
-import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
 import {
   LOG,
   MAX_USERDATA_BYTES,
   CE_PLUG_PREFIX,
 } from '../constants';
 import { dumpElements } from '../utils/diagnostics';
-import { buildElement, serializeElement } from '../utils/elementSerializer';
+import { serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
-
-function rectFromPoints(points: { x: number; y: number }[]): Rect {
-  const xs = points.map(p => p.x);
-  const ys = points.map(p => p.y);
-  return {
-    left: Math.min(...xs),
-    top: Math.min(...ys),
-    right: Math.max(...xs),
-    bottom: Math.max(...ys),
-  };
-}
 
 export async function recollapseAction(
   section: CollapseSection,
@@ -38,21 +27,24 @@ export async function recollapseAction(
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
 
-  let borderEl: any = null;
+  const maskEls: any[] = [];
   const partEls: any[] = [];
   for (const el of all) {
     const ud = readUserData(el);
     if (!ud) continue;
-    if (ud.kind === 'border' && ud.id === section.id) borderEl = el;
+    if (ud.kind === 'mask' && ud.id === section.id) maskEls.push(el);
     else if (ud.kind === 'part' && ud.id === section.id) partEls.push(el);
   }
 
-  if (!borderEl) {
-    console.error(`${LOG} recollapse: border for section ${section.id} not found`);
-  }
+  // 2. Lasso the contentRect (computed from the section state at expand time)
+  //    to pick up untagged user-added strokes drawn on top while expanded.
+  const contentRect: Rect = {
+    left: section.iconRect.left + section.relativeRect.left,
+    top: section.iconRect.top + section.relativeRect.top,
+    right: section.iconRect.left + section.relativeRect.left + section.relativeRect.width,
+    bottom: section.iconRect.top + section.relativeRect.top + section.relativeRect.height,
+  };
 
-  // 2. Lasso the border's rect to pick up untagged user-added strokes drawn
-  //    on top while the section was expanded.
   const newCollapsed: CollapsedElement[] = [];
   const numSet = new Set<number>();
 
@@ -62,32 +54,40 @@ export async function recollapseAction(
     if (data) newCollapsed.push({ numInPage: el.numInPage, data });
   }
 
-  if (borderEl?.geometry?.points?.length) {
-    const lassoRect = rectFromPoints(borderEl.geometry.points);
-    await PluginCommAPI.lassoElements(lassoRect);
-    const lassoRes: any = await PluginCommAPI.getLassoElements();
-    const lassoed: any[] = lassoRes?.success ? (lassoRes.result ?? []) : [];
-    for (const el of lassoed) {
-      if (readUserData(el) !== null) continue; // skip icon, border, already-tagged parts
-      if (typeof el.numInPage === 'number') numSet.add(el.numInPage);
-      const data = await serializeElement(el);
-      if (data) newCollapsed.push({ numInPage: el.numInPage, data });
+  // Lasso contentRect to absorb strokes the user drew during expansion.
+  // Skip any element whose numInPage was recorded in section.preservedNums
+  // at expand time — those are pre-existing user content that must stay in
+  // place, not be absorbed into the section.
+  const preservedSet = new Set<number>(section.preservedNums ?? []);
+  await PluginCommAPI.lassoElements(contentRect);
+  const lassoRes: any = await PluginCommAPI.getLassoElements();
+  const lassoed: any[] = lassoRes?.success ? (lassoRes.result ?? []) : [];
+  let skippedPreserved = 0;
+  for (const el of lassoed) {
+    if (readUserData(el) !== null) continue; // skip icon, mask, already-tagged parts
+    if (typeof el.numInPage === 'number' && preservedSet.has(el.numInPage)) {
+      skippedPreserved++;
+      continue;
     }
-    for (const el of lassoed) { try { el.recycle?.(); } catch { /* ignore */ } }
+    if (typeof el.numInPage === 'number') numSet.add(el.numInPage);
+    const data = await serializeElement(el);
+    if (data) newCollapsed.push({ numInPage: el.numInPage, data });
+  }
+  for (const el of lassoed) { try { el.recycle?.(); } catch { /* ignore */ } }
+  console.log(`${LOG} recollapse skippedPreserved=${skippedPreserved} of preservedNums=${preservedSet.size}`);
+
+  for (const m of maskEls) {
+    if (typeof m.numInPage === 'number') numSet.add(m.numInPage);
   }
 
-  if (typeof borderEl?.numInPage === 'number') numSet.add(borderEl.numInPage);
-
-  // 3. Update section state. hiddenElements get put back on the page below,
-  //    so the persisted section should not retain a stale copy.
-  const hiddenToRestore = section.hiddenElements ?? [];
+  // 3. Update section state. Drop preservedNums — only meaningful while expanded.
   const updatedSection: CollapseSection = {
     ...section,
     collapsedElements: newCollapsed,
     isExpanded: false,
     iconRect: iconRectNow,
+    preservedNums: undefined,
   };
-  delete updatedSection.hiddenElements;
 
   const payload = CE_PLUG_PREFIX + JSON.stringify(updatedSection);
   if (payload.length > MAX_USERDATA_BYTES) {
@@ -95,7 +95,7 @@ export async function recollapseAction(
     return;
   }
 
-  // 4. Delete tagged + new content + border, commit.
+  // 4. Delete tagged + new content + mask rings, commit.
   const numsToDelete = Array.from(numSet);
   if (numsToDelete.length > 0) {
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, numsToDelete);
@@ -105,33 +105,7 @@ export async function recollapseAction(
     await PluginNoteAPI.saveCurrentNote();
   }
 
-  // 5. Restore previously-hidden content at its original absolute coordinates.
-  if (hiddenToRestore.length > 0) {
-    const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
-    const pageSize = sizeRes?.success && sizeRes.result
-      ? { width: sizeRes.result.width, height: sizeRes.result.height }
-      : { width: 1404, height: 1872 };
-    const pageMaxX = PointUtils.getRealMaxX(pageSize);
-    const pageMaxY = PointUtils.getRealMaxY(pageSize);
-    const zero = { x: 0, y: 0 };
-
-    const restored: any[] = [];
-    for (const he of hiddenToRestore) {
-      const el = await buildElement(he.data, page, he.userData ?? null, zero, pageMaxX, pageMaxY, 0, 0);
-      if (el) restored.push(el);
-      else console.error(`${LOG} buildElement returned null restoring hidden kind=${he.data.kind}`);
-    }
-    if (restored.length > 0) {
-      const ins: any = await PluginFileAPI.insertElements(filePath, page, restored);
-      if (!ins?.success) {
-        console.error(`${LOG} insertElements (restore hidden) failed res=${JSON.stringify(ins)}`);
-      }
-      for (const el of restored) { try { el.recycle?.(); } catch { /* ignore */ } }
-      await PluginNoteAPI.saveCurrentNote();
-    }
-  }
-
-  // 6. Update icon userData.
+  // 5. Update icon userData.
   const ok = await writeSection(filePath, page, iconElement, updatedSection);
   if (!ok) console.error(`${LOG} failed to update section userData after recollapse`);
 
