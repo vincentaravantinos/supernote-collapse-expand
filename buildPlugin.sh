@@ -664,6 +664,49 @@ rename_to_snplg_file() {
 }
 
 # =========================================================
+# Function: push_to_device
+# Purpose: Push the built .snplg to a connected Supernote via adb
+# Params: $1 .snplg path; $2 device destination directory
+# Returns: 0 on success or skip; non-zero on transfer failure
+# =========================================================
+push_to_device() {
+    local snplg_path="$1"
+    local device_dir="$2"
+
+    PUSH_STATUS="unknown"
+
+    if ! command -v adb >/dev/null 2>&1; then
+        write_color_output "adb not found; skipping device transfer" "Yellow"
+        PUSH_STATUS="skipped: adb not installed"
+        return 0
+    fi
+    if [[ ! -f "$snplg_path" ]]; then
+        write_color_output "No .snplg file at $snplg_path; skipping device transfer" "Yellow"
+        PUSH_STATUS="skipped: no .snplg to push"
+        return 0
+    fi
+
+    local devices
+    devices="$(adb devices | awk 'NR>1 && $2=="device" {print $1}')"
+    if [[ -z "$devices" ]]; then
+        write_color_output "No adb device connected; skipping device transfer" "Yellow"
+        PUSH_STATUS="skipped: no device connected"
+        return 0
+    fi
+
+    write_color_output "Pushing $(basename "$snplg_path") to device:$device_dir ..." "Blue"
+    if adb push "$snplg_path" "$device_dir/" >/dev/null; then
+        write_color_output "Pushed to device: $device_dir/$(basename "$snplg_path")" "Green"
+        PUSH_STATUS="ok"
+        return 0
+    else
+        write_color_output "adb push failed" "Red"
+        PUSH_STATUS="FAILED"
+        return 1
+    fi
+}
+
+# =========================================================
 # Function: main
 # Purpose: Orchestrate all steps to build plugin package
 # Params: $1 project root (optional, defaults to current directory)
@@ -726,11 +769,26 @@ main() {
     local outputs_dir
     outputs_dir="$(ensure_build_outputs_directory "$project_root")"
     local zip_path="$outputs_dir/${PACKAGE_NAME}.zip"
+    local snplg_path=""
     if new_zip_package "$gen_dir" "$zip_path"; then
+        snplg_path="$outputs_dir/${PACKAGE_NAME}.snplg"
         rename_to_snplg_file "$zip_path" "$PACKAGE_NAME" >/dev/null
     fi
 
+    PUSH_STATUS="skipped: no .snplg to push"
+    if [[ -n "$snplg_path" ]]; then
+        push_to_device "$snplg_path" "/sdcard/MyStyle" || true
+    fi
+
     write_color_output "Build process completed" "Blue"
+    if [[ "$PUSH_STATUS" == "ok" ]]; then
+        write_color_output "Device transfer: OK" "Green"
+    elif [[ "$PUSH_STATUS" == "FAILED" ]]; then
+        write_color_output "Device transfer: FAILED -- build succeeded but the .snplg is NOT on the device" "Red"
+        exit 2
+    else
+        write_color_output "Device transfer: $PUSH_STATUS -- build succeeded but the .snplg is NOT on the device" "Yellow"
+    fi
 }
 
 main "$@"
