@@ -1,6 +1,7 @@
 import { PluginCommAPI } from 'sn-plugin-lib';
 import { LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
+import { summarizeElements, summarizeSection } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
 import { expandAction } from './logic/expandAction';
 import { recollapseAction } from './logic/recollapseAction';
@@ -41,11 +42,14 @@ export async function handleMainAction() {
     try {
       if (iconElement && section) {
         if (section.isExpanded) {
+          console.info(`${LOG} RECOLLAPSE - section: ${summarizeSection(section)}`);
           await recollapseAction(section, iconElement, filePath, page);
         } else {
+          console.info(`${LOG} EXPAND - section: ${summarizeSection(section)}`);
           await expandAction(section, iconElement, filePath, page);
         }
       } else {
+        console.info(`${LOG} COLLAPSE - elements: ${summarizeElements(elements)}`);
         await collapseAction(filePath, page, elements);
       }
     } finally {
