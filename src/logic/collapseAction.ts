@@ -1,6 +1,7 @@
-import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, Rect } from 'sn-plugin-lib';
 import {
   CE_PLUG_PREFIX,
+  DEFAULT_ICON_FILENAME,
   ELEMENT_TYPES,
   ICON_SIZE,
   LOG,
@@ -78,23 +79,29 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   await PluginNoteAPI.saveCurrentNote();
 
-  const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.TEXT);
+  // Resolve the bundled icon's on-device path. The build copies
+  // DEFAULT_ICON_FILENAME to the plugin package root, so it lives directly
+  // under the plugin install directory at runtime.
+  const dirRes: any = await PluginManager.getPluginDirPath();
+  const pluginDir: string | null =
+    typeof dirRes === 'string' ? dirRes : (dirRes?.result ?? null);
+  if (typeof pluginDir !== 'string' || pluginDir.length === 0) {
+    console.error(`${LOG} getPluginDirPath returned ${JSON.stringify(dirRes)}`);
+    alert('Failed to locate plugin icon.');
+    return;
+  }
+  const picturePath = `${pluginDir.replace(/\/+$/, '')}/${DEFAULT_ICON_FILENAME}`;
+
+  const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.PICTURE);
   if (!createRes?.success || !createRes.result) {
     console.error(`${LOG} createElement failed res=${JSON.stringify(createRes)}`);
     alert('Failed to create icon element.');
     return;
   }
   const iconEl: any = createRes.result;
-  iconEl.textBox = {
-    textContentFull: '+',
-    textRect: iconRect,
-    fontSize: 24,
-    textAlign: 1,
-    textBold: 1,
-    textItalics: 0,
-    textFrameWidthType: 0,
-    textFrameStyle: 0,
-    textEditable: 1,
+  iconEl.picture = {
+    picturePath,
+    rect: iconRect,
   };
   iconEl.userData = payload;
   iconEl.pageNum = page;

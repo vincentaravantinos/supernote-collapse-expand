@@ -15,7 +15,8 @@ export async function recollapseAction(
   filePath: string,
   page: number,
 ) {
-  const iconRectNow = iconElement?.textBox?.textRect ?? section.iconRect;
+  const iconRectNow =
+    iconElement?.picture?.rect ?? iconElement?.textBox?.textRect ?? section.iconRect;
 
   // Flush any in-memory edits to the file so getElements below sees strokes
   // the user drew while the section was expanded.

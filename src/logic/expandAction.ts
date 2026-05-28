@@ -19,7 +19,8 @@ export async function expandAction(
   await PluginNoteAPI.saveCurrentNote();
   await dumpElements('DIAG expand entry', filePath, page);
 
-  const iconRectNow = iconElement?.textBox?.textRect ?? section.iconRect;
+  const iconRectNow =
+    iconElement?.picture?.rect ?? iconElement?.textBox?.textRect ?? section.iconRect;
   const contentRect: Rect = {
     left: iconRectNow.left + section.relativeRect.left,
     top: iconRectNow.top + section.relativeRect.top,
