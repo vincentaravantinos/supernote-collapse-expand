@@ -14,15 +14,55 @@ For each feature request in the Backlog, act as follows:
 
 # Workflow for bug fixing
 
+**Diagnostics first, fix second.** The Supernote SDK is in beta and the
+online docs at https://docs.supernote.com/en are thin and frequently
+silent on the behaviour we actually care about. That means you cannot
+just pattern-match on an error message and jump to a fix — the wrong
+mental model of the SDK will mislead you. Invest real effort in
+diagnostics; that is what earns the right to propose a fix.
+
 For every bug reported by the user, do the following:
-1. Try a quick guess on the root cause by looking at the code. Keep it quick though I don't want you to use all tokens on some pure guesses.
-2. In case this quick guess was successful: report it and ask for confirmation.
-3. In case it was not successful: act as a triage engineer: instrument the code to find out more. Have in mind already that I will copy paste the trace as a result so it has to help you to root cause things.
-4. Iterate until you have relative certainty on what is going on. 
-5. Keep in mind that the API we are using for the Supernote is in beta so it might itself have bugs.
-6. Whether you obtain the root cause as a result of a guess (step 2) or as a result of a deep root cause analysis (subsequent steps), act as an architect and come up with a plan to address that bug. Create the file PLAN.md accordingly (if the file is already there for an ongoing feature rename to avoid clashes).
-7. Move to the workflow for implementation below 
-8. When bug fix is confirmed by me always run a pass of cleaning up whatever instrumentation or code changes you did to do an experiment. I want a clean slate.
+
+1. **Quick guess.** Look at the code, form a hypothesis on the root
+   cause. Keep it short — don't burn tokens on speculation.
+2. **Report the guess and ask for confirmation.** Do not start
+   implementing. If the guess is wrong or the user wants more depth,
+   move to step 3.
+3. **Triage with instrumentation.** Act as a triage engineer: add
+   focused logs / dumps in the code paths involved, build, and ask the
+   user to copy-paste the trace. Make logs informative (include element
+   ids, paths, sizes, whatever lets you root-cause from a single trace).
+4. **Validate against the device, not the docs.** When the SDK is
+   involved, treat the official docs as a starting point only. Use adb
+   to inspect on-device state (filesystem, logs, paths returned by the
+   SDK) and confirm what is actually happening, not what the docs
+   suggest should happen.
+5. **Iterate** between hypothesis → instrument → observe → refine,
+   until you have *relative certainty* on the root cause.
+6. **For non-trivial investigations, write DIAGNOSTIC.md.** If the
+   triage takes more than one or two rounds of instrumentation, capture
+   the findings in a file `DIAGNOSTIC.md` at the project root: the
+   symptom, the trace evidence, the hypothesis you ruled out, the final
+   root cause, and the implications for any fix. This keeps the
+   conversation context lean and gives the user something to review.
+7. **Report a solid, well-argued diagnostic and ask for confirmation
+   that you've root-caused it.** A diagnostic is "solid" when it
+   identifies the exact mechanism (not just "probably the SDK"), is
+   backed by observed traces, and predicts the fix.
+8. **Plan the fix.** Two options depending on diagnostic strength:
+   - If the diagnostic is solid and the fix is small and localised
+     (single helper, single call site), you may skip PLAN.md and
+     propose the fix inline. A trustworthy diagnostic earns this.
+   - Otherwise, act as an architect and write PLAN.md (file-per-file
+     scope, small steps), and follow the implementation workflow below.
+9. **Implement** (per the implementation workflow if PLAN.md exists, or
+   directly if it doesn't).
+10. **On confirmation from the user, clean up.** Remove every
+    diagnostic log, scratch file, or experimental code change you added
+    during triage. Delete DIAGNOSTIC.md once the bug is closed.
+    Promote any durable SDK insight to `SDK_DOC.md` (see General
+    behavior) and any actionable feedback for Ratta to `FEEDBACK.md`
+    before deleting DIAGNOSTIC.md, so the lessons survive.
 
 # Workflow for implementation
 
@@ -44,6 +84,7 @@ Once I confirm that a feature or bugfix is done:
 # General behavior
 
 * SPEC.md is the source of truth for plugin behavior. Read it at the start of every task — feature, bugfix, or anything else — and treat its requirements (especially the persistence-across-power-cycle requirement) as hard constraints. If a task seems to violate the spec, flag it before implementing. If the spec needs to change to accommodate a task, update SPEC.md as part of the work and call out the change explicitly.
+* SDK_DOC.md is *our* notebook on the Supernote SDK, kept in the project root. The official docs at https://docs.supernote.com/en are thin and frequently silent on the behaviour we depend on, so we maintain SDK_DOC.md ourselves to capture what we've actually learned by experiment: API quirks, error codes the official docs don't mention, lifecycle / cache behaviour, fields that are populated only under certain conditions, working code patterns, things to avoid. Consult it before designing around any SDK API. Whenever a diagnostic or feature work turns up a durable insight about the SDK, add a section to SDK_DOC.md as part of the wrap-up — cite the version / date and the evidence so a future reader can re-validate. SDK_DOC.md is for *what the SDK does*; FEEDBACK.md is for *what we want Ratta to change about it*. Cross-reference between the two when relevant.
 * For each new feature and for each step above, always come back to that file to make sure to remember the above.
 * In case I forget a step and tell you to move on, remind me of it.
 * At any time, in case you don't know for sure, rather admit it and come up with experiments (potentially including code instrumentation), rather than just guessing.
