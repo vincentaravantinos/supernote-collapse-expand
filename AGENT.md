@@ -63,6 +63,9 @@ For every bug reported by the user, do the following:
     Promote any durable SDK insight to `SDK_DOC.md` (see General
     behavior) and any actionable feedback for Ratta to `FEEDBACK.md`
     before deleting DIAGNOSTIC.md, so the lessons survive.
+11. **Suggest a git commit.** See "Steps independent of workflow"
+    below — propose the commit(s), don't just leave the working tree
+    dirty.
 
 # Workflow for implementation
 
@@ -73,6 +76,7 @@ For every bug reported by the user, do the following:
 5. If this changed the plan, ask for a review again.
 6. Once approved, start with implementation, one step after the other. Ask for a review after each step.
 7. Once a step is done, amend PLAN.md to mark the corresponding step as done - then re-read the plan and the next step before moving on. I want you to always get back to the plan as an "anchor" to avoid that you deviate.
+8. After each step that stands on its own (compiles, doesn't break the build), suggest a git commit for that step before moving to the next one. I tend to forget to commit, so be proactive about offering it.
 
 # Steps independent of workflow
 
@@ -80,6 +84,7 @@ Once I confirm that a feature or bugfix is done:
 1. remove the PLAN.md file
 2. add a short summary of the change to CHANGES.md (I will use this for release notes)
 3. if something on the way was discovered that needs to be a feedback to the Supernote developers (either bug fix or developper doc improvement), collect it in FEEDBACK.md
+4. **Suggest a git commit (or multiple commits) of the resulting changes.** I tend to forget to commit, so always end a workflow by proposing the commits. Split into separate commits per concern — for example, the bug fix + its CHANGES.md / FEEDBACK.md entries in one commit, and any workflow / SDK_DOC.md / AGENT.md updates in a separate commit. Wait for my go-ahead before running `git commit`.
 
 # General behavior
 
