@@ -5,6 +5,13 @@ import { summarizeElements, summarizeSection } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
 import { expandAction } from './logic/expandAction';
 import { recollapseAction } from './logic/recollapseAction';
+import { runInsertGetRepro } from './diagnostics/insertGetRepro';
+
+// TEMPORARY diagnostic flag: when true, every button press runs the
+// isolated insertElements/getElements repro and skips the normal
+// collapse/expand flow. Flip back to false (or just delete the flag
+// and this branch) once we have the trace we need.
+const DIAGNOSTIC_REPRO_MODE = true;
 
 export async function handleMainAction() {
   try {
@@ -20,6 +27,11 @@ export async function handleMainAction() {
     }
     const filePath = filePathRes.result as string;
     const page = pageRes.result as number;
+
+    if (DIAGNOSTIC_REPRO_MODE) {
+      await runInsertGetRepro(filePath, page);
+      return;
+    }
 
     const elementsRes: any = await PluginCommAPI.getLassoElements();
     const elements: any[] = elementsRes?.success ? (elementsRes.result ?? []) : [];
