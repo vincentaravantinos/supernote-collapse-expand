@@ -11,7 +11,7 @@ import { runInsertGetRepro } from './diagnostics/insertGetRepro';
 // isolated insertElements/getElements repro and skips the normal
 // collapse/expand flow. Flip back to false (or just delete the flag
 // and this branch) once we have the trace we need.
-const DIAGNOSTIC_REPRO_MODE = true;
+const DIAGNOSTIC_REPRO_MODE = false;
 
 export async function handleMainAction() {
   try {
