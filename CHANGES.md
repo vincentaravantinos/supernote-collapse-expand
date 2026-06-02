@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Change: the collapsed-section icon is now a bundled `icon_plus.png`
+  picture element instead of a `+` text glyph, so it renders
+  consistently regardless of the user's current pen / text style.
 - Fix: expand and recollapse no longer fail with SDK error 1211
   ("PNG file does not exist") when updating the icon's `userData`. The
   icon's `picture.picturePath` is now re-anchored to the bundled icon on

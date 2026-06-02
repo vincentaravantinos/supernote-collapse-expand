@@ -3,7 +3,7 @@
 
 1. give the user the ability to recollapse not just by lassoeing the icon but any element in the expanded section (only the ones from the original section, so that we can use the userdata to identify if it'S part of the section, let's not overdo it)
 2. have the possibility to collapse multiple sections at once if multiple are selected
-3. use an icon icon_plus.png instead of the + text to denote the collapsed section
+3. once Sunn has acknowledged the insertElements/getElements repro on Reddit, remove the diagnostic mode: delete `src/diagnostics/insertGetRepro.ts`, drop the `DIAGNOSTIC_REPRO_MODE` flag + branch + import from `src/index.ts`
 
 # Workflow for new features
 
