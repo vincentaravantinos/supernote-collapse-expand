@@ -1,5 +1,5 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
-import { LOG } from '../constants';
+import { CE_PART_PREFIX, LOG } from '../constants';
 import { dumpElements } from '../utils/diagnostics';
 import { buildElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
@@ -67,7 +67,7 @@ export async function expandAction(
   for (const m of maskElements) fileElements.push(m);
 
   for (const ce of section.collapsedElements) {
-    const el = await buildElement(ce.data, page, section.id, emrDelta, pageMaxX, pageMaxY, dx, dy);
+    const el = await buildElement(ce.data, page, CE_PART_PREFIX + section.id, emrDelta, pageMaxX, pageMaxY, dx, dy);
     if (el) fileElements.push(el);
     else console.error(`${LOG} buildElement returned null for kind=${ce.data.kind}`);
   }

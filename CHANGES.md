@@ -19,3 +19,8 @@
   so recollapse re-collapses them by tag lookup instead of relying on a
   geometry-based lasso that was brittle to EMR/pixel rounding at the
   boundary.
+- Fix: recollapse re-collapses the section's restored content again. The
+  expand path was tagging restored part elements with the bare section id
+  instead of `CE_PART:<id>`, so recollapse's tag lookup never matched them
+  (`partEls` came back empty) and the content stayed on the page. Parts are
+  now written with the correct `CE_PART:` prefix, symmetric with masks.
