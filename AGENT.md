@@ -23,11 +23,13 @@ diagnostics; that is what earns the right to propose a fix.
 
 For every bug reported by the user, do the following:
 
-1. **Quick guess.** Look at the code, form a hypothesis on the root
-   cause. Keep it short — don't burn tokens on speculation.
-2. **Report the guess and ask for confirmation.** Do not start
-   implementing. If the guess is wrong or the user wants more depth,
-   move to step 3.
+1. **Quick guess.** Look at the code, try to form a hypothesis on the root
+   cause. Keep it short — don't burn tokens on speculation. Very important:
+   if you have no clue though say it, do not speculate. I'd rather we take
+   the time to diagnose (next step) rather than guess wrong.
+2. **Report the result and ask for the next step: follow the guess or 
+  diagnose deeper.** Do not start implementing. If the guess is wrong or
+  the user wants more depth, move to step 3.
 3. **Triage with instrumentation.** Act as a triage engineer: add
    focused logs / dumps in the code paths involved, build, and ask the
    user to copy-paste the trace. Make logs informative (include element
