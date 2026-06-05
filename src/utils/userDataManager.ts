@@ -32,7 +32,7 @@ export function iconRectFromElements(
       return el.picture.rect;
     }
   }
-  return iconElement?.picture?.rect ?? iconElement?.textBox?.textRect ?? section.iconRect;
+  return iconElement?.picture?.rect ?? section.iconRect;
 }
 
 // Convenience wrapper that fetches the element list itself. Callers must
