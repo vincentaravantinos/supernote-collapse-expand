@@ -91,7 +91,7 @@ For every bug reported by the user, do the following:
 Once I confirm that a feature or bugfix is done:
 1. remove the PLAN.md file
 2. add a short summary of the change to CHANGES.md (I will use this for release notes)
-3. if something on the way was discovered that needs to be a feedback to the Supernote developers (either bug fix or developper doc improvement), collect it in FEEDBACK.md
+3. if something on the way was discovered that needs to be a feedback to the Supernote developers (either bug fix or developper doc improvement), collect it in FEEDBACK.md. **Every FEEDBACK.md entry must also include a ready-to-post `**Proposed Reddit comment**`**: a concise, plain-prose reply (no heavy markdown — Reddit mangles it) for the r/Supernote_dev plugin-preview thread, since that's how I deliver the feedback. Use the Composio Reddit connector if you need to read the thread for context.
 4. **Suggest a git commit (or multiple commits) of the resulting changes.** I tend to forget to commit, so always end a workflow by proposing the commits. Split into separate commits per concern — for example, the bug fix + its CHANGES.md / FEEDBACK.md entries in one commit, and any workflow / SDK_DOC.md / AGENT.md updates in a separate commit. Wait for my go-ahead before running `git commit`.
 
 # General behavior

@@ -63,6 +63,22 @@ cleaned up — we observed 159 files going back over a month on a single
 device. If these are referenced from notes the user has deleted, this is
 a slow disk leak. Worth a separate audit.
 
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+Possible bug with picture elements + modifyElements: after inserting a
+picture with a real on-disk picturePath, a later getElements /
+getLassoElements returns a rewritten picturePath pointing at
+/storage/emulated/0/.data/plugin/<millis>.png — a file that doesn't
+actually exist on disk (the picture still renders fine, so the bytes must
+live in the .note). Passing that round-tripped element back to
+modifyElements (even just to update userData) then fails with code 1211
+"PNG file does not exist". Could getElements return a readable path,
+and/or could a userData-only modifyElements skip re-reading the PNG? Side
+note: that .data/plugin/ cache seems to grow one PNG per insert and never
+gets cleaned up (100+ files after a month here).
+```
+
 ## Observed: stroke geometry shifted after `modifyElements` (likely cache/file ordering)
 
 **Observed in**: this plugin, against the current beta SDK build
@@ -105,6 +121,19 @@ existing safe `writeSection` path).
 (A separate documentation gap, below, calls out that the doc itself is
 too vague to make this rule actionable in practice.)
 
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+Heads-up for other plugin devs (and a possible doc gap): calling
+modifyElements on an existing stroke *without* a preceding saveCurrentNote
+corrupted the stroke's geometry for us — its maxX/maxY got overwritten to
+the page defaults and it visibly shifted on screen. With a saveCurrentNote
+first it behaves. The saveCurrentNote doc hints at the cache/file split,
+but it'd help to state clearly that a pre-save is *required* (not just
+recommended) before file-level calls, and which APIs are cache- vs
+file-backed.
+```
+
 ## Documentation gap: `Element.maxX` / `Element.maxY`
 
 **Current doc** (`Element.ts`):
@@ -141,6 +170,19 @@ on-screen position depending on this value.
   fields on `modifyElements` / `insertElements` calls.
 - If `maxX/maxY` differ by element type (we observed stroke vs. TEXT
   having different defaults), state that explicitly.
+
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+Doc request: Element.maxX / maxY are commented as "Max coordinate value",
+which reads like the element's bounding box — but empirically they're not.
+Two strokes at different positions report the same maxX/maxY, and the
+values match PointUtils.getRealMaxX/Y for the page, so they look like a
+coordinate-space reference that the element's points are interpreted
+against. Changing them while leaving points untouched shifts the element
+on screen. Could the docs clarify what these actually represent, their
+units, and whether the SDK may overwrite them on insert/modify?
+```
 
 ## Documentation gap: other `Element` / `Stroke` fields are also under-documented
 
@@ -227,6 +269,19 @@ Without this, plugin authors have to reverse-engineer field semantics
 from observed traces, which produces fragile plugins and the kind of
 "why did geometry shift" mystery documented in the section above.
 
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+Broader doc request on the Element / Stroke shape returned by getElements:
+several fields are hard to use safely — angles, contoursSrc, recognPoints,
+markPenDirection, eraseLineTrailNums, flagDraw, status, the lazy
+_size:-1 / cache buffers, and integer-coded fields like penType / type /
+status with no published enums. Could we get per-field docs (what it
+represents, units, when it's populated, whether a plugin may write it
+back) plus enum tables for the coded fields? Right now we reverse-engineer
+all of this from traces.
+```
+
 ## Documentation gap: `PluginCommAPI.setLassoBoxState`
 
 **Current doc** (`PluginCommAPI.ts`):
@@ -265,6 +320,18 @@ Suggested phrasing:
 (If our suggested semantics don't match the implementation, the doc
 should describe the actual behaviour — the point is that all three
 states need to be unambiguous about elements vs. UI vs. selection.)
+
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+Doc request for PluginCommAPI.setLassoBoxState(state): the values
+0=Show / 1=Hide / 2=Completely remove are ambiguous about what happens to
+the *selection* and the *elements*, vs just the lasso UI. e.g. after
+1=Hide, is the selection still active and does getLassoElements still
+return the elements? After 2, do the elements drop back to the page or get
+destroyed? Spelling out UI vs selection vs elements (and what
+getLassoElements returns afterward) for each state would help a lot.
+```
 
 ## Documentation gap: cache vs file APIs
 
@@ -320,6 +387,20 @@ Concretely, two doc additions would solve most of this:
 - A "Common patterns" page with worked examples for each of the
   scenarios above, including the right `saveCurrentNote` placements.
 
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+Doc request: the saveCurrentNote note about an in-memory cache vs the file
+is really useful but too vague to act on. Could we get (1) a table marking
+each API across PluginFileAPI / PluginCommAPI / PluginNoteAPI as cache-,
+file-, or mixed-backed; (2) whether a pre-save is *required* vs just
+recommended (we've hit a silent no-op without it); (3) whether getElements
+reads the cache or the file; and (4) a few canonical sequences
+("modify + read back", "insert + verify", "delete + read") with the right
+saveCurrentNote placement? Also, saveCurrentNote seems to interact with
+active lasso state — worth documenting.
+```
+
 ## Bug: documented move-coordinate fix does not reach `getLassoElements` for picture elements
 
 **Observed in**: this plugin, on plugin-preview beta build
@@ -361,6 +442,18 @@ an element should not change its rendered size. Worth a separate look.
 
 **Related SDK_DOC.md entry**: "`getLassoElements` returns a STALE
 `picture.rect` after a move; `getElements` is fresh".
+
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+On the "coordinates retrieved through the API now update after moving an
+element" fix in this build — thanks! But for picture elements it doesn't
+seem to reach getLassoElements: after dragging a picture, the lassoed
+element still reports the pre-move picture.rect, while getElements (after
+saveCurrentNote) reports the correct moved rect. Could the fix be applied
+to the lassoed element too, or the docs note that lassoed geometry can be
+stale and getElements is authoritative?
+```
 
 ## Bug: `saveCurrentNote` rescales a moved picture element to ~14×14 on commit
 
@@ -421,3 +514,17 @@ not have to.
 **Related**: builds on the lasso-vs-`saveCurrentNote` interaction already
 noted under "Documentation gap: cache vs file APIs", and the stale
 `getLassoElements` `picture.rect` entry in SDK_DOC.md.
+
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+Possible bug in this build: moving a picture element and then committing
+the move (any save — saveCurrentNote, or just tapping elsewhere to
+autosave) rescales it. A picture we insert at 50x50 comes back ~14x14 from
+getElements after a move, and it visibly shrinks on screen; a picture left
+in place is fine. Reproducible with no plugin at all (place image → drag →
+tap away). modifyElements can't fix it either — it updates userData but
+doesn't apply a picture's rect, so we had to delete + re-insert to restore
+the size. Could a committed move translate the picture without rescaling
+it?
+```
