@@ -7,6 +7,7 @@ import {
 import { dumpElements } from '../utils/diagnostics';
 import { serializeElement } from '../utils/elementSerializer';
 import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
+import { restampIconIfShrunk } from '../utils/iconShrinkWorkaround';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 export async function recollapseAction(
@@ -110,6 +111,7 @@ export async function recollapseAction(
   // 5. Update icon userData.
   const ok = await writeSection(filePath, page, iconElement, updatedSection);
   if (!ok) console.error(`${LOG} failed to update section userData after recollapse`);
+  await restampIconIfShrunk(filePath, page, updatedSection);
 
   await PluginCommAPI.reloadFile();
 }

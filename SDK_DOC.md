@@ -121,3 +121,31 @@ as a separate backlog item.
 
 **Related FEEDBACK.md entry**: "Bug: documented move-coordinate fix does
 not reach `getLassoElements` for picture elements".
+
+---
+
+## Moving a picture shrinks it on commit; `modifyElements` can't resize a picture
+
+**Observed**: 2026-06-05, build `Chauvet.D102.2605151001.2337_beta`.
+
+**What happens**:
+- A picture element inserted at 50×50 keeps that size as long as it's not
+  moved. The moment a *move* is committed to the page (by **any** save —
+  our `saveCurrentNote`, or the app's autosave when the user taps
+  elsewhere after dragging), the SDK rescales it to ~14×14. Position is
+  preserved; only the size is corrupted. Reproducible with no plugin at
+  all (place picture → drag → tap elsewhere).
+- `modifyElements` updates an element's `userData` but does **not** apply
+  a picture's `rect` — passing a 50×50 rect through `modifyElements`
+  leaves the on-page picture at 14×14.
+- `insertElements` **does** honour `rect` (that's how the 50×50 icon is
+  created at collapse).
+
+**Implication for plugin code**: to resize a picture you must delete and
+re-insert it; `modifyElements` won't do it. We restore the section `+`
+icon this way in `iconShrinkWorkaround.ts` (`restampIconIfShrunk`), called
+at the end of expand/recollapse and gated on `width !== ICON_SIZE` so it
+only fires when the icon was actually moved.
+
+**Related FEEDBACK.md entry**: "Bug: `saveCurrentNote` rescales a moved
+picture element to ~14×14 on commit".

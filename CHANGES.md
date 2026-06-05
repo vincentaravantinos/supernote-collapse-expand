@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Fix: the `+` icon no longer stays shrunk after being moved. An SDK bug
+  rescales a moved picture element to ~14×14 when the move is committed
+  (any save, plugin or not). Since `modifyElements` can't reset a
+  picture's rect, expand/recollapse now re-create the icon at its proper
+  size when they detect it shrank. Isolated in
+  `src/utils/iconShrinkWorkaround.ts`; when the SDK fixes the rescale
+  (see FEEDBACK.md), delete that file and the two `restampIconIfShrunk`
+  calls in `expandAction.ts` / `recollapseAction.ts`.
+
 - Fix: expanding (or recollapsing) a section after moving its `+` icon now
   restores the content at the icon's new location instead of its original
   one. The icon's current position is read from `getElements` (matched by

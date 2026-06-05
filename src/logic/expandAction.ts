@@ -4,6 +4,7 @@ import { dumpElements } from '../utils/diagnostics';
 import { buildElement } from '../utils/elementSerializer';
 import { getCurrentIconRect, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
+import { restampIconIfShrunk } from '../utils/iconShrinkWorkaround';
 import { CollapseSection } from '../model/types';
 
 export async function expandAction(
@@ -92,6 +93,7 @@ export async function expandAction(
 
   const ok = await writeSection(filePath, page, iconElement, section);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
+  await restampIconIfShrunk(filePath, page, section);
 
   await PluginCommAPI.reloadFile();
 }

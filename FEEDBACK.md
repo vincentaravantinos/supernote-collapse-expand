@@ -361,3 +361,63 @@ an element should not change its rendered size. Worth a separate look.
 
 **Related SDK_DOC.md entry**: "`getLassoElements` returns a STALE
 `picture.rect` after a move; `getElements` is fresh".
+
+## Bug: `saveCurrentNote` rescales a moved picture element to ~14×14 on commit
+
+**Observed in**: this plugin, on plugin-preview beta build
+`Chauvet.D102.2605151001.2337_beta` (build date 2026-05-15).
+
+**Symptom**: a picture element inserted at 50×50 visibly shrinks to
+~14×14 the moment a *move* is committed back to the page. Only moved
+pictures are affected — a picture left in place never changes size.
+
+**Reproducible with no plugin at all**: insert/place a picture, drag it
+to a new spot, then tap elsewhere (which triggers the app's autosave).
+The picture shrinks on that save. It is the *commit of a moved picture*
+that corrupts the size, not anything plugin-specific — our plugin only
+hits it because `expandAction` calls `saveCurrentNote` after the user has
+moved the icon.
+
+**Trace evidence** (one move-then-expand; icon inserted at 50×50, then
+dragged, then plugin pressed — we logged the icon's `picture.rect` and
+its width×height at successive steps):
+
+```
+A lassoedElement.picture.rect = [526,680,576,730]  50x50   (selection copy)
+B getElements BEFORE save      = [526,680,576,730]  50x50   (on-file, pre-move-commit)
+C getElements AFTER save       = [571,1162,585,1176] 14x14  (moved AND shrunk)
+E getElements AFTER modifyElements = [571,1162,585,1176] 14x14 (still shrunk)
+```
+
+So the single `saveCurrentNote` call between B and C both commits the
+move (correct) **and** rescales the picture from 50×50 to 14×14
+(incorrect). The position is preserved; only the size is corrupted.
+
+**Second bug surfaced by the same trace**: `modifyElements` cannot
+repair it. Step E ran `modifyElements` on the icon with a 50×50
+`picture.rect`, and the element stayed 14×14 — i.e. `modifyElements`
+updates `userData` but does **not** apply a picture element's `rect`.
+
+**Workaround in place**: because only `insertElements` honours a
+picture's `rect`, we detect the shrunk icon (width ≠ our `ICON_SIZE`) and
+re-create it — delete the shrunk element and insert a fresh 50×50 picture
+at the same top-left, carrying the same `userData`. This is heavier than
+it should be (an element id churns on every move) and we'd much rather
+not have to.
+
+**Bug requests**:
+
+- `saveCurrentNote` must not change a picture element's rendered size when
+  committing a move. Committing a moved element should translate it, never
+  rescale it.
+- `modifyElements` on a picture element should be able to update its
+  `rect` (size/position), or the docs should state explicitly that it
+  cannot and that re-insertion is the only way to resize a picture.
+- Clarify, for picture elements specifically, the full lifecycle of
+  `picture.rect` across insert → move → `saveCurrentNote` → `getElements`,
+  since the value we read back disagrees with what we inserted in both
+  size and (pre-save) position.
+
+**Related**: builds on the lasso-vs-`saveCurrentNote` interaction already
+noted under "Documentation gap: cache vs file APIs", and the stale
+`getLassoElements` `picture.rect` entry in SDK_DOC.md.
