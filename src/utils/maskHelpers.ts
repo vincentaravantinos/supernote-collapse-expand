@@ -38,7 +38,6 @@ async function createMaskRectangle(rect: Rect, page: number, sectionId: string):
   };
   el.pageNum = page;
   el.userData = CE_MASK_PREFIX + sectionId;
-  console.log(`${LOG} createMaskRectangle OK rect=[${rect.left},${rect.top},${rect.right},${rect.bottom}] w=${rect.right - rect.left} h=${rect.bottom - rect.top} num=${el.numInPage}`);
   return el;
 }
 
@@ -70,7 +69,6 @@ export async function createMaskElements(
     : 1 + Math.ceil((halfMaxDim - firstRingReach) / RING_STEP);
   const midX = (rect.left + rect.right) / 2;
   const midY = (rect.top + rect.bottom) / 2;
-  console.log(`${LOG} createMaskElements START rect=[${rect.left},${rect.top},${rect.right},${rect.bottom}] w=${w} h=${h} penWidth=${MASK_PEN_WIDTH} step=${RING_STEP} ringsNeeded=${ringsNeeded} page=${page} sectionId=${sectionId}`);
   const result: any[] = [];
   for (let k = 0; k < ringsNeeded; k++) {
     const inset = VISIBLE_HALF_BAND + k * RING_STEP;
@@ -88,10 +86,8 @@ export async function createMaskElements(
       bottom = midY + MIN_POLY_DIM / 2;
     }
     const ringRect: Rect = { left, top, right, bottom };
-    console.log(`${LOG} createMaskElements iter=${k} ring=[${ringRect.left},${ringRect.top},${ringRect.right},${ringRect.bottom}] w=${ringRect.right - ringRect.left} h=${ringRect.bottom - ringRect.top}`);
     const el = await createMaskRectangle(ringRect, page, sectionId);
     if (el) result.push(el);
   }
-  console.log(`${LOG} createMaskElements END iters=${ringsNeeded} createdCount=${result.length}`);
   return result;
 }
