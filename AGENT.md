@@ -4,6 +4,7 @@
 1. give the user the ability to recollapse not just by lassoeing the icon but any element in the expanded section (only the ones from the original section, so that we can use the userdata to identify if it'S part of the section, let's not overdo it)
 2. have the possibility to collapse multiple sections at once if multiple are selected
 3. once Sunn has acknowledged the insertElements/getElements repro on Reddit, remove the diagnostic mode: delete `src/diagnostics/insertGetRepro.ts`, drop the `DIAGNOSTIC_REPRO_MODE` flag + branch + import from `src/index.ts`
+4. remove the legacy text-glyph icon fallbacks now that the icon is always an `icon_plus.png` picture element (plugin is unpublished, no back-compat needed). Scope: the `iconElement?.textBox?.textRect` fallback in the `iconRectNow` resolution in `expandAction.ts` and `recollapseAction.ts`. IMPORTANT — do NOT touch the user-content text serialization (`SerializedText`/`buildText` and the `TEXT`/`TEXT_DIGEST` handling in `elementSerializer.ts` + `types.ts`); that serializes the user's own collapsed text boxes and is unrelated to the icon.
 
 # Workflow for new features
 
