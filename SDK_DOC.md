@@ -71,3 +71,53 @@ plugin-side bug if a user reports it.
 
 **Related FEEDBACK.md entry**: "Side observation (cache leak)" inside
 the picture-path bug section.
+
+---
+
+## `getLassoElements` returns a STALE `picture.rect` after a move; `getElements` is fresh
+
+**Observed**: 2026-06-05, on Manta/A5X plugin-preview beta build
+`Chauvet.D102.2605151001.2337_beta` (build date 2026-05-15 — the
+2026-05-15 plugin-preview from r/Supernote_dev post `1tdw909`).
+
+**Context**: that build's changelog explicitly claims:
+
+> Fixed an issue where the coordinates retrieved through the API did not
+> update after moving an element and still showed the pre-move values.
+
+For **picture** elements that fix only reaches the persisted
+`getElements` path, **not** the element handed back by
+`getLassoElements`.
+
+**Trace evidence** (one move-then-expand cycle; section saved at
+`iconRect=[448,614,498,664]`, then the icon was dragged):
+
+- `getLassoElements` element: `picture.rect=[448,614,498,664]` — the
+  **pre-move** position (stale). No other position field is populated on
+  a picture element (`textBox.textRect`, top-level `rect`, `x/y`,
+  `boundingRect` are all absent; `maxX/maxY` are page EMR dimensions, not
+  a position).
+- Same icon (`numInPage=5`) via `getElements` after `saveCurrentNote`:
+  `picture.rect=[585,1123,599,1137]` — the **moved** position.
+
+Consistent with the already-documented phantom-cache behaviour of
+lassoed picture elements (see the `picture.picturePath` entry above): the
+lassoed picture element is served from a stale cache.
+
+**Implication for plugin code**: to read a picture icon's *current*
+position (e.g. to translate restored content by how far the user moved
+the icon), resolve it from `getElements` matched by our `userData`
+section id — never from the lassoed element. Flush with `saveCurrentNote`
+first so `getElements` reflects the move. Implemented as
+`iconRectFromElements` / `getCurrentIconRect` in `userDataManager.ts`,
+used by `expandAction` and `recollapseAction`.
+
+**Side note (separate bug)**: `getElements` reports the moved picture's
+rect as ~14×14 although it was inserted at 50×50 (`ICON_SIZE`); the icon
+also visibly shrinks to the user after a move. Only the top-left is used
+for the translation delta, and on-device validation showed restored
+content lands correctly, so this doesn't affect the position fix. Tracked
+as a separate backlog item.
+
+**Related FEEDBACK.md entry**: "Bug: documented move-coordinate fix does
+not reach `getLassoElements` for picture elements".

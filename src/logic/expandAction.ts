@@ -2,7 +2,7 @@ import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 's
 import { CE_PART_PREFIX, LOG } from '../constants';
 import { dumpElements } from '../utils/diagnostics';
 import { buildElement } from '../utils/elementSerializer';
-import { readUserData, writeSection } from '../utils/userDataManager';
+import { getCurrentIconRect, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { CollapseSection } from '../model/types';
 
@@ -19,8 +19,9 @@ export async function expandAction(
   await PluginNoteAPI.saveCurrentNote();
   await dumpElements('DIAG expand entry', filePath, page);
 
-  const iconRectNow =
-    iconElement?.picture?.rect ?? iconElement?.textBox?.textRect ?? section.iconRect;
+  // Read the icon's CURRENT rect from the persisted element list, not from
+  // the lassoed element (which reports a stale pre-move rect for pictures).
+  const iconRectNow = await getCurrentIconRect(filePath, page, section, iconElement);
   const contentRect: Rect = {
     left: iconRectNow.left + section.relativeRect.left,
     top: iconRectNow.top + section.relativeRect.top,

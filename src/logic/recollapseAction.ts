@@ -6,7 +6,7 @@ import {
 } from '../constants';
 import { dumpElements } from '../utils/diagnostics';
 import { serializeElement } from '../utils/elementSerializer';
-import { readUserData, writeSection } from '../utils/userDataManager';
+import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 export async function recollapseAction(
@@ -15,9 +15,6 @@ export async function recollapseAction(
   filePath: string,
   page: number,
 ) {
-  const iconRectNow =
-    iconElement?.picture?.rect ?? iconElement?.textBox?.textRect ?? section.iconRect;
-
   // Flush any in-memory edits to the file so getElements below sees strokes
   // the user drew while the section was expanded.
   await PluginNoteAPI.saveCurrentNote();
@@ -27,6 +24,10 @@ export async function recollapseAction(
   // 1. Find every element belonging to this section via userData id.
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+
+  // Read the icon's CURRENT rect from this fresh list, not from the lassoed
+  // element (stale pre-move rect for pictures).
+  const iconRectNow = iconRectFromElements(all, section, iconElement);
 
   const maskEls: any[] = [];
   const partEls: any[] = [];

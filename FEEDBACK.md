@@ -319,3 +319,45 @@ Concretely, two doc additions would solve most of this:
   required.
 - A "Common patterns" page with worked examples for each of the
   scenarios above, including the right `saveCurrentNote` placements.
+
+## Bug: documented move-coordinate fix does not reach `getLassoElements` for picture elements
+
+**Observed in**: this plugin, on plugin-preview beta build
+`Chauvet.D102.2605151001.2337_beta` (build date 2026-05-15).
+
+**Context**: this build's changelog states:
+
+> Fixed an issue where the coordinates retrieved through the API did not
+> update after moving an element and still showed the pre-move values.
+
+**Symptom**: for a **picture** element, that fix only applies to the
+persisted `getElements` path. The element returned by `getLassoElements`
+(after the user lassoes the moved picture) still reports the **pre-move**
+`picture.rect`.
+
+**Trace evidence** (section icon dragged from `[448,614,498,664]`):
+
+- `getLassoElements` → `picture.rect=[448,614,498,664]` (pre-move, stale).
+- `getElements` (same icon, after `saveCurrentNote`) →
+  `picture.rect=[585,1123,599,1137]` (moved, correct).
+
+**Workaround in place**: read the icon's current rect from `getElements`
+(matched by our `userData` section id), not from the lassoed element.
+
+**Bug requests**:
+
+- Apply the move-coordinate fix to `getLassoElements` as well, so the
+  lassoed element reports the same up-to-date `picture.rect` as
+  `getElements`. Plugins commonly act on the lassoed element directly;
+  having it disagree with `getElements` is a footgun.
+- If the lassoed element is intentionally served from a cache, document
+  that its geometry can be stale and direct authors to `getElements` for
+  authoritative coordinates.
+
+**Side observation (separate bug)**: moving a picture element appears to
+**rescale** it — inserted at 50×50, `getElements` then reports its
+`picture.rect` as ~14×14, and the icon visibly shrinks on screen. Moving
+an element should not change its rendered size. Worth a separate look.
+
+**Related SDK_DOC.md entry**: "`getLassoElements` returns a STALE
+`picture.rect` after a move; `getElements` is fresh".

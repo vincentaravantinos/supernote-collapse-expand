@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix: expanding (or recollapsing) a section after moving its `+` icon now
+  restores the content at the icon's new location instead of its original
+  one. The icon's current position is read from `getElements` (matched by
+  section id) rather than from the lassoed element, which reports a stale
+  pre-move rect for picture elements. See SDK_DOC.md / FEEDBACK.md.
+
 - Change: the collapsed-section icon is now a bundled `icon_plus.png`
   picture element instead of a `+` text glyph, so it renders
   consistently regardless of the user's current pen / text style.

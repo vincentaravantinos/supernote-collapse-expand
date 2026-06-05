@@ -14,6 +14,41 @@ export type UserDataKind =
   | { kind: 'mask'; id: string }
   | null;
 
+// Resolve the icon's CURRENT on-page rect, given an already-fetched element
+// list. The element handed back by getLassoElements reports a STALE
+// picture.rect for picture icons (the pre-move position — the SDK's
+// "coordinates update after move" fix does not reach the lassoed element),
+// whereas the persisted getElements list reflects the move. Prefer the
+// getElements match (by section id); fall back to the lassoed element and
+// finally the last-known saved rect.
+export function iconRectFromElements(
+  all: any[],
+  section: CollapseSection,
+  iconElement: any,
+): any {
+  for (const el of all) {
+    const ud = readUserData(el);
+    if (ud?.kind === 'section' && ud.section?.id === section.id && el?.picture?.rect) {
+      return el.picture.rect;
+    }
+  }
+  return iconElement?.picture?.rect ?? iconElement?.textBox?.textRect ?? section.iconRect;
+}
+
+// Convenience wrapper that fetches the element list itself. Callers must
+// have flushed pending edits (saveCurrentNote) first so getElements sees the
+// moved icon.
+export async function getCurrentIconRect(
+  filePath: string,
+  page: number,
+  section: CollapseSection,
+  iconElement: any,
+): Promise<any> {
+  const allRes: any = await PluginFileAPI.getElements(page, filePath);
+  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  return iconRectFromElements(all, section, iconElement);
+}
+
 export function readUserData(element: any): UserDataKind {
   const udata = element?.userData;
   if (typeof udata !== 'string') return null;
