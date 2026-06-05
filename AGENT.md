@@ -5,7 +5,6 @@
 2. have the possibility to collapse multiple sections at once if multiple are selected
 3. once Sunn has acknowledged the insertElements/getElements repro on Reddit, remove the diagnostic mode: delete `src/diagnostics/insertGetRepro.ts`, drop the `DIAGNOSTIC_REPRO_MODE` flag + branch + import from `src/index.ts`
 4. remove the legacy text-glyph icon fallbacks now that the icon is always an `icon_plus.png` picture element (plugin is unpublished, no back-compat needed). Scope: the `iconElement?.textBox?.textRect` fallback in the `iconRectNow` resolution in `expandAction.ts` and `recollapseAction.ts`. IMPORTANT — do NOT touch the user-content text serialization (`SerializedText`/`buildText` and the `TEXT`/`TEXT_DIGEST` handling in `elementSerializer.ts` + `types.ts`); that serializes the user's own collapsed text boxes and is unrelated to the icon.
-5. the `+` icon visually shrinks after being moved: inserted at 50×50 (`ICON_SIZE`) but `getElements` reports its `picture.rect` as ~14×14 once the user drags it. Observed both as a user (icon gets smaller) and in the trace. Root cause unknown — investigate why moving a picture element rescales it, and restore the icon to a stable size. NOTE: this interacts with the moved-icon position fix — that fix uses the moved `picture.rect` top-left for the translation delta, so confirm the top-left anchor stays correct once the size is fixed.
 
 # Workflow for new features
 
@@ -36,6 +35,12 @@ For every bug reported by the user, do the following:
    focused logs / dumps in the code paths involved, build, and ask the
    user to copy-paste the trace. Make logs informative (include element
    ids, paths, sizes, whatever lets you root-cause from a single trace).
+   **Prefer time-series instrumentation: when a value is suspect, log it
+   at successive labelled checkpoints (A/B/C…) along the code path so the
+   trace shows exactly *where* it changes.** Watching one value evolve
+   step by step has repeatedly pinpointed the precise call that breaks it
+   (e.g. which API shrank a picture, which read returned a stale rect) far
+   faster than reasoning about a single end-state dump.
 4. **Validate against the device, not the docs.** When the SDK is
    involved, treat the official docs as a starting point only. Use adb
    to inspect on-device state (filesystem, logs, paths returned by the
