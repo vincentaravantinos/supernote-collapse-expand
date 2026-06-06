@@ -4,7 +4,6 @@ import { dumpElements } from '../utils/diagnostics';
 import { buildElement } from '../utils/elementSerializer';
 import { getCurrentIconRect, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
-import { restampIconIfShrunk } from '../utils/iconShrinkWorkaround';
 import { CollapseSection } from '../model/types';
 
 export async function expandAction(
@@ -21,7 +20,7 @@ export async function expandAction(
   await dumpElements('DIAG expand entry', filePath, page);
 
   // Read the icon's CURRENT rect from the persisted element list, not from
-  // the lassoed element (which reports a stale pre-move rect for pictures).
+  // the lassoed element (which can report a stale rect after a move).
   const iconRectNow = await getCurrentIconRect(filePath, page, section, iconElement);
   const contentRect: Rect = {
     left: iconRectNow.left + section.relativeRect.left,
@@ -93,7 +92,6 @@ export async function expandAction(
 
   const ok = await writeSection(filePath, page, iconElement, section);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
-  await restampIconIfShrunk(filePath, page, section);
 
   await PluginCommAPI.reloadFile();
 }

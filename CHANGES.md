@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Change: the collapsed-section icon is now a text glyph (⊕) instead of a
+  bundled picture element. On the current beta firmware, picture inserts
+  triggered an SDK bridge desync that made `insertElements` silently no-op
+  (collapse deleted strokes but produced no icon). Switching the icon to a
+  TEXT element dodges that, and removes the whole class of picture-element
+  workarounds: the `picturePath`/1211 re-anchor in `writeSection`, the
+  `iconShrinkWorkaround` (moved pictures rescaled to ~14×14), and the
+  stale-lasso-rect handling. Icon position is read from `textBox.textRect`.
+
 - Fix: the `+` icon no longer stays shrunk after being moved. An SDK bug
   rescales a moved picture element to ~14×14 when the move is committed
   (any save, plugin or not). Since `modifyElements` can't reset a

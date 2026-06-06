@@ -1,8 +1,9 @@
-import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, Rect } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
 import {
   CE_PLUG_PREFIX,
-  DEFAULT_ICON_FILENAME,
   ELEMENT_TYPES,
+  ICON_FONT_SIZE,
+  ICON_GLYPH,
   ICON_SIZE,
   LOG,
   MAX_USERDATA_BYTES,
@@ -79,29 +80,28 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   await PluginNoteAPI.saveCurrentNote();
 
-  // Resolve the bundled icon's on-device path. The build copies
-  // DEFAULT_ICON_FILENAME to the plugin package root, so it lives directly
-  // under the plugin install directory at runtime.
-  const dirRes: any = await PluginManager.getPluginDirPath();
-  const pluginDir: string | null =
-    typeof dirRes === 'string' ? dirRes : (dirRes?.result ?? null);
-  if (typeof pluginDir !== 'string' || pluginDir.length === 0) {
-    console.error(`${LOG} getPluginDirPath returned ${JSON.stringify(dirRes)}`);
-    alert('Failed to locate plugin icon.');
-    return;
-  }
-  const picturePath = `${pluginDir.replace(/\/+$/, '')}/${DEFAULT_ICON_FILENAME}`;
-
-  const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.PICTURE);
+  // VALIDATION STEP: create the icon as a TEXT element (⊕) instead of a
+  // picture, to dodge the entire class of picture-element SDK bugs (phantom
+  // picturePath/1211, shrink-on-move) and test whether text inserts also
+  // dodge the insert-desync blocker. Explicit styling keeps the glyph from
+  // adopting the user's ambient pen/text style.
+  const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.TEXT);
   if (!createRes?.success || !createRes.result) {
     console.error(`${LOG} createElement failed res=${JSON.stringify(createRes)}`);
     alert('Failed to create icon element.');
     return;
   }
   const iconEl: any = createRes.result;
-  iconEl.picture = {
-    picturePath,
-    rect: iconRect,
+  iconEl.textBox = {
+    fontSize: ICON_FONT_SIZE,
+    textContentFull: ICON_GLYPH,
+    textRect: iconRect,
+    textAlign: 0,
+    textBold: 0,
+    textItalics: 0,
+    textFrameWidthType: 0,
+    textFrameStyle: 0,
+    textEditable: 0,
   };
   iconEl.userData = payload;
   iconEl.pageNum = page;

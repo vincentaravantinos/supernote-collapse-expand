@@ -1,7 +1,11 @@
 export const LOG = '[CollapseExpand]';
 
 export const ICON_SIZE = 50; // pixels
-export const DEFAULT_ICON_FILENAME = 'icon_plus.png';
+// The collapsed-section icon is a TEXT glyph (⊕ = U+2295 CIRCLED PLUS),
+// not a picture element — picture inserts triggered an SDK bridge desync
+// that made insertElements silently no-op. Text dodges that entire class.
+export const ICON_GLYPH = '⊕';
+export const ICON_FONT_SIZE = 40;
 export const SCHEMA_VERSION = 2;
 export const CE_PLUG_PREFIX = 'CE_PLUG:';
 export const CE_PART_PREFIX = 'CE_PART:';

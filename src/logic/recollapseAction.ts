@@ -7,7 +7,6 @@ import {
 import { dumpElements } from '../utils/diagnostics';
 import { serializeElement } from '../utils/elementSerializer';
 import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
-import { restampIconIfShrunk } from '../utils/iconShrinkWorkaround';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 export async function recollapseAction(
@@ -27,7 +26,7 @@ export async function recollapseAction(
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
 
   // Read the icon's CURRENT rect from this fresh list, not from the lassoed
-  // element (stale pre-move rect for pictures).
+  // element (which can report a stale rect after a move).
   const iconRectNow = iconRectFromElements(all, section, iconElement);
 
   const maskEls: any[] = [];
@@ -111,7 +110,6 @@ export async function recollapseAction(
   // 5. Update icon userData.
   const ok = await writeSection(filePath, page, iconElement, updatedSection);
   if (!ok) console.error(`${LOG} failed to update section userData after recollapse`);
-  await restampIconIfShrunk(filePath, page, updatedSection);
 
   await PluginCommAPI.reloadFile();
 }
