@@ -115,4 +115,10 @@ export async function collapseAction(filePath: string, page: number, elements: a
   }
 
   await PluginNoteAPI.saveCurrentNote();
+
+  // Dismiss the selection box left by the user's lasso + deleteLassoElements
+  // (audit ①). state 2 = "Completely remove" — the standard cleanup after a
+  // lasso-mutating op (cf. guibor/supernote-shape-snap, which calls
+  // setLassoBoxState(2) after deleteLassoElements + insert).
+  await PluginCommAPI.setLassoBoxState(2);
 }
