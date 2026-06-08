@@ -63,8 +63,15 @@ No `reloadFile` is required when `setLassoBoxState(2)` is used. Our flow calls `
 
 ---
 
-### ② No re-entrancy guard on button listener  
+### ② No re-entrancy guard on button listener — ✅ RESOLVED (this change)  
 **Risk: HIGH — state corruption if user double-taps**
+
+**Resolved:** added a module-level `isRunning` guard in `handleMainAction`
+(`src/index.ts`), reset in `finally`. NB the audit's precedent was wrong —
+`prelude-rs/sn-align-plugin`'s `index.js` has **no** such guard (same
+fire-and-forget as us), and we never observed a double-fire in traces. So
+this is defense-in-depth, not a community pattern — kept because it's free
+and a concurrent run would interleave lasso/save state we just stabilised.
 
 `index.js` registers:
 ```js
@@ -208,7 +215,7 @@ The following were surfaced during audit (cross-referencing `apclark31/supernote
 | # | Finding | Risk | File(s) |
 |---|---------|------|---------|
 | ① | ~~No `setLassoBoxState(2)` after lasso mutations~~ ✅ RESOLVED (`7c2d787`+) — also cured the desync | HIGH | `collapseAction.ts`, `expandAction.ts`, `recollapseAction.ts` |
-| ② | No re-entrancy guard on button listener | HIGH | `index.js` |
+| ② | ~~No re-entrancy guard on button listener~~ ✅ RESOLVED — defense-in-depth (audit precedent was wrong) | HIGH | `src/index.ts` |
 | ③ | Excessive `saveCurrentNote` calls | MEDIUM | `expandAction.ts`, `recollapseAction.ts` |
 | ④ | Multiple `reloadFile` calls per operation | MEDIUM | `expandAction.ts`, `recollapseAction.ts` |
 | ⑤ | `buildLink` omits `controlTrailNums` + `page` (latent bug) | MEDIUM | `elementSerializer.ts` |

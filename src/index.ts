@@ -13,7 +13,18 @@ import { runInsertGetRepro } from './diagnostics/insertGetRepro';
 // and this branch) once we have the trace we need.
 const DIAGNOSTIC_REPRO_MODE = false;
 
+// Re-entrancy guard: the button can be tapped again while a previous
+// invocation is still awaiting SDK calls. A concurrent second run would
+// interleave saveCurrentNote / lasso / insert state and corrupt the note
+// (audit ②). Ignore re-entrant presses until the current one finishes.
+let isRunning = false;
+
 export async function handleMainAction() {
+  if (isRunning) {
+    console.log(`${LOG} handleMainAction already running — ignoring re-entrant button press`);
+    return;
+  }
+  isRunning = true;
   try {
     const filePathRes: any = await PluginCommAPI.getCurrentFilePath();
     const pageRes: any = await PluginCommAPI.getCurrentPageNum();
@@ -72,5 +83,7 @@ export async function handleMainAction() {
   } catch (error) {
     console.error(`${LOG} Plugin action failed:`, error);
     alert('An error occurred during processing.');
+  } finally {
+    isRunning = false;
   }
 }
