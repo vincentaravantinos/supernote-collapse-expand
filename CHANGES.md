@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Fix: collapse/expand/recollapse now dismiss the lasso selection
+  (`setLassoBoxState(2)`) instead of leaving it dangling. This removes the
+  collapse flicker and, more importantly, fixes the cumulative failure where
+  `insertElements`/`deleteElements` would silently stop taking effect after a
+  number of operations (icon not appearing, recollapse leaving content on the
+  page) — a left-open lasso kept the note app's trail bookkeeping
+  inconsistent. Also fixes recollapse when the section overlaps pre-existing
+  strokes, by closing the programmatic read-lasso before the file mutations.
+
 - Change: the collapsed-section icon is now a text glyph (⊕) instead of a
   bundled picture element. On the current beta firmware, picture inserts
   triggered an SDK bridge desync that made `insertElements` silently no-op

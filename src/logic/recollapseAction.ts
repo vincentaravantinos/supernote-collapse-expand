@@ -78,6 +78,12 @@ export async function recollapseAction(
   for (const el of lassoed) { try { el.recycle?.(); } catch { /* ignore */ } }
   console.log(`${LOG} recollapse skippedPreserved=${skippedPreserved} of preservedNums=${preservedSet.size}`);
 
+  // Close the programmatic read-lasso now that we've read it, BEFORE the
+  // deleteElements below. A dangling lasso holding lifted pre-existing
+  // strokes is what makes the by-number delete silently no-op in the
+  // "strokes below" case.
+  await PluginCommAPI.setLassoBoxState(2);
+
   for (const m of maskEls) {
     if (typeof m.numInPage === 'number') numSet.add(m.numInPage);
   }

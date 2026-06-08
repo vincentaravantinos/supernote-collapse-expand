@@ -61,6 +61,13 @@ export async function expandAction(
   section.preservedNums = preservedNums;
   console.log(`${LOG} expand preservedNums=[${preservedNums.join(',')}] of lassoed=${presLassoed.length}`);
 
+  // Close the programmatic read-lasso now that we've read it, BEFORE the
+  // file-level inserts below. Leaving it open (especially when it lifted
+  // pre-existing strokes sitting under the section) leaves the note app's
+  // trail bookkeeping half-committed and is what breaks the "strokes below"
+  // case. We only opened this lasso to read; nothing below needs it.
+  await PluginCommAPI.setLassoBoxState(2);
+
   const fileElements: any[] = [];
 
   // Mask rings first so they sit below the collapsed content in this batch.

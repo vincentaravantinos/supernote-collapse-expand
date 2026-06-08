@@ -149,3 +149,67 @@ only fires when the icon was actually moved.
 
 **Related FEEDBACK.md entry**: "Bug: `saveCurrentNote` rescales a moved
 picture element to ~14×14 on commit".
+
+---
+
+## Always dismiss the lasso before your handler returns (`setLassoBoxState(2)`)
+
+**The rule.** Any plugin operation that has a lasso selection active — the
+user's selection that triggered your plugin button, **or** a
+`PluginCommAPI.lassoElements(rect)` you opened yourself — must close it with
+`PluginCommAPI.setLassoBoxState(2)` before the handler returns. Never finish
+an operation, and never perform a file-level mutation, with a lasso left
+open. This is not cosmetic; skipping it corrupts the note's data.
+
+**Why it matters.** While a lasso is active, its selected strokes are held
+in a transient "lifted" selection state, separate from the committed note
+model. If you leave that open while you mutate the page
+(`insertElements` / `deleteElements` / `saveCurrentNote`), the host's
+plugin-facing trail list drifts away from the live note model. The drift is
+**cumulative and silent**: after a number of operations,
+`insertElements`/`deleteElements` begin returning `success: true` while
+doing nothing — inserted elements never appear, deletes leave content in
+place — and it stays broken until the note app process is restarted. (In
+note-app logs the two lists visibly disagree, e.g. `insertPageTrails exist
+Trails: 12` vs `saveNoteData mTrailNumber: 2`.)
+
+**`setLassoBoxState(state)` values:** `0` = show; `1` = hide the menu but
+keep the selection; `2` = completely remove — commit the selection back to
+the page and release it. Use **2** to close. It does **not** undo your
+mutations; committed inserts/deletes persist.
+
+**Patterns to follow:**
+
+- *Mutating the user's selection* (e.g. delete what they lassoed): mutate
+  while the lasso is open, then close at the very end.
+  ```
+  deleteLassoElements();
+  insertElements([...]);          // or insertGeometry(...)
+  saveCurrentNote();
+  setLassoBoxState(2);            // <- close before returning
+  ```
+
+- *Opening a lasso only to read* (e.g. `lassoElements(rect)` +
+  `getLassoElements()` to inspect what sits under a region): close it
+  **immediately after reading**, before any file-level mutation, so you
+  never mutate with a lifted selection hanging.
+  ```
+  lassoElements(rect);
+  const els = getLassoElements();
+  setLassoBoxState(2);            // <- close before mutating
+  insertElements([...]); // / deleteElements([...]);
+  ```
+
+There is a single global lasso selection (`setLassoBoxState` takes no id,
+and `lassoElements` replaces whatever is active), so one
+`setLassoBoxState(2)` closes whatever is currently open — the user's or
+yours.
+
+**Note:** `setLassoBoxState(2)` does **not** remove the need for
+`reloadFile()` after a file-level insert — you still call `reloadFile()` to
+refresh the canvas.
+
+**Observed:** beta build Chauvet 2.25.39 / 3.28.42 (2026-06). Derived
+empirically (the host-side cause is inferred), but the rule is validated:
+adding `setLassoBoxState(2)` after every lasso use eliminated the
+silent-no-op failures.

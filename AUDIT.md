@@ -36,8 +36,18 @@ These patterns are validated against community code and are correct as-is.
 
 Ranked roughly by risk / impact.
 
-### ① Missing `setLassoBoxState` after lasso operations  
-**Risk: HIGH — visual artifact / state corruption**
+### ① Missing `setLassoBoxState` after lasso operations — ✅ RESOLVED (commits `7c2d787`, this change)  
+**Risk: HIGH — visual artifact / state corruption** (turned out to be the latter — see below)
+
+**Resolved:** added `setLassoBoxState(2)` to dismiss the lasso in collapse
+(at end) and in expand/recollapse (right after the programmatic read-lasso,
+before file mutations). This removed the collapse flicker **and** cured the
+cumulative `insert`/`delete` silent-no-op desync, and fixed recollapse over
+pre-existing strokes. Two audit claims were wrong and corrected on-device:
+state 2 does **not** "trigger native undo" (shape-snap inserts then
+state-2's and the inserts persist), and `reloadFile` is **still required**
+for our file-level inserts (we kept it).
+
 
 In `collapseAction.ts`, after `deleteLassoElements()`, the lasso box is never dismissed. The Supernote firmware leaves the lasso selection UI in an undefined state. `prelude-rs/sn-align-plugin`, `guibor/supernote-half-size`, and `guibor/supernote-shape-snap` all call `setLassoBoxState(2)` (commit + release + trigger native undo) or `setLassoBoxState(0)` (show) at the end of every lasso-mutating operation to cleanly close the selection.
 
@@ -197,7 +207,7 @@ The following were surfaced during audit (cross-referencing `apclark31/supernote
 
 | # | Finding | Risk | File(s) |
 |---|---------|------|---------|
-| ① | No `setLassoBoxState(2)` after lasso mutations | HIGH | `collapseAction.ts`, `expandAction.ts`, `recollapseAction.ts` |
+| ① | ~~No `setLassoBoxState(2)` after lasso mutations~~ ✅ RESOLVED (`7c2d787`+) — also cured the desync | HIGH | `collapseAction.ts`, `expandAction.ts`, `recollapseAction.ts` |
 | ② | No re-entrancy guard on button listener | HIGH | `index.js` |
 | ③ | Excessive `saveCurrentNote` calls | MEDIUM | `expandAction.ts`, `recollapseAction.ts` |
 | ④ | Multiple `reloadFile` calls per operation | MEDIUM | `expandAction.ts`, `recollapseAction.ts` |
