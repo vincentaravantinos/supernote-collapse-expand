@@ -123,17 +123,6 @@ Both are absent from the assignment. `jpmoo/compass` (a link-heavy plugin) sets 
 
 ---
 
-### ⑥ No `clearElementCache()` after `getElements`  
-**Risk: LOW-MEDIUM — stale reads in subsequent calls**
-
-`expandAction.ts` and `recollapseAction.ts` call `getElements` to read current page state. `jpmoo/compass` and `taoist22/sn-restyle` call `clearElementCache()` after each `getElements` round-trip to prevent the SDK from returning cached (stale) data in subsequent calls.
-
-Our `userDataManager.getCurrentIconRect` calls `getElements` but does not follow it with `clearElementCache()`.
-
-**Fix**: add `await noteAPI.clearElementCache()` (or equivalent) after each `getElements` call in `userDataManager.ts`, `expandAction.ts`, and `recollapseAction.ts`.
-
----
-
 ### ⑦ Magic numbers for element types  
 **Risk: LOW — readability / future proofing**
 
@@ -200,7 +189,6 @@ The following were surfaced during audit (cross-referencing `apclark31/supernote
 - **Error 904** — lasso context expires after `insertText` + save, or after page navigation. `deleteLassoElements` returns 904 in an expired context. Must not call lasso-context APIs after saving.
 - **`replaceElements` adjacent-stroke shift** — some community notes report that `replaceElements` can shift strokes that are adjacent to (but not inside) the replaced element set. Unconfirmed; worth testing if we adopt `replaceElements`.
 - **`setLassoBoxState` semantics** — state 0: show lasso, state 1: hide menu but keep selection, state 2: commit + release + trigger native undo. Using state 2 after a lasso mutation closes the selection cleanly and may eliminate the need for `reloadFile` in some flows.
-- **`clearElementCache()` necessity** — subsequent `getElements` calls within the same plugin session may return cached (stale) data if `clearElementCache()` is not called between reads. Call it after every `getElements` round-trip.
 - **Intermediate saves** — `saveCurrentNote` between `insertElements` and `modifyElements` within a single logical operation is not required. One pre-read save + one post-write save suffices. (Full-screen plugin finding from `apclark31`; validate on-device for headless.)
 
 ---
@@ -214,7 +202,6 @@ The following were surfaced during audit (cross-referencing `apclark31/supernote
 | ③ | Excessive `saveCurrentNote` calls | MEDIUM | `expandAction.ts`, `recollapseAction.ts` |
 | ④ | Multiple `reloadFile` calls per operation | MEDIUM | `expandAction.ts`, `recollapseAction.ts` |
 | ⑤ | `buildLink` omits `controlTrailNums` + `page` (latent bug) | MEDIUM | `elementSerializer.ts` |
-| ⑥ | No `clearElementCache()` after `getElements` | LOW-MED | `userDataManager.ts`, `expandAction.ts`, `recollapseAction.ts` |
 | ⑦ | Magic numbers for element types | LOW | `constants.ts` |
 | ⑧ | `alert()` for user feedback | LOW | multiple |
 | ⑨ | ~~`sn-plugin-lib` version lag~~ ✅ RESOLVED (`ae7452a`) | LOW | `package.json` |
