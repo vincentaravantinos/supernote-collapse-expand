@@ -166,7 +166,7 @@ No community plugin examined uses `alert()`.
 ---
 
 ### ⑨ `sn-plugin-lib` version lag  
-**Risk: LOW — missing newer APIs**
+**Risk: LOW — missing newer APIs** — ✅ **RESOLVED** (commit `ae7452a`, 2026-06-08): declared range / lockfile / installed were a three-way mismatch (`^0.1.19` / `0.1.34` / `0.1.43`); installed `sn-plugin-lib@latest` to align all three at `0.1.43`. No runtime change — the bundle was already on 0.1.43.
 
 `package.json` declares `"sn-plugin-lib": "^0.1.19"` but the lockfile resolves to `0.1.34`. The community is on `0.1.43`. New APIs available in `0.1.43` but not `0.1.34`:
 
@@ -217,6 +217,6 @@ The following were surfaced during audit (cross-referencing `apclark31/supernote
 | ⑥ | No `clearElementCache()` after `getElements` | LOW-MED | `userDataManager.ts`, `expandAction.ts`, `recollapseAction.ts` |
 | ⑦ | Magic numbers for element types | LOW | `constants.ts` |
 | ⑧ | `alert()` for user feedback | LOW | multiple |
-| ⑨ | `sn-plugin-lib` version lag (0.1.34 vs 0.1.43) | LOW | `package.json` |
+| ⑨ | ~~`sn-plugin-lib` version lag~~ ✅ RESOLVED (`ae7452a`) | LOW | `package.json` |
 | — | Coordinate space for synthesized shapes | VERIFY | `elementSerializer.ts`, `maskHelpers.ts` |
 | — | Cross-device canvas guard | VERIFY | `expandAction.ts`, `recollapseAction.ts` |
