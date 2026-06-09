@@ -287,7 +287,7 @@ developer flagged that scanning a page's strokes via the JS accessor methods
 exactly *our* `serialize` cost in collapse (~1.1s for ~50 strokes) and the
 per-stroke `build` cost in expand.
 
-- **Native Java element-query path (faster queries).** The latest plugin
+- **Native Java host API (bypasses the JS bridge).** The latest plugin
   runtime exposes the host Java APIs. From a native module:
   ```java
   PluginModule pluginModule =
@@ -295,11 +295,27 @@ per-stroke `build` cost in expand.
   PluginAppAPI pluginApp = pluginModule.getPluginApp();
   // pluginApp -> interfaces in HostCommonAPI
   ```
-  Dunn-sn: this "should help improve the efficiency of element queries." It
-  means dropping into **native Java** (writing an Android native module in the
-  plugin), not just TS — a real lift, but the sanctioned way to beat the
-  JS-bridge accessor overhead if `serialize`/`build` ever become the
-  bottleneck we must fix.
+  `HostCommonAPI` (see `node_modules/sn-plugin-lib/android/.../api/HostCommonAPI.java`)
+  is the **full** host surface — not just reads. It has the writes too
+  (`insertElements`, `modifyElements`, `deleteElements`, `replaceElements`,
+  `insertGeometry`, `insertText`, …), the reads (`getElements`, plus lighter
+  `getElement(num)`, `getElementCounts`, `getElementNumList`, `getLastElement`),
+  and `PluginAppAPI` adds `readTrailsFromFile(path)` + direct trail-cache access.
+
+  The real lever of going native is **bypassing the React Native JS↔native
+  bridge marshalling**, which is what makes our hot phases slow:
+  - **`serialize` / `build`** today do `points.size()` + `getRange()` (or
+    `createElement` + `setRange`) **per stroke** = ~100–200 bridge round-trips
+    at ~6 ms each. Native reads/writes the `Trail` objects directly with no
+    per-stroke round-trips → these should drop to ~tens of ms. **Big win.**
+  - **`insertElements` / `modifyElements`** would skip marshalling the giant
+    point `ReadableArray` across the bridge, but the **host-side commit/render
+    still runs inside `HostCommonAPI` regardless of caller** — so it's a
+    *partial* win. How much of the ~8.6s insert is bridge-marshalling vs.
+    host-commit is unmeasured.
+
+  Cost: a real **native Android module** in the plugin (Java, matching the
+  SDK's `Trail` format, native build/test) — a different beast from our TS.
 
 - **Background execution.** Plugins *can* run in the background: either RN's
   official **Headless JS**, or a **background thread in Java**. Relevant if we
@@ -313,7 +329,12 @@ per-stroke `build` cost in expand.
   its semantics are documented — consistent with our "don't build on vague
   SDK APIs" rule. Flagged here only as a possible future lever.
 
-**Bottom line for us:** the JS accessor reads are the known slow path; the
-native `HostCommonAPI` route is the vendor's answer for speed, at the cost of
-native code. Keep in pocket; revisit only if profiling says `serialize`/`build`
-(not `insertElements`, which is the inherent floor) is the thing to beat.
+**Bottom line for us:** going native (HostCommonAPI) would strongly help the
+per-stroke `serialize`/`build` phases (it removes the per-stroke bridge
+round-trips) and *partially* help the big writes (skips payload marshalling;
+the host commit/render remains). It's a real native-code project, so keep it
+in pocket and only pursue it if speed becomes the priority. Cheaper first step
+to explore from TS: the lighter read APIs (`getElementNumList` + `getElement`,
+`getElementCounts`) to fetch only what we need instead of full-page
+`getElements` — and for expand specifically, trusting the lassoed TEXT icon's
+rect to skip the icon-rect `getElements` entirely.
