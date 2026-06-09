@@ -71,11 +71,13 @@ export async function expandAction(
   }
   console.log(`${LOG} PERF expand build=${Date.now() - tBuild}ms for ${fileElements.length} element(s)`);
 
+  let insertOk = true;
   if (fileElements.length > 0) {
     const tIns = Date.now();
     const ins: any = await PluginFileAPI.insertElements(filePath, page, fileElements);
     console.log(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
-    if (!ins?.success) {
+    insertOk = !!ins?.success;
+    if (!insertOk) {
       console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
     }
     for (const el of fileElements) {
@@ -91,11 +93,23 @@ export async function expandAction(
   // displayed copy FROM the real file, which deterministically surfaces the
   // inserts (confirmed: reloadFile shows the full count even when the async
   // sync never landed). See SDK_DOC.md ("Plugin writes hit the REAL file …").
-  section.isExpanded = true;
-  section.iconRect = iconRectNow;
+  // While expanded, the collapsed content is live on the page as CE_PART
+  // elements, and recollapse rebuilds the payload by re-serializing those — so
+  // the icon's userData does NOT need to carry `collapsedElements` while
+  // expanded. Drop them so we don't rewrite the whole payload just to flip
+  // `isExpanded`. Only drop when the insert SUCCEEDED, preserving the invariant
+  // of exactly one durable copy of the content: in userData while collapsed, on
+  // the page (CE_PART) while expanded. If the insert failed, keep the full
+  // payload in userData as the fallback so nothing is lost.
+  const expandedState: CollapseSection = {
+    ...section,
+    isExpanded: true,
+    iconRect: iconRectNow,
+    collapsedElements: insertOk ? [] : section.collapsedElements,
+  };
 
   const tWrite = Date.now();
-  const ok = await writeSection(filePath, page, iconElement, section);
+  const ok = await writeSection(filePath, page, iconElement, expandedState);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
   console.log(`${LOG} PERF expand writeSection=${Date.now() - tWrite}ms`);
 

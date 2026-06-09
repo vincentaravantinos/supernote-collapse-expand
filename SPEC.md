@@ -81,7 +81,7 @@ returns control to the user.
 
 | Prefix | Element role | Lifecycle |
 |---|---|---|
-| `CE_PLUG:<json>` | The section's `+` icon. Carries the full `CollapseSection` JSON. | Created on collapse, updated on expand/recollapse, deleted only if the section is destroyed. |
+| `CE_PLUG:<json>` | The section's `+` icon. Carries the `CollapseSection` JSON. While **collapsed** it includes the full `collapsedElements`; while **expanded** that array is dropped (the content is live on the page as `CE_PART`, and recollapse rebuilds it from there) to avoid rewriting the whole payload on every expand. | Created on collapse, updated on expand/recollapse, deleted only if the section is destroyed. |
 | `CE_PART:<id>` | A piece of the section's original content currently shown on the page (one per restored stroke / text / link / geometry). | Inserted on expand, deleted on recollapse. |
 | `CE_MASK:<id>` | A polygon ring used to fake a filled rectangle that hides content behind the expanded section. | Inserted on expand, deleted on recollapse. |
 | (null) | Not ours — leave alone. The plugin must not claim or modify these. | — |
