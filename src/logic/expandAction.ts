@@ -1,6 +1,5 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, LOG } from '../constants';
-import { dumpElements } from '../utils/diagnostics';
 import { buildElement } from '../utils/elementSerializer';
 import { getCurrentIconRect, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
@@ -12,12 +11,14 @@ export async function expandAction(
   filePath: string,
   page: number,
 ) {
+  // SIZE PROBE: the round-tripped userData length read back from the icon. If
+  // this is much smaller than what collapse wrote, the userData was truncated
+  // (real ceiling); if it matches, big payloads survive the write/read.
+  console.log(`${LOG} SIZE expand icon userData=${iconElement?.userData?.length ?? 0} bytes, collapsed=${section.collapsedElements?.length ?? 0} element(s)`);
+
   // Flush any in-flight strokes the user drew while collapsed so getElements
-  // below sees them, then dump page state at expand entry. This lets us
-  // diagnose whether pre-expand user strokes (drawn around the icon) survive
-  // the expand → recollapse cycle.
+  // below sees them.
   await PluginNoteAPI.saveCurrentNote();
-  await dumpElements('DIAG expand entry', filePath, page);
 
   // Read the icon's CURRENT rect from the persisted element list, not from
   // the lassoed element (which can report a stale rect after a move).
@@ -89,11 +90,15 @@ export async function expandAction(
       try { el.recycle?.(); } catch { /* ignore */ }
     }
   }
-  await dumpElements('DIAG expand after insert', filePath, page);
 
-  await PluginNoteAPI.saveCurrentNote();
-  await dumpElements('DIAG expand after save', filePath, page);
-
+  // Deliberately NO saveCurrentNote here. insertElements wrote the content to
+  // the REAL note file; saveCurrentNote would push the (often still-stale)
+  // CACHED/displayed copy back over the real file and clobber the inserts. The
+  // SDK's async real→cached sync is unreliable — it sometimes never fires, so
+  // getElements can stay stale for >10s. reloadFile below instead reloads the
+  // displayed copy FROM the real file, which deterministically surfaces the
+  // inserts (confirmed: reloadFile shows the full count even when the async
+  // sync never landed). See SDK_DOC.md ("Plugin writes hit the REAL file …").
   section.isExpanded = true;
   section.iconRect = iconRectNow;
 

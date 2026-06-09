@@ -213,3 +213,66 @@ refresh the canvas.
 empirically (the host-side cause is inferred), but the rule is validated:
 adding `setLassoBoxState(2)` after every lasso use eliminated the
 silent-no-op failures.
+
+> **Update (2026-06-09):** the deeper, vendor-confirmed cause of the
+> silent-no-op drift is the real↔cached file split below. The lasso rule
+> still holds, but the real fix for "write reports success but nothing
+> appears" is `reloadFile`, not lasso hygiene.
+
+## Plugin writes hit the REAL file; the open note renders a CACHED copy synced ASYNC — use `reloadFile` to surface a write, and never `saveCurrentNote` right after one
+
+**The model (confirmed by Ratta dev Dunn-sn, r/Supernote_dev, 2026-06).** An
+open note does **not** render its real `.note` file directly — it renders a
+**cached copy** (a crash-safety design). `insertElements` / `deleteElements`
+operate on the **real** file. After the write, the host kicks off an
+**asynchronous** real→cached sync so the open note picks up the change. That
+sync **may not have finished when the write API returns**.
+
+Consequences a plugin must design around:
+
+- **`getElements` on the currently-open note reads the CACHED copy** (it
+  reads the real file only for notes that are *not* open). So a `getElements`
+  immediately after a write can read **stale** data — the inserted elements
+  aren't visible yet, a deleted element is still there. The call still
+  returns `success: true`. We observed the cached copy stay stale for **>10 s
+  (sometimes apparently never)** — it is not merely a short delay you can
+  poll out.
+
+- **`saveCurrentNote` after a plugin write is dangerous.** `saveCurrentNote`
+  writes the **cached** (displayed) copy back to the **real** file. If you
+  call it before the real→cached sync has landed, you overwrite the real
+  file with the *stale* cached copy — **clobbering** your just-inserted
+  elements, or **re-adding** ones you just deleted. This is the single
+  biggest cause of "collapse/expand did nothing": not the SDK losing the
+  write, but us saving the stale cache over it.
+
+- **`reloadFile()` is the reliable fix.** It reloads the displayed/cached
+  copy **from the real file**, deterministically surfacing your write —
+  confirmed to show the full, correct element set **even when the async sync
+  never landed**. So the robust pattern after a file-level mutation is:
+
+  ```
+  insertElements([...]);   // or deleteElements([...])  -> writes REAL file
+  // do NOT saveCurrentNote here (it would save the stale cache over the write)
+  reloadFile();            // cached := real; the change now renders
+  ```
+
+  If you must `saveCurrentNote` (e.g. to flush user strokes), do it
+  **before** the plugin write, not after.
+
+**Diagnostic signature.** In note-app logs the two copies disagree:
+`insertPageTrails exist Trails:N` / `getNotePageData jniTrailContainers
+size:N` (real-file container, includes not-yet-compacted "tombstone" slots,
+counts *all* slots) vs `NotePresenter mTrailNumber:M` (live/cached render).
+`getElements` returns only *live* elements (`getNotePageData ... trails
+size:K`), so it never exposes the gap directly.
+
+**Status:** Ratta acknowledged the bug and said they will make the sync
+consistent. Until then, `reloadFile` is the workaround. Reference:
+<https://www.reddit.com/r/Supernote_dev/comments/1tdw909/comment/oq2vgqc/>
+
+**Related:** `modifyElements` has separately returned error **102 "This app
+is not allowed to use this API. Please call a different API."** when invoked
+while the note is mid-reload / not in a stable editable state (e.g. right
+after a crash or during a long hung operation). Treat a stable, loaded note
+as a precondition for `modifyElements`.

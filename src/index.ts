@@ -1,5 +1,5 @@
 import { PluginCommAPI } from 'sn-plugin-lib';
-import { LOG } from './constants';
+import { BUILD_TAG, LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
 import { summarizeElements, summarizeSection } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
@@ -19,12 +19,34 @@ const DIAGNOSTIC_REPRO_MODE = false;
 // (audit ②). Ignore re-entrant presses until the current one finishes.
 let isRunning = false;
 
+// DRIFT PROBE (temporary): a monotonic per-action counter so the logcat is
+// self-segmenting. Each action emits "[CE-PROBE] #N <TYPE> BEGIN/END" markers;
+// the note app's own "exist Trails:" (leaking plugin trail cache) and
+// "mTrailNumber" (live render model) lines fall between them, so drift_watch.sh
+// can render one drift row per action and Ratta can read the raw log directly.
+// Resets to 0 only when the pluginhost process restarts. Strip once reported.
+let actionSeq = 0;
+const PROBE = `${LOG} [CE-PROBE]`;
+
 export async function handleMainAction() {
   if (isRunning) {
     console.log(`${LOG} handleMainAction already running — ignoring re-entrant button press`);
+    // Tell the user the rejection is intentional — otherwise a swallowed tap
+    // looks like a broken button. This fires while a prior collapse/expand is
+    // still in flight (operations can take several seconds, longer as the note
+    // grows). Critical feedback, so it justifies an alert() despite audit ⑧.
+    alert('Collapse/Expand is still busy — please wait a moment.');
     return;
   }
   isRunning = true;
+  // Watchdog: if an SDK call hangs (e.g. the note enters a bad state after a
+  // failed insert), the finally below never runs and the guard would wedge
+  // the button permanently. Release it after a generous timeout so the plugin
+  // self-recovers and the user can try again.
+  const watchdog = setTimeout(() => {
+    console.error(`${LOG} handleMainAction watchdog fired (operation hung >20s) — releasing re-entrancy guard`);
+    isRunning = false;
+  }, 20000);
   try {
     const filePathRes: any = await PluginCommAPI.getCurrentFilePath();
     const pageRes: any = await PluginCommAPI.getCurrentPageNum();
@@ -62,6 +84,11 @@ export async function handleMainAction() {
       }
     }
 
+    actionSeq++;
+    const actionType = iconElement && section
+      ? (section.isExpanded ? 'RECOLLAPSE' : 'EXPAND')
+      : 'COLLAPSE';
+    console.info(`${PROBE} #${actionSeq} ${actionType} BEGIN page=${page} build=${BUILD_TAG}`);
     try {
       if (iconElement && section) {
         if (section.isExpanded) {
@@ -76,6 +103,7 @@ export async function handleMainAction() {
         await collapseAction(filePath, page, elements);
       }
     } finally {
+      console.info(`${PROBE} #${actionSeq} ${actionType} END`);
       for (const el of elements) {
         try { el.recycle?.(); } catch { /* ignore */ }
       }
@@ -84,6 +112,7 @@ export async function handleMainAction() {
     console.error(`${LOG} Plugin action failed:`, error);
     alert('An error occurred during processing.');
   } finally {
+    clearTimeout(watchdog);
     isRunning = false;
   }
 }

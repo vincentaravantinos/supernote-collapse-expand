@@ -103,8 +103,14 @@ returns control to the user.
   elements apart from content drawn during expansion.
 
 The serialised section payload (prefix + JSON) must fit in
-`MAX_USERDATA_BYTES` (48 KB). If a collapse or recollapse would exceed
+`MAX_USERDATA_BYTES` (512 KB). If a collapse or recollapse would exceed
 that, the plugin must refuse with a clear message rather than truncate.
+(The earlier 48 KB value was an arbitrary day-one guess; measured
+2026-06-09, the `.note` format persists a 425 KB single-element `userData`
+intact and a 223-stroke / 367 KB section round-trips through
+collapse→expand cleanly. 512 KB stays well under the ~1 MB binder
+transaction limit. Compact stroke encoding, if added, raises the effective
+stroke count further within the same byte budget.)
 
 ## Visual masking
 

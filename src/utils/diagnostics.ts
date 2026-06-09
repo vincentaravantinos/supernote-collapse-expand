@@ -1,6 +1,3 @@
-import { PluginFileAPI } from 'sn-plugin-lib';
-import { LOG } from '../constants';
-
 export function summarizeElement(el: any): string {
   if (!el) return '(null)';
   const parts: string[] = [
@@ -43,10 +40,4 @@ export function summarizeSection(section: any): string {
     ` relRect=(${rr.width}x${rr.height}@${rr.left},${rr.top})` +
     ` collapsed=${section.collapsedElements?.length ?? 0}${kindStr ? ` [${kindStr}]` : ''}` +
     ` preservedNums=[${preserved.join(',')}])`;
-}
-
-export async function dumpElements(label: string, filePath: string, page: number): Promise<void> {
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
-  console.log(`${LOG} ${label} ${summarizeElements(all)}`);
 }

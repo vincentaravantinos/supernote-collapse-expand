@@ -66,6 +66,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   };
 
   const payload = CE_PLUG_PREFIX + JSON.stringify(section);
+  console.log(`${LOG} SIZE collapse payload=${payload.length} bytes for ${collapsed.length} element(s)`);
   if (payload.length > MAX_USERDATA_BYTES) {
     alert('Selection too large to collapse. Pick a smaller area.');
     return;
@@ -114,11 +115,18 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  await PluginNoteAPI.saveCurrentNote();
+  // Deliberately NO saveCurrentNote after the insert. insertElements wrote the
+  // icon to the REAL note file; saving the (possibly stale) CACHED/displayed
+  // copy back over it could clobber the icon. reloadFile below reloads the
+  // displayed copy FROM the real file so the icon reliably appears (the SDK's
+  // async real→cached sync is unreliable). See SDK_DOC.md.
 
   // Dismiss the selection box left by the user's lasso + deleteLassoElements
   // (audit ①). state 2 = "Completely remove" — the standard cleanup after a
   // lasso-mutating op (cf. guibor/supernote-shape-snap, which calls
   // setLassoBoxState(2) after deleteLassoElements + insert).
   await PluginCommAPI.setLassoBoxState(2);
+
+  // Reload the displayed copy from the real file so the inserted icon appears.
+  await PluginCommAPI.reloadFile();
 }

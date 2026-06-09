@@ -89,6 +89,12 @@ export async function serializeElement(el: any): Promise<SerializedElement | nul
   if (type === ELEMENT_TYPES.LINK) {
     const lk = el.link;
     if (!lk) return null;
+    // Stroke links (category 1) reference the strokes that form them via
+    // controlTrailNums, which don't survive a collapse round-trip — the SDK
+    // rejects a rebuilt stroke link that has no control nums (error 510). We
+    // can't faithfully restore them, so don't collapse them (the strokes
+    // themselves still collapse). Text links (category 0) round-trip fine.
+    if ((lk.category ?? 0) === 1) return null;
     const data: SerializedLink = {
       kind: 'link',
       category: lk.category ?? 0,
@@ -216,6 +222,12 @@ async function buildLink(
   dx: number,
   dy: number,
 ): Promise<any | null> {
+  // Defensive: never rebuild a stroke link (category 1). Its controlTrailNums
+  // can't be restored, and inserting one with empty control nums throws error
+  // 510 (which can hang the whole expand). New collapses already skip these in
+  // serializeElement; this also covers links collapsed before that guard
+  // existed. (expandAction logs the null return.)
+  if (data.category === 1) return null;
   const res: any = await PluginCommAPI.createElement(ELEMENT_TYPES.LINK);
   if (!res?.success || !res.result) return null;
   const element: any = res.result;
@@ -227,6 +239,10 @@ async function buildLink(
     Y: rect.top,
     width: rect.right - rect.left,
     height: rect.bottom - rect.top,
+    // `page` is the page the link LIVES on (current page), not its jump
+    // target — that's `destPage`. The SDK `Link` model defaults both to 0;
+    // omitting them on a rebuilt link risks error 502 (audit ⑤).
+    page,
     style: data.style,
     linkType: data.linkType,
     destPath: data.destPath,
@@ -235,6 +251,9 @@ async function buildLink(
     fullText: data.fullText,
     showText: data.showText,
     italic: data.italic,
+    // Stroke-link trail IDs. We don't carry them across collapse, and stale
+    // refs would throw 502, so reset to [] (correct for text links).
+    controlTrailNums: [],
   };
   element.pageNum = page;
   if (userData !== null) element.userData = userData;
