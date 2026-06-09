@@ -72,6 +72,22 @@ export function readUserData(element: any): UserDataKind {
   return null;
 }
 
+// Resolve the section's icon element FRESH from getElements (by section id),
+// rather than trusting a lassoed snapshot. Returns null if not found.
+async function resolveFreshIcon(
+  filePath: string,
+  page: number,
+  sectionId: string,
+): Promise<any | null> {
+  const allRes: any = await PluginFileAPI.getElements(page, filePath);
+  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  for (const el of all) {
+    const ud = readUserData(el);
+    if (ud?.kind === 'section' && ud.section?.id === sectionId) return el;
+  }
+  return null;
+}
+
 export async function writeSection(
   filePath: string,
   page: number,
@@ -79,9 +95,18 @@ export async function writeSection(
   section: CollapseSection,
 ): Promise<boolean> {
   try {
-    iconElement.userData = CE_PLUG_PREFIX + JSON.stringify(section);
-    iconElement.pageNum = page;
-    const res: any = await PluginFileAPI.modifyElements(filePath, page, [iconElement]);
+    // Target the FRESH icon from getElements, not the passed (lassoed) element.
+    // After the user moves the icon, the lassoed snapshot's identity
+    // (numInPage) is stale, so modifyElements on it misses the real icon and
+    // the userData update (e.g. isExpanded=true on expand) never persists —
+    // which made a subsequent recollapse get misread as an expand and
+    // double-insert. This is the write-side twin of the stale picture.rect bug
+    // (already worked around for reads via iconRectFromElements/getCurrentIconRect).
+    // Fall back to the lassoed element only if the fresh lookup fails.
+    const target = (await resolveFreshIcon(filePath, page, section.id)) ?? iconElement;
+    target.userData = CE_PLUG_PREFIX + JSON.stringify(section);
+    target.pageNum = page;
+    const res: any = await PluginFileAPI.modifyElements(filePath, page, [target]);
     if (!res?.success) {
       console.error(`${LOG} modifyElements res=${JSON.stringify(res)}`);
     }

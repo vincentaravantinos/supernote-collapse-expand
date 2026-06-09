@@ -112,6 +112,22 @@ first so `getElements` reflects the move. Implemented as
 `iconRectFromElements` / `getCurrentIconRect` in `userDataManager.ts`,
 used by `expandAction` and `recollapseAction`.
 
+**The staleness bites WRITES too, not just reads (2026-06-09, text icon).**
+The lassoed element is a stale snapshot of its *identity* as well: after a
+move, `modifyElements([lassoedElement])` targets the element's stale
+`numInPage`, so the write **misses the real (moved) element and silently does
+not persist** — `modifyElements` even reports success. We hit this updating
+the section icon's `userData` on expand: after *move → expand*, `isExpanded`
+never persisted, so the next tap (intended recollapse) re-read `isExpanded=false`
+and ran a second **expand**, double-inserting. (Recollapse's icon write had the
+same latent bug.) Confirmed with a re-read-after-write probe:
+`persistedIsExpanded=false` in the move case, `true` with no move. **Fix: also
+resolve the icon FRESH from `getElements` by section id before
+`modifyElements`** — never modify the lassoed element directly. Implemented as
+`resolveFreshIcon` inside `writeSection` (`userDataManager.ts`). Rule of thumb:
+treat a lassoed element as read-only *and* identity-stale after any move — use
+it to find the section, then both read and write via the `getElements` copy.
+
 **Side note (separate bug)**: `getElements` reports the moved picture's
 rect as ~14×14 although it was inserted at 50×50 (`ICON_SIZE`); the icon
 also visibly shrinks to the user after a move. Only the top-left is used
