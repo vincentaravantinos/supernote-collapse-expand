@@ -26,6 +26,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   const lasso = lassoRes.result;
 
   const collapsed: CollapsedElement[] = [];
+  const tSer = Date.now();
   for (const el of elements) {
     if (el.type === ELEMENT_TYPES.PICTURE) continue;
     if (el.type === ELEMENT_TYPES.TITLE) continue;
@@ -37,6 +38,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
     }
   }
 
+  console.log(`${LOG} PERF collapse serialize=${Date.now() - tSer}ms for ${collapsed.length} element(s)`);
   if (collapsed.length === 0) {
     alert('Nothing collapsable in selection.');
     return;
@@ -72,14 +74,19 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
+  const tDel = Date.now();
   const delRes: any = await PluginCommAPI.deleteLassoElements();
   if (!delRes?.success) {
     console.error(`${LOG} deleteLassoElements failed`);
     alert('Failed to remove selected content.');
     return;
   }
+  console.log(`${LOG} PERF collapse deleteLasso=${Date.now() - tDel}ms`);
 
+  const tSave = Date.now();
   await PluginNoteAPI.saveCurrentNote();
+  console.log(`${LOG} PERF collapse saveCurrentNote=${Date.now() - tSave}ms`);
+  const tIns = Date.now();
 
   // VALIDATION STEP: create the icon as a TEXT element (⊕) instead of a
   // picture, to dodge the entire class of picture-element SDK bugs (phantom
@@ -115,6 +122,8 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
+  console.log(`${LOG} PERF collapse create+insert=${Date.now() - tIns}ms`);
+
   // Deliberately NO saveCurrentNote after the insert. insertElements wrote the
   // icon to the REAL note file; saving the (possibly stale) CACHED/displayed
   // copy back over it could clobber the icon. reloadFile below reloads the
@@ -125,8 +134,10 @@ export async function collapseAction(filePath: string, page: number, elements: a
   // (audit ①). state 2 = "Completely remove" — the standard cleanup after a
   // lasso-mutating op (cf. guibor/supernote-shape-snap, which calls
   // setLassoBoxState(2) after deleteLassoElements + insert).
+  const tReload = Date.now();
   await PluginCommAPI.setLassoBoxState(2);
 
   // Reload the displayed copy from the real file so the inserted icon appears.
   await PluginCommAPI.reloadFile();
+  console.log(`${LOG} PERF collapse close+reload=${Date.now() - tReload}ms`);
 }

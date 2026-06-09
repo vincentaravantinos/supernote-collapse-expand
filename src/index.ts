@@ -39,14 +39,19 @@ export async function handleMainAction() {
     return;
   }
   isRunning = true;
-  // Watchdog: if an SDK call hangs (e.g. the note enters a bad state after a
-  // failed insert), the finally below never runs and the guard would wedge
-  // the button permanently. Release it after a generous timeout so the plugin
-  // self-recovers and the user can try again.
+  // Watchdog: if an SDK call truly hangs (the note enters a bad state and a
+  // call never returns), the finally below never runs and the guard would
+  // wedge the button permanently. Release it after a timeout so the plugin
+  // self-recovers. This is ONLY for genuine hangs — it must be longer than any
+  // legitimately-slow operation, because firing it while an op is still
+  // progressing re-opens the re-entrancy window. Large selections on big notes
+  // (serialize many strokes + insert + reloadFile re-render + the note app's
+  // own backup) can legitimately run tens of seconds, so 60s, not 20s.
+  const WATCHDOG_MS = 60000;
   const watchdog = setTimeout(() => {
-    console.error(`${LOG} handleMainAction watchdog fired (operation hung >20s) — releasing re-entrancy guard`);
+    console.error(`${LOG} handleMainAction watchdog fired (operation hung >${WATCHDOG_MS / 1000}s) — releasing re-entrancy guard`);
     isRunning = false;
-  }, 20000);
+  }, WATCHDOG_MS);
   try {
     const filePathRes: any = await PluginCommAPI.getCurrentFilePath();
     const pageRes: any = await PluginCommAPI.getCurrentPageNum();

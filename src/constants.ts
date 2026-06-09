@@ -3,7 +3,7 @@ export const LOG = '[CollapseExpand]';
 // Build stamp — logged at every action BEGIN so the trace tells us which build
 // is actually live (force-stop doesn't always re-extract a new .snplg). BUMP
 // THIS every deploy while debugging the reload, then confirm it in logcat.
-export const BUILD_TAG = 'r8-cap-512k';
+export const BUILD_TAG = 'r12-drop-preserved';
 
 export const ICON_SIZE = 50; // pixels
 // The collapsed-section icon is a TEXT glyph (⊕ = U+2295 CIRCLED PLUS),

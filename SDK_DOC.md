@@ -276,3 +276,44 @@ is not allowed to use this API. Please call a different API."** when invoked
 while the note is mid-reload / not in a stable editable state (e.g. right
 after a crash or during a long hung operation). Treat a stable, loaded note
 as a precondition for `modifyElements`.
+
+## Faster element access & background execution — vendor-pointed paths (not yet adopted)
+
+From Ratta dev **Dunn-sn** (r/Supernote_dev, "background processing and
+element access via File API",
+<https://www.reddit.com/r/Supernote_dev/comments/1tikmus/>). Context: a
+developer flagged that scanning a page's strokes via the JS accessor methods
+(`stroke.points.size()` + `getRange()` per element) is slow on A5X — which is
+exactly *our* `serialize` cost in collapse (~1.1s for ~50 strokes) and the
+per-stroke `build` cost in expand.
+
+- **Native Java element-query path (faster queries).** The latest plugin
+  runtime exposes the host Java APIs. From a native module:
+  ```java
+  PluginModule pluginModule =
+      getReactApplicationContext().getNativeModule(PluginModule.class);
+  PluginAppAPI pluginApp = pluginModule.getPluginApp();
+  // pluginApp -> interfaces in HostCommonAPI
+  ```
+  Dunn-sn: this "should help improve the efficiency of element queries." It
+  means dropping into **native Java** (writing an Android native module in the
+  plugin), not just TS — a real lift, but the sanctioned way to beat the
+  JS-bridge accessor overhead if `serialize`/`build` ever become the
+  bottleneck we must fix.
+
+- **Background execution.** Plugins *can* run in the background: either RN's
+  official **Headless JS**, or a **background thread in Java**. Relevant if we
+  ever want long collapse/expand work to proceed without the UI pinned (and to
+  the "show a busy indicator" problem — work could run off the main path).
+
+- **`getCacheElement` (PluginCommAPI).** Exists in the TS API but is barely
+  documented (open question, no vendor answer yet:
+  <https://www.reddit.com/r/Supernote_dev/comments/1tdw909/comment/omffwub/>).
+  Likely a cache-backed (faster) element read. **Gated**: do not adopt until
+  its semantics are documented — consistent with our "don't build on vague
+  SDK APIs" rule. Flagged here only as a possible future lever.
+
+**Bottom line for us:** the JS accessor reads are the known slow path; the
+native `HostCommonAPI` route is the vendor's answer for speed, at the cost of
+native code. Keep in pocket; revisit only if profiling says `serialize`/`build`
+(not `insertElements`, which is the inherent floor) is the thing to beat.
