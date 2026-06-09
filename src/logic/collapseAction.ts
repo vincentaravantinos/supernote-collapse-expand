@@ -44,8 +44,17 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  const iconLeft = Math.round(lasso.left);
-  const iconTop = Math.round(lasso.top);
+  // Place the icon half an icon-size up and to the left of the lasso area, so
+  // when the section is expanded the icon peeks out past the restored content
+  // + mask and stays easy to select (instead of being covered by it).
+  // relativeRect's offset compensates so the content still restores at its
+  // original lasso position. Clamp at the page edge so the icon never goes
+  // off-page.
+  const ICON_OFFSET = Math.round(ICON_SIZE / 2);
+  const lassoLeft = Math.round(lasso.left);
+  const lassoTop = Math.round(lasso.top);
+  const iconLeft = Math.max(0, lassoLeft - ICON_OFFSET);
+  const iconTop = Math.max(0, lassoTop - ICON_OFFSET);
   const iconRect: Rect = {
     left: iconLeft,
     top: iconTop,
@@ -58,8 +67,11 @@ export async function collapseAction(filePath: string, page: number, elements: a
     id: generateSectionId(),
     iconRect,
     relativeRect: {
-      left: 0,
-      top: 0,
+      // Offset from the icon's top-left to the content's top-left (= the icon
+      // shift, or less if clamped at the edge), so contentRect lands on the
+      // original lasso area.
+      left: lassoLeft - iconLeft,
+      top: lassoTop - iconTop,
       width: Math.round(lasso.right - lasso.left),
       height: Math.round(lasso.bottom - lasso.top),
     },

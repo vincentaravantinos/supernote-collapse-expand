@@ -19,7 +19,9 @@ button.
 
 **Outcome**:
 - The lassoed content disappears from the page.
-- A "+" icon appears at the top-left of where the lasso was.
+- A "+" icon appears just above-left of where the lasso was (offset by half
+  an icon size, clamped at the page edge), so it stays clear of the restored
+  content when the section is later expanded and remains easy to select.
 - The icon carries enough state to reproduce the original content
   (positions, ink properties, layer, …) on a later expand.
 - Pictures and titles in the lasso are left in place (not collapsable).
@@ -92,8 +94,12 @@ returns control to the user.
 - `id`: stable section identifier, used to associate parts/masks back to
   the icon.
 - `iconRect`: current bounding rect of the icon on the page.
-- `relativeRect`: size of the original lasso area, used to compute
-  `contentRect` from the current `iconRect`.
+- `relativeRect`: the content area relative to the icon's top-left —
+  `left`/`top` are the offset from the icon to the original content (half an
+  icon size, since the icon is placed above-left; less if clamped at the edge),
+  and `width`/`height` are the original lasso size. Used to compute
+  `contentRect` from the current `iconRect` (`contentRect = iconRect +
+  relativeRect offset, sized by relativeRect`).
 - `collapsedElements`: serialised originals, ordered to preserve Z-order
   on restore.
 - `isExpanded`: boolean — current state machine bit.
