@@ -5,7 +5,7 @@ import {
   CE_PLUG_PREFIX,
 } from '../constants';
 import { serializeElement } from '../utils/elementSerializer';
-import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
+import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 // EXPERIMENT (reproducibility probe): recollapse used to open a SECOND
@@ -38,9 +38,14 @@ export async function recollapseAction(
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
 
-  // Read the icon's CURRENT rect from this fresh list, not from the lassoed
-  // element (which can report a stale rect after a move).
-  const iconRectNow = iconRectFromElements(all, section, iconElement);
+  // Deliberately do NOT recompute the icon rect here. `section.iconRect` (from
+  // userData) is the EXPAND-TIME anchor the on-page strokes are aligned to; the
+  // icon's current physical position can differ if the user moved the icon
+  // WHILE EXPANDED (the strokes don't move with it). Keeping the stored anchor
+  // (it carries through via the `...section` spread below) keeps the strokes
+  // and section.iconRect consistent, so the next expand's emrDelta correctly
+  // carries the content to wherever the icon now is. (expand re-anchors
+  // iconRect on its side, so move-while-collapsed still works.)
 
   const maskEls: any[] = [];
   const partEls: any[] = [];
@@ -107,7 +112,7 @@ export async function recollapseAction(
     ...section,
     collapsedElements: newCollapsed,
     isExpanded: false,
-    iconRect: iconRectNow,
+    // iconRect kept from `...section` (the expand-time anchor) — see note above.
     preservedNums: undefined,
   };
 
