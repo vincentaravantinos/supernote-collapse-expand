@@ -13,8 +13,8 @@
   limitation: the device recomputes a stroke link's clickable area from its
   strokes and ignores the area we pass, so a re-inserted link's area is the
   strokes' tight bounding box rather than the slightly wider area an
-  interactively-drawn link reserves for its auto-icon (reported to Ratta — see
-  FEEDBACK.md).
+  interactively-drawn link reserves for its auto-icon (reported to Ratta on
+  r/Supernote_dev).
 
 - Fix: geometry-only selections can now be collapsed. The lasso button's
   `editDataTypes` listed stroke/title/image/text-box/link but omitted geometry

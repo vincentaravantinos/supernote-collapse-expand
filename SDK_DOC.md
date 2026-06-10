@@ -401,5 +401,5 @@ the link. Re-creating one via `insertElements` has several non-obvious rules:
   practical consequence: an interactively-drawn stroke link reserves extra
   lower-right room for the auto link-icon (its stored `width` includes it), but
   a re-inserted one gets the tight bbox instead, so the icon spills outside the
-  area and there's **no way to widen it from the plugin**. Logged for Ratta in
-  FEEDBACK.md. (Text links, `category = 0`, DO honor their passed rect.)
+  area and there's **no way to widen it from the plugin**. Reported to Ratta on
+  r/Supernote_dev. (Text links, `category = 0`, DO honor their passed rect.)

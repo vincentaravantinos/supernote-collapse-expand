@@ -46,7 +46,7 @@ through collapse/expand:
   Rejected/forced: omitting it fails (error 509, "Invalid link area"); supplying
   it is futile because the device recomputes a category-1 link's area from
   `controlTrailNums` and ignores ours. So we can't reproduce the wider area an
-  interactively-drawn link reserves for its auto-icon — logged as FEEDBACK.
+  interactively-drawn link reserves for its auto-icon — reported to Ratta.
 - *Keep the simple "insert main batch, then members with a separate baseline
   reload" flow (3 refreshes).* Rejected in favor of the batched 1-reload-per-link
   flow (2 refreshes for the common single-link case); the only cost is a subtle
