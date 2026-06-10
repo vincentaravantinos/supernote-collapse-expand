@@ -8,6 +8,44 @@
   containing only shapes — even though geometry was already serialized. Added
   `5`.
 
+- Fix: the core "the operation reports success but nothing happens" failure
+  (and crashes on large notes). The open note renders a *cached* copy of the
+  `.note` file while plugin writes (`insertElements`/`deleteElements`) go to the
+  *real* file, and the two are synced asynchronously. We now refresh the
+  displayed copy with `reloadFile` after a write, and no longer call
+  `saveCurrentNote` right after one (which was overwriting the real file with
+  the stale cached copy and silently discarding the write). Root cause
+  confirmed by the Supernote developer on r/Supernote_dev.
+
+- Fix: moving the `+` icon and then expanding no longer double-inserts the
+  content or loses the expanded state (which compounded and corrupted the
+  section over repeated cycles). The section state is now written to the icon
+  resolved fresh from `getElements`, not the stale lassoed element whose
+  identity goes stale after a move.
+
+- Fix: moving the `+` icon *while the section is expanded* no longer shifts the
+  restored strokes out of place on the next expand. Recollapse now keeps the
+  expand-time anchor instead of overwriting it with the icon's post-move
+  position, so the content correctly follows the icon.
+
+- Change: the `+` icon is now placed half an icon-size above-and-left of the
+  selection (clamped at the page edge), so when the section is expanded the icon
+  sits clear of the restored content and stays easy to select.
+
+- Change: larger selections can now be collapsed — the serialized-content size
+  limit was raised from 48 KB to 512 KB (the old value was an arbitrary guess;
+  the note format stores far more), so realistic dense selections fit.
+
+- Change: stroke links (handwriting recognized into a link) are skipped when
+  collapsing — their underlying-stroke references can't survive a collapse
+  round-trip and triggered an SDK error that could hang the expand. The strokes
+  themselves still collapse; ordinary text links collapse fine.
+
+- Fix: the plugin button can no longer get permanently stuck if an SDK call
+  hangs — a watchdog releases the re-entrancy guard after 60s. Tapping the
+  button while an operation is still running now shows a brief "still busy"
+  notice instead of silently doing nothing.
+
 - Fix: collapse/expand/recollapse now dismiss the lasso selection
   (`setLassoBoxState(2)`) instead of leaving it dangling. This removes the
   collapse flicker and, more importantly, fixes the cumulative failure where
@@ -26,29 +64,12 @@
   `iconShrinkWorkaround` (moved pictures rescaled to ~14×14), and the
   stale-lasso-rect handling. Icon position is read from `textBox.textRect`.
 
-- Fix: the `+` icon no longer stays shrunk after being moved. An SDK bug
-  rescales a moved picture element to ~14×14 when the move is committed
-  (any save, plugin or not). Since `modifyElements` can't reset a
-  picture's rect, expand/recollapse now re-create the icon at its proper
-  size when they detect it shrank. Isolated in
-  `src/utils/iconShrinkWorkaround.ts`; when the SDK fixes the rescale
-  (see FEEDBACK.md), delete that file and the two `restampIconIfShrunk`
-  calls in `expandAction.ts` / `recollapseAction.ts`.
-
 - Fix: expanding (or recollapsing) a section after moving its `+` icon now
   restores the content at the icon's new location instead of its original
   one. The icon's current position is read from `getElements` (matched by
   section id) rather than from the lassoed element, which reports a stale
-  pre-move rect for picture elements. See SDK_DOC.md / FEEDBACK.md.
+  pre-move rect. See SDK_DOC.md.
 
-- Change: the collapsed-section icon is now a bundled `icon_plus.png`
-  picture element instead of a `+` text glyph, so it renders
-  consistently regardless of the user's current pen / text style.
-- Fix: expand and recollapse no longer fail with SDK error 1211
-  ("PNG file does not exist") when updating the icon's `userData`. The
-  icon's `picture.picturePath` is now re-anchored to the bundled icon on
-  disk before `modifyElements`, instead of trusting the phantom cache
-  path the SDK returns from `getElements`.
 - Fix: pre-existing strokes drawn around a collapsed section no longer
   vanish after an expand → recollapse cycle. Their `numInPage` is recorded
   on the section state during expand and skipped from the absorb-and-delete
