@@ -1,405 +1,176 @@
-# Supernote SDK — Our Notebook
+# Supernote Plugin SDK — Reference Supplement
 
-What we've learned about the Supernote plugin SDK by experiment, beyond
-what the official docs at https://docs.supernote.com/en cover. The
-official docs are thin and frequently silent on the lifecycle of values
-the SDK returns; this file is the practical complement.
-
-For each entry: include the SDK version / observation date, the
-evidence (trace or adb output), and the implication for plugin code.
-If something here is also worth feeding back to Ratta, log it in
-FEEDBACK.md and link the two.
+A complement to the official plugin-SDK docs (https://docs.supernote.com/en),
+covering behavior they don't document or leave ambiguous. Written for plugin
+authors using the API: each section states how an API behaves and how to use it
+correctly. Keep entries factual and concise — describe the API, not how we
+discovered it.
 
 ---
 
-## Picture elements — `picture.picturePath` is rewritten on save to a phantom cache path
+## Picture elements: `picture.picturePath` is not stable across a round-trip
 
-**Observed**: 2026-05-29, against the current beta SDK build.
+When you insert a picture element you supply a real on-disk path (e.g. a bundled
+asset under your plugin directory). After the element is saved and read back via
+`getElements` / `getLassoElements`, its `picture.picturePath` is replaced with an
+SDK-internal cache reference of the form
+`/storage/emulated/0/.data/plugin/<millis>.png`. That cache path often does not
+exist on disk even though the picture renders correctly (the image bytes are
+stored with the note).
 
-**What happens**:
+- Treat `picture.picturePath` from a read-back element as opaque; do not rely on
+  it pointing to a readable file.
+- `modifyElements` on a picture reads the source image from `picture.picturePath`
+  and fails with **error 1211** ("PNG file does not exist. Cannot call the
+  API!") if it doesn't resolve to a readable file — even when you only intend to
+  change `userData`. Before calling `modifyElements`, re-assign
+  `picture.picturePath` to a path you control (e.g. re-resolve the bundled asset
+  via `PluginManager.getPluginDirPath()`).
 
-1. When inserting a picture element we provide a real on-disk path, e.g.
-   `/data/user/0/com.ratta.supernote.pluginhost/files/plugins/<plugin-id>/icon_plus.png`.
-2. `insertElements` does not mutate our in-memory element object — its
-   `picture.picturePath` still points at the bundled file after the call.
-3. After `saveCurrentNote`, re-reading the element via `getElements` (or
-   `getLassoElements`) returns a **different** `picturePath`, of the
-   form `/storage/emulated/0/.data/plugin/<millis>.png`. This is an
-   SDK-internal cache reference.
-4. The cache file at that path **does not actually exist** on disk
-   (verified with `adb shell ls`). Yet the picture renders correctly,
-   so the PNG bytes are presumably stored elsewhere — most likely
-   embedded inside the `.note` file alongside strokes.
-
-**Implication for plugin code**:
-
-- Never trust `picture.picturePath` from `getElements` /
-  `getLassoElements` round-trips. Treat it as opaque / unreliable.
-- Before calling any SDK API that reads the source PNG from
-  `picture.picturePath` (notably `modifyElements`), **re-anchor it to a
-  path you control**. For the icon, that means resolving the bundled
-  asset path fresh via `PluginManager.getPluginDirPath()` and assigning
-  `picture.picturePath = <pluginDir>/<filename>` before the call.
-- `modifyElements` on a picture element fails with error code 1211
-  ("PNG file does not exist. Cannot call the API!") if the
-  `picturePath` doesn't resolve to a readable file at call time. This
-  is true even when the only field you wanted to update was `userData`.
-
-**Where this is worked around in our code**: `src/utils/userDataManager.ts`
-inside `writeSection`.
-
-**Related FEEDBACK.md entry**: "Bug: `getElements` returns a
-`picture.picturePath` that doesn't exist on disk; `modifyElements` then
-fails with code 1211".
+The cache directory `/storage/emulated/0/.data/plugin/` accumulates one
+`<millis>.png` per picture insert and is not cleaned up (files persist after the
+note is deleted). This is device-side; a plugin cannot manage it.
 
 ---
 
-## Cache directory `/storage/emulated/0/.data/plugin/` is never cleaned up
+## Lassoed elements are stale after a move — read and write via `getElements`
 
-**Observed**: 2026-05-29.
+The elements from `getLassoElements` (the user's selection passed to your button
+handler) can be a **stale snapshot** of an element that has been moved:
 
-**What happens**: every picture insert appears to allocate a file name
-(of the form `<millis>.png`) in this directory. Whether the bytes are
-ever written there is inconsistent (see picture-path entry above), but
-either way the directory accumulates files indefinitely — we observed
-**159 files** going back over a month on a single device, including
-many that survived note deletion.
+- **Position is stale.** A moved picture's `picture.rect` from `getLassoElements`
+  is the pre-move position. (For pictures no other position field is populated:
+  top-level `rect`, `x/y`, `boundingRect` are absent; `maxX/maxY` are page EMR
+  dimensions, not a position.) `getElements` returns the current position.
+- **Identity is stale.** The lassoed element's `numInPage` can also be stale, so
+  `modifyElements([lassoedElement])` targets the wrong slot and **silently fails
+  to persist** while still reporting success.
 
-**Implication for plugin code**: nothing actionable on our side, but
-worth knowing this is a slow disk leak on the device and not a
-plugin-side bug if a user reports it.
-
-**Related FEEDBACK.md entry**: "Side observation (cache leak)" inside
-the picture-path bug section.
-
----
-
-## `getLassoElements` returns a STALE `picture.rect` after a move; `getElements` is fresh
-
-**Observed**: 2026-06-05, on Manta/A5X plugin-preview beta build
-`Chauvet.D102.2605151001.2337_beta` (build date 2026-05-15 — the
-2026-05-15 plugin-preview from r/Supernote_dev post `1tdw909`).
-
-**Context**: that build's changelog explicitly claims:
-
-> Fixed an issue where the coordinates retrieved through the API did not
-> update after moving an element and still showed the pre-move values.
-
-For **picture** elements that fix only reaches the persisted
-`getElements` path, **not** the element handed back by
-`getLassoElements`.
-
-**Trace evidence** (one move-then-expand cycle; section saved at
-`iconRect=[448,614,498,664]`, then the icon was dragged):
-
-- `getLassoElements` element: `picture.rect=[448,614,498,664]` — the
-  **pre-move** position (stale). No other position field is populated on
-  a picture element (`textBox.textRect`, top-level `rect`, `x/y`,
-  `boundingRect` are all absent; `maxX/maxY` are page EMR dimensions, not
-  a position).
-- Same icon (`numInPage=5`) via `getElements` after `saveCurrentNote`:
-  `picture.rect=[585,1123,599,1137]` — the **moved** position.
-
-Consistent with the already-documented phantom-cache behaviour of
-lassoed picture elements (see the `picture.picturePath` entry above): the
-lassoed picture element is served from a stale cache.
-
-**Implication for plugin code**: to read a picture icon's *current*
-position (e.g. to translate restored content by how far the user moved
-the icon), resolve it from `getElements` matched by our `userData`
-section id — never from the lassoed element. Flush with `saveCurrentNote`
-first so `getElements` reflects the move. Implemented as
-`iconRectFromElements` / `getCurrentIconRect` in `userDataManager.ts`,
-used by `expandAction` and `recollapseAction`.
-
-**The staleness bites WRITES too, not just reads (2026-06-09, text icon).**
-The lassoed element is a stale snapshot of its *identity* as well: after a
-move, `modifyElements([lassoedElement])` targets the element's stale
-`numInPage`, so the write **misses the real (moved) element and silently does
-not persist** — `modifyElements` even reports success. We hit this updating
-the section icon's `userData` on expand: after *move → expand*, `isExpanded`
-never persisted, so the next tap (intended recollapse) re-read `isExpanded=false`
-and ran a second **expand**, double-inserting. (Recollapse's icon write had the
-same latent bug.) Confirmed with a re-read-after-write probe:
-`persistedIsExpanded=false` in the move case, `true` with no move. **Fix: also
-resolve the icon FRESH from `getElements` by section id before
-`modifyElements`** — never modify the lassoed element directly. Implemented as
-`resolveFreshIcon` inside `writeSection` (`userDataManager.ts`). Rule of thumb:
-treat a lassoed element as read-only *and* identity-stale after any move — use
-it to find the section, then both read and write via the `getElements` copy.
-
-**Side note (separate bug)**: `getElements` reports the moved picture's
-rect as ~14×14 although it was inserted at 50×50 (`ICON_SIZE`); the icon
-also visibly shrinks to the user after a move. Only the top-left is used
-for the translation delta, and on-device validation showed restored
-content lands correctly, so this doesn't affect the position fix. Tracked
-as a separate backlog item.
-
-**Related FEEDBACK.md entry**: "Bug: documented move-coordinate fix does
-not reach `getLassoElements` for picture elements".
+Use the lassoed element only to identify which element/section the user selected.
+For both reads and writes, resolve the element fresh from `getElements` (matched
+by a stable key you control, e.g. your own `userData` id), after `saveCurrentNote`
+so the move is reflected.
 
 ---
 
-## Moving a picture shrinks it on commit; `modifyElements` can't resize a picture
+## `modifyElements` cannot resize a picture; a committed move shrinks it
 
-**Observed**: 2026-06-05, build `Chauvet.D102.2605151001.2337_beta`.
+- `insertElements` honors a picture's `rect` (size and position).
+- `modifyElements` updates `userData` but does **not** apply a picture's `rect`;
+  it cannot resize a picture.
+- Committing a *move* of a picture — via any save, including the app's autosave
+  when the user taps away after dragging — rescales it to ~14×14 px regardless of
+  its original size. Position is preserved; size is corrupted. Reproducible with
+  no plugin involved.
 
-**What happens**:
-- A picture element inserted at 50×50 keeps that size as long as it's not
-  moved. The moment a *move* is committed to the page (by **any** save —
-  our `saveCurrentNote`, or the app's autosave when the user taps
-  elsewhere after dragging), the SDK rescales it to ~14×14. Position is
-  preserved; only the size is corrupted. Reproducible with no plugin at
-  all (place picture → drag → tap elsewhere).
-- `modifyElements` updates an element's `userData` but does **not** apply
-  a picture's `rect` — passing a 50×50 rect through `modifyElements`
-  leaves the on-page picture at 14×14.
-- `insertElements` **does** honour `rect` (that's how the 50×50 icon is
-  created at collapse).
-
-**Implication for plugin code**: to resize a picture you must delete and
-re-insert it; `modifyElements` won't do it. We restore the section `+`
-icon this way in `iconShrinkWorkaround.ts` (`restampIconIfShrunk`), called
-at the end of expand/recollapse and gated on `width !== ICON_SIZE` so it
-only fires when the icon was actually moved.
-
-**Related FEEDBACK.md entry**: "Bug: `saveCurrentNote` rescales a moved
-picture element to ~14×14 on commit".
+To set or restore a picture's size, delete and re-insert it.
 
 ---
 
-## Always dismiss the lasso before your handler returns (`setLassoBoxState(2)`)
+## Always dismiss the lasso before returning — `setLassoBoxState(2)`
 
-**The rule.** Any plugin operation that has a lasso selection active — the
-user's selection that triggered your plugin button, **or** a
-`PluginCommAPI.lassoElements(rect)` you opened yourself — must close it with
-`PluginCommAPI.setLassoBoxState(2)` before the handler returns. Never finish
-an operation, and never perform a file-level mutation, with a lasso left
-open. This is not cosmetic; skipping it corrupts the note's data.
+`setLassoBoxState(state)`: `0` = show; `1` = hide the menu but keep the selection;
+`2` = commit the selection back to the page and release it.
 
-**Why it matters.** While a lasso is active, its selected strokes are held
-in a transient "lifted" selection state, separate from the committed note
-model. If you leave that open while you mutate the page
-(`insertElements` / `deleteElements` / `saveCurrentNote`), the host's
-plugin-facing trail list drifts away from the live note model. The drift is
-**cumulative and silent**: after a number of operations,
-`insertElements`/`deleteElements` begin returning `success: true` while
-doing nothing — inserted elements never appear, deletes leave content in
-place — and it stays broken until the note app process is restarted. (In
-note-app logs the two lists visibly disagree, e.g. `insertPageTrails exist
-Trails: 12` vs `saveNoteData mTrailNumber: 2`.)
+Any operation with an active lasso — the user's selection that triggered your
+button, or a `lassoElements(rect)` you opened yourself — must close it with
+`setLassoBoxState(2)` before the handler returns, and before any file-level
+mutation. There is a single global lasso selection, so one `setLassoBoxState(2)`
+closes whatever is open. Closing does not undo committed inserts/deletes.
 
-**`setLassoBoxState(state)` values:** `0` = show; `1` = hide the menu but
-keep the selection; `2` = completely remove — commit the selection back to
-the page and release it. Use **2** to close. It does **not** undo your
-mutations; committed inserts/deletes persist.
+Leaving a lasso open across a mutation (`insertElements` / `deleteElements` /
+`saveCurrentNote`) makes the host's plugin-facing element list drift from the note
+model. The drift is cumulative and silent: mutations begin returning
+`success: true` while doing nothing, until the note app is restarted.
 
-**Patterns to follow:**
+```
+// Mutating the user's selection: mutate, then close at the end.
+deleteLassoElements();
+insertElements([...]);
+setLassoBoxState(2);
 
-- *Mutating the user's selection* (e.g. delete what they lassoed): mutate
-  while the lasso is open, then close at the very end.
-  ```
-  deleteLassoElements();
-  insertElements([...]);          // or insertGeometry(...)
-  saveCurrentNote();
-  setLassoBoxState(2);            // <- close before returning
-  ```
+// Opening a lasso only to read: close immediately after reading,
+// before any mutation.
+lassoElements(rect);
+const els = getLassoElements();
+setLassoBoxState(2);
+insertElements([...]);
+```
 
-- *Opening a lasso only to read* (e.g. `lassoElements(rect)` +
-  `getLassoElements()` to inspect what sits under a region): close it
-  **immediately after reading**, before any file-level mutation, so you
-  never mutate with a lifted selection hanging.
-  ```
-  lassoElements(rect);
-  const els = getLassoElements();
-  setLassoBoxState(2);            // <- close before mutating
-  insertElements([...]); // / deleteElements([...]);
-  ```
+`setLassoBoxState(2)` does not replace `reloadFile()` after an insert (see below).
 
-There is a single global lasso selection (`setLassoBoxState` takes no id,
-and `lassoElements` replaces whatever is active), so one
-`setLassoBoxState(2)` closes whatever is currently open — the user's or
-yours.
+---
 
-**Note:** `setLassoBoxState(2)` does **not** remove the need for
-`reloadFile()` after a file-level insert — you still call `reloadFile()` to
-refresh the canvas.
+## The open note renders a cached copy; surface writes with `reloadFile`
 
-**Observed:** beta build Chauvet 2.25.39 / 3.28.42 (2026-06). Derived
-empirically (the host-side cause is inferred), but the rule is validated:
-adding `setLassoBoxState(2)` after every lasso use eliminated the
-silent-no-op failures.
+An open note does not render its real `.note` file directly — it renders a
+**cached copy**. `insertElements` / `deleteElements` write the **real** file; the
+host then syncs real→cached **asynchronously**, and that sync may not have
+completed when the write call returns.
 
-> **Update (2026-06-09):** the deeper, vendor-confirmed cause of the
-> silent-no-op drift is the real↔cached file split below. The lasso rule
-> still holds, but the real fix for "write reports success but nothing
-> appears" is `reloadFile`, not lasso hygiene.
+- **Reads of the open note come from the cached copy.** `getElements`,
+  `getElementNumList`, and the other element reads on the currently-open note read
+  the cached copy, so immediately after a write they can return stale data —
+  inserts not yet visible, deletes still present — while still reporting success.
+  The staleness can persist indefinitely, not just briefly. A before/after
+  `getElementNumList` diff to detect just-inserted elements therefore returns
+  nothing unless you `reloadFile` between the write and the second read.
+- **Do not `saveCurrentNote` immediately after a write.** `saveCurrentNote` writes
+  the cached copy back to the real file; if the real→cached sync hasn't landed it
+  overwrites the real file with the stale cache and discards your write. If you
+  need `saveCurrentNote` to flush user strokes, call it *before* the plugin write.
+- **Use `reloadFile()` to surface a write.** It reloads the cached copy from the
+  real file, deterministically reflecting the write.
 
-## Plugin writes hit the REAL file; the open note renders a CACHED copy synced ASYNC — use `reloadFile` to surface a write, and never `saveCurrentNote` right after one
+```
+insertElements([...]);   // writes the real file
+// no saveCurrentNote here
+reloadFile();            // cached := real; the change now renders
+```
 
-**The model (confirmed by Ratta dev Dunn-sn, r/Supernote_dev, 2026-06).** An
-open note does **not** render its real `.note` file directly — it renders a
-**cached copy** (a crash-safety design). `insertElements` / `deleteElements`
-operate on the **real** file. After the write, the host kicks off an
-**asynchronous** real→cached sync so the open note picks up the change. That
-sync **may not have finished when the write API returns**.
+`modifyElements` can return **error 102** ("This app is not allowed to use this
+API. Please call a different API.") when the note is not in a stable editable
+state (mid-reload, just after a crash, during a hung operation). Treat a stable,
+loaded note as a precondition for `modifyElements`.
 
-Consequences a plugin must design around:
+---
 
-- **`getElements` on the currently-open note reads the CACHED copy** (it
-  reads the real file only for notes that are *not* open). So a `getElements`
-  immediately after a write can read **stale** data — the inserted elements
-  aren't visible yet, a deleted element is still there. The call still
-  returns `success: true`. We observed the cached copy stay stale for **>10 s
-  (sometimes apparently never)** — it is not merely a short delay you can
-  poll out.
+## Stroke links (`Link.category = 1`)
 
-  **`getElementNumList` reads the same CACHED copy** (confirmed 2026-06-10).
-  A `getElementNumList` taken right before and right after an
-  `insertElements` returned the **identical** list — the just-inserted
-  elements were invisible to it until a `reloadFile`. So any "diff the page's
-  num list before/after an insert to learn the new elements' nums" pattern
-  **must `reloadFile` between the insert and the post-snapshot**, or the diff
-  is empty. (We use exactly this diff to recover re-inserted stroke-link
-  members' new nums — see the stroke-link section below.)
+A stroke (handwritten) link is a `Link` element with `category = 1` whose
+`controlTrailNums` lists the `numInPage` of the strokes that form the link.
+When recreating one with `insertElements`:
 
-- **`saveCurrentNote` after a plugin write is dangerous.** `saveCurrentNote`
-  writes the **cached** (displayed) copy back to the **real** file. If you
-  call it before the real→cached sync has landed, you overwrite the real
-  file with the *stale* cached copy — **clobbering** your just-inserted
-  elements, or **re-adding** ones you just deleted. This is the single
-  biggest cause of "collapse/expand did nothing": not the SDK losing the
-  write, but us saving the stale cache over it.
+- `controlTrailNums` references strokes by page number, which change when the
+  strokes are re-inserted. So re-insert the member strokes, determine their new
+  `numInPage`, and set `controlTrailNums` to those. `controlTrailNums` is treated
+  as a set — order is irrelevant.
+- Empty `controlTrailNums` → **error 510** ("Stroke link has no control stroke
+  numbers. Cannot call the API.").
+- Empty/zero area rect → **error 509** ("Invalid link area. Please set it
+  again!"); you must pass a non-zero `X/Y/width/height`.
+- For `category = 1` the SDK **ignores the passed area and recomputes it** from
+  `controlTrailNums` (the strokes' bounding box plus a few px of padding). The
+  rect you pass is only a non-empty placeholder to clear validation; the final
+  area is device-controlled and cannot be widened from the plugin. (An
+  interactively-created stroke link reserves extra room for its auto-added link
+  icon; a re-inserted one gets the tight bounding box, so the icon falls outside
+  the clickable area.) Text links (`category = 0`) do honor their passed rect.
 
-- **`reloadFile()` is the reliable fix.** It reloads the displayed/cached
-  copy **from the real file**, deterministically surfacing your write —
-  confirmed to show the full, correct element set **even when the async sync
-  never landed**. So the robust pattern after a file-level mutation is:
+---
 
-  ```
-  insertElements([...]);   // or deleteElements([...])  -> writes REAL file
-  // do NOT saveCurrentNote here (it would save the stale cache over the write)
-  reloadFile();            // cached := real; the change now renders
-  ```
+## Beyond the JS bridge: native host API and background execution
 
-  If you must `saveCurrentNote` (e.g. to flush user strokes), do it
-  **before** the plugin write, not after.
-
-**Diagnostic signature.** In note-app logs the two copies disagree:
-`insertPageTrails exist Trails:N` / `getNotePageData jniTrailContainers
-size:N` (real-file container, includes not-yet-compacted "tombstone" slots,
-counts *all* slots) vs `NotePresenter mTrailNumber:M` (live/cached render).
-`getElements` returns only *live* elements (`getNotePageData ... trails
-size:K`), so it never exposes the gap directly.
-
-**Status:** Ratta acknowledged the bug and said they will make the sync
-consistent. Until then, `reloadFile` is the workaround. Reference:
-<https://www.reddit.com/r/Supernote_dev/comments/1tdw909/comment/oq2vgqc/>
-
-**Related:** `modifyElements` has separately returned error **102 "This app
-is not allowed to use this API. Please call a different API."** when invoked
-while the note is mid-reload / not in a stable editable state (e.g. right
-after a crash or during a long hung operation). Treat a stable, loaded note
-as a precondition for `modifyElements`.
-
-## Faster element access & background execution — vendor-pointed paths (not yet adopted)
-
-From Ratta dev **Dunn-sn** (r/Supernote_dev, "background processing and
-element access via File API",
-<https://www.reddit.com/r/Supernote_dev/comments/1tikmus/>). Context: a
-developer flagged that scanning a page's strokes via the JS accessor methods
-(`stroke.points.size()` + `getRange()` per element) is slow on A5X — which is
-exactly *our* `serialize` cost in collapse (~1.1s for ~50 strokes) and the
-per-stroke `build` cost in expand.
-
-- **Native Java host API (bypasses the JS bridge).** The latest plugin
-  runtime exposes the host Java APIs. From a native module:
-  ```java
-  PluginModule pluginModule =
-      getReactApplicationContext().getNativeModule(PluginModule.class);
-  PluginAppAPI pluginApp = pluginModule.getPluginApp();
-  // pluginApp -> interfaces in HostCommonAPI
-  ```
-  `HostCommonAPI` (see `node_modules/sn-plugin-lib/android/.../api/HostCommonAPI.java`)
-  is the **full** host surface — not just reads. It has the writes too
-  (`insertElements`, `modifyElements`, `deleteElements`, `replaceElements`,
-  `insertGeometry`, `insertText`, …), the reads (`getElements`, plus lighter
-  `getElement(num)`, `getElementCounts`, `getElementNumList`, `getLastElement`),
-  and `PluginAppAPI` adds `readTrailsFromFile(path)` + direct trail-cache access.
-
-  The real lever of going native is **bypassing the React Native JS↔native
-  bridge marshalling**, which is what makes our hot phases slow:
-  - **`serialize` / `build`** today do `points.size()` + `getRange()` (or
-    `createElement` + `setRange`) **per stroke** = ~100–200 bridge round-trips
-    at ~6 ms each. Native reads/writes the `Trail` objects directly with no
-    per-stroke round-trips → these should drop to ~tens of ms. **Big win.**
-  - **`insertElements` / `modifyElements`** would skip marshalling the giant
-    point `ReadableArray` across the bridge, but the **host-side commit/render
-    still runs inside `HostCommonAPI` regardless of caller** — so it's a
-    *partial* win. How much of the ~8.6s insert is bridge-marshalling vs.
-    host-commit is unmeasured.
-
-  Cost: a real **native Android module** in the plugin (Java, matching the
-  SDK's `Trail` format, native build/test) — a different beast from our TS.
-
-- **Background execution.** Plugins *can* run in the background: either RN's
-  official **Headless JS**, or a **background thread in Java**. Relevant if we
-  ever want long collapse/expand work to proceed without the UI pinned (and to
-  the "show a busy indicator" problem — work could run off the main path).
-
-- **`getCacheElement` (PluginCommAPI).** Exists in the TS API but is barely
-  documented (open question, no vendor answer yet:
-  <https://www.reddit.com/r/Supernote_dev/comments/1tdw909/comment/omffwub/>).
-  Likely a cache-backed (faster) element read. **Gated**: do not adopt until
-  its semantics are documented — consistent with our "don't build on vague
-  SDK APIs" rule. Flagged here only as a possible future lever.
-
-**Bottom line for us:** going native (HostCommonAPI) would strongly help the
-per-stroke `serialize`/`build` phases (it removes the per-stroke bridge
-round-trips) and *partially* help the big writes (skips payload marshalling;
-the host commit/render remains). It's a real native-code project, so keep it
-in pocket and only pursue it if speed becomes the priority. Cheaper first step
-to explore from TS: the lighter read APIs (`getElementNumList` + `getElement`,
-`getElementCounts`) to fetch only what we need instead of full-page
-`getElements` — and for expand specifically, trusting the lassoed TEXT icon's
-rect to skip the icon-rect `getElements` entirely.
-
-## Stroke links (`Link.category = 1`) — round-trip through insert/delete
-
-Learned 2026-06-10 building the collapse/expand round-trip for handwritten
-("stroke") links. A stroke link is a `Link` element with `category = 1` whose
-**`controlTrailNums`** is the list of `numInPage` of the strokes that make up
-the link. Re-creating one via `insertElements` has several non-obvious rules:
-
-- **You can't serialize the link and re-insert it as-is.** `controlTrailNums`
-  holds page nums, and re-inserting the member strokes gives them **new** nums.
-  So you must (1) persist *which strokes* are members in a num-independent way
-  (we store their indexes into our own saved element array), and (2) after
-  re-inserting the members, learn their **new** nums and rebuild the link
-  pointing at those. We recover the new nums with the `getElementNumList`
-  before/after **diff** described in the cache section above — which only works
-  if you `reloadFile` between the member insert and the post-snapshot.
-
-- **`controlTrailNums` is a SET, not ordered identity.** You don't need to know
-  which new num is which original stroke — the union of "nums that newly
-  appeared after inserting this link's members" is exactly the link's
-  `controlTrailNums`. Order does not matter (the link works regardless).
-
-- **A link built with empty `controlTrailNums` throws `code 510`**
-  ("Stroke link has no control stroke numbers. Cannot call the API."). This is
-  what you get if the num-diff came back empty (e.g. you forgot the
-  `reloadFile` and the before/after snapshots were identical).
-
-- **A link with an empty area rect throws `code 509`** ("Invalid link area.
-  Please set it again!"). So you must pass some non-zero `X/Y/width/height`.
-
-- **…but for `category = 1` the SDK IGNORES the area you pass and recomputes
-  it from `controlTrailNums`.** Sent `X=546 Y=550 width=256 height=176`; read
-  back after insert `X=544 Y=549 width=190 height=176`, where 190 ≈ the member
-  strokes' tight bbox + ~7 px padding. So the passed rect is only a
-  validation-passing placeholder; the final area is device-controlled. A
-  practical consequence: an interactively-drawn stroke link reserves extra
-  lower-right room for the auto link-icon (its stored `width` includes it), but
-  a re-inserted one gets the tight bbox instead, so the icon spills outside the
-  area and there's **no way to widen it from the plugin**. Reported to Ratta on
-  r/Supernote_dev. (Text links, `category = 0`, DO honor their passed rect.)
+- **`HostCommonAPI`** (the Java host surface, in
+  `node_modules/sn-plugin-lib/android/.../api/HostCommonAPI.java`) exposes the
+  full element API — writes (`insertElements`, `modifyElements`, `deleteElements`,
+  `replaceElements`, `insertGeometry`, `insertText`), reads (`getElements`,
+  `getElement`, `getElementCounts`, `getElementNumList`, `getLastElement`), and
+  `PluginAppAPI.readTrailsFromFile(path)` plus trail-cache access. Calling it from
+  a native module bypasses the React Native JS↔native bridge, which is the main
+  per-stroke cost of `points.size()` + `getRange()` (read) and `createElement` +
+  `setRange` (write). The host-side commit/render still runs regardless of caller.
+- **Background execution** is possible via React Native Headless JS or a Java
+  background thread.
+- **`getCacheElement` (PluginCommAPI)** exists but is undocumented; likely a
+  cache-backed element read. Semantics unconfirmed — avoid until documented.
