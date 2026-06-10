@@ -254,6 +254,15 @@ Consequences a plugin must design around:
   (sometimes apparently never)** — it is not merely a short delay you can
   poll out.
 
+  **`getElementNumList` reads the same CACHED copy** (confirmed 2026-06-10).
+  A `getElementNumList` taken right before and right after an
+  `insertElements` returned the **identical** list — the just-inserted
+  elements were invisible to it until a `reloadFile`. So any "diff the page's
+  num list before/after an insert to learn the new elements' nums" pattern
+  **must `reloadFile` between the insert and the post-snapshot**, or the diff
+  is empty. (We use exactly this diff to recover re-inserted stroke-link
+  members' new nums — see the stroke-link section below.)
+
 - **`saveCurrentNote` after a plugin write is dangerous.** `saveCurrentNote`
   writes the **cached** (displayed) copy back to the **real** file. If you
   call it before the real→cached sync has landed, you overwrite the real
@@ -354,3 +363,43 @@ to explore from TS: the lighter read APIs (`getElementNumList` + `getElement`,
 `getElementCounts`) to fetch only what we need instead of full-page
 `getElements` — and for expand specifically, trusting the lassoed TEXT icon's
 rect to skip the icon-rect `getElements` entirely.
+
+## Stroke links (`Link.category = 1`) — round-trip through insert/delete
+
+Learned 2026-06-10 building the collapse/expand round-trip for handwritten
+("stroke") links. A stroke link is a `Link` element with `category = 1` whose
+**`controlTrailNums`** is the list of `numInPage` of the strokes that make up
+the link. Re-creating one via `insertElements` has several non-obvious rules:
+
+- **You can't serialize the link and re-insert it as-is.** `controlTrailNums`
+  holds page nums, and re-inserting the member strokes gives them **new** nums.
+  So you must (1) persist *which strokes* are members in a num-independent way
+  (we store their indexes into our own saved element array), and (2) after
+  re-inserting the members, learn their **new** nums and rebuild the link
+  pointing at those. We recover the new nums with the `getElementNumList`
+  before/after **diff** described in the cache section above — which only works
+  if you `reloadFile` between the member insert and the post-snapshot.
+
+- **`controlTrailNums` is a SET, not ordered identity.** You don't need to know
+  which new num is which original stroke — the union of "nums that newly
+  appeared after inserting this link's members" is exactly the link's
+  `controlTrailNums`. Order does not matter (the link works regardless).
+
+- **A link built with empty `controlTrailNums` throws `code 510`**
+  ("Stroke link has no control stroke numbers. Cannot call the API."). This is
+  what you get if the num-diff came back empty (e.g. you forgot the
+  `reloadFile` and the before/after snapshots were identical).
+
+- **A link with an empty area rect throws `code 509`** ("Invalid link area.
+  Please set it again!"). So you must pass some non-zero `X/Y/width/height`.
+
+- **…but for `category = 1` the SDK IGNORES the area you pass and recomputes
+  it from `controlTrailNums`.** Sent `X=546 Y=550 width=256 height=176`; read
+  back after insert `X=544 Y=549 width=190 height=176`, where 190 ≈ the member
+  strokes' tight bbox + ~7 px padding. So the passed rect is only a
+  validation-passing placeholder; the final area is device-controlled. A
+  practical consequence: an interactively-drawn stroke link reserves extra
+  lower-right room for the auto link-icon (its stored `width` includes it), but
+  a re-inserted one gets the tight bbox instead, so the icon spills outside the
+  area and there's **no way to widen it from the plugin**. Logged for Ratta in
+  FEEDBACK.md. (Text links, `category = 0`, DO honor their passed rect.)
