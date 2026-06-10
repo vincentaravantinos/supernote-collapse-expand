@@ -17,6 +17,37 @@ Each entry should capture:
 
 ---
 
+## 2026-06-10 — Section zone defined by content bounding box, not the lasso; icon-shift staged
+
+**Decision.** A section's zone (mask fill + boundary outline, via `relativeRect`)
+is the bounding box of its **content** + a small margin (`ZONE_MARGIN`), computed
+identically at the initial collapse and at every recollapse — not the user's
+lasso rect. This makes the zone hug the strokes and adapt when content is moved
+while expanded. The icon is placed up-left of that zone at collapse; at recollapse
+the icon stays put (existing anchor preserved) and only `relativeRect` is
+recomputed (`relativeRect = (contentBBox + margin) − iconRect`).
+
+**Alternatives considered.**
+- *Keep using the lasso rect (status quo) and only recompute at recollapse.*
+  Rejected: the PO wanted the zone based on the strokes even at the first
+  collapse, so a loose lasso doesn't leave a big empty frame.
+- *Tight bbox with no margin.* Rejected: a small uniform margin reads better
+  (strokes don't touch the frame).
+- *Also shift the `+` icon up-left when the zone stretches left/up past it (so the
+  icon is always just outside the zone).* **Staged to a backlog follow-up**, not
+  dropped: it requires physically moving the icon element (no proven mechanism —
+  `modifyElements` doesn't apply a picture's rect, untested for text; likely
+  delete + re-insert) and it would override a manual icon move made while
+  expanded, changing a tested anchor behaviour. Splitting keeps Part 1 low-risk.
+
+**Constraint.** Computing the bbox unifies coordinate spaces: strokes are stored
+in EMR (with their own maxX/maxY) and converted to android via
+`emrPoint2Android`, while text/link/geometry are already android. The recollapse
+recompute stays consistent with the icon-move `emrDelta` math because it keeps the
+same anchor and the same `relativeRect = zone − iconRect` definition collapse uses.
+
+---
+
 ## 2026-06-10 — Expand multiple sections in one press, batched into a single refresh
 
 **Decision.** A press expands every collapsed section icon in the lasso (not just
