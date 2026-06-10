@@ -1,5 +1,6 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
 import {
+  dlog,
   LOG,
   MAX_USERDATA_BYTES,
   CE_PLUG_PREFIX,
@@ -94,7 +95,7 @@ export async function recollapseAction(
       if (data) newCollapsed.push({ numInPage: el.numInPage, data });
     }
     for (const el of lassoed) { try { el.recycle?.(); } catch { /* ignore */ } }
-    console.log(`${LOG} recollapse skippedPreserved=${skippedPreserved} of preservedNums=${preservedSet.size}`);
+    dlog(`${LOG} recollapse skippedPreserved=${skippedPreserved} of preservedNums=${preservedSet.size}`);
 
     // Close the programmatic read-lasso now that we've read it, BEFORE the
     // deleteElements below. A dangling lasso holding lifted pre-existing
@@ -122,7 +123,7 @@ export async function recollapseAction(
   };
 
   const payload = CE_PLUG_PREFIX + JSON.stringify(updatedSection);
-  console.log(`${LOG} SIZE recollapse payload=${payload.length} bytes for ${newCollapsed.length} element(s)`);
+  dlog(`${LOG} SIZE recollapse payload=${payload.length} bytes for ${newCollapsed.length} element(s)`);
   if (payload.length > MAX_USERDATA_BYTES) {
     alert('Content too large to re-collapse. Remove some content from this section.');
     return;

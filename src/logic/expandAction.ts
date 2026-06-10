@@ -1,5 +1,5 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
-import { CE_PART_PREFIX, LOG } from '../constants';
+import { CE_PART_PREFIX, dlog, LOG } from '../constants';
 import { buildElement } from '../utils/elementSerializer';
 import { getCurrentIconRect, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
@@ -15,7 +15,7 @@ export async function expandAction(
   // SIZE PROBE: the round-tripped userData length read back from the icon. If
   // this is much smaller than what collapse wrote, the userData was truncated
   // (real ceiling); if it matches, big payloads survive the write/read.
-  console.log(`${LOG} SIZE expand icon userData=${iconElement?.userData?.length ?? 0} bytes, collapsed=${section.collapsedElements?.length ?? 0} element(s)`);
+  dlog(`${LOG} SIZE expand icon userData=${iconElement?.userData?.length ?? 0} bytes, collapsed=${section.collapsedElements?.length ?? 0} element(s)`);
 
   const tEntry = Date.now();
   // Flush any in-flight strokes the user drew while collapsed so getElements
@@ -56,7 +56,7 @@ export async function expandAction(
   // restore the preservedNums capture here.
   await PluginCommAPI.setLassoBoxState(2);
 
-  console.log(`${LOG} PERF expand entry(save+iconrect+dismiss-lasso)=${Date.now() - tEntry}ms`);
+  dlog(`${LOG} PERF expand entry(save+iconrect+dismiss-lasso)=${Date.now() - tEntry}ms`);
 
   // Stroke links (category 1) are re-inserted out-of-band (their member strokes
   // get fresh page nums on re-insert), so EXCLUDE those members from the main
@@ -78,7 +78,7 @@ export async function expandAction(
     if (el) otherElements.push(el);
     else if (!(ce.data.kind === 'link' && ce.data.category === 1)) console.error(`${LOG} buildElement returned null for kind=${ce.data.kind}`);
   }
-  console.log(`${LOG} PERF expand build=${Date.now() - tBuild}ms`);
+  dlog(`${LOG} PERF expand build=${Date.now() - tBuild}ms`);
 
   let insertOk = true;
   const tIns = Date.now();
@@ -103,7 +103,7 @@ export async function expandAction(
       maskElements, otherElements,
     });
   }
-  console.log(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
+  dlog(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
 
   // Deliberately NO saveCurrentNote here. insertElements wrote the content to
   // the REAL note file; saveCurrentNote would push the (often still-stale)
@@ -131,9 +131,9 @@ export async function expandAction(
   const tWrite = Date.now();
   const ok = await writeSection(filePath, page, iconElement, expandedState);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
-  console.log(`${LOG} PERF expand writeSection=${Date.now() - tWrite}ms`);
+  dlog(`${LOG} PERF expand writeSection=${Date.now() - tWrite}ms`);
 
   const tReload = Date.now();
   await PluginCommAPI.reloadFile();
-  console.log(`${LOG} PERF expand reload=${Date.now() - tReload}ms`);
+  dlog(`${LOG} PERF expand reload=${Date.now() - tReload}ms`);
 }

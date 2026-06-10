@@ -1,5 +1,5 @@
 import { PluginCommAPI } from 'sn-plugin-lib';
-import { BUILD_TAG, LOG } from './constants';
+import { BUILD_TAG, dlog, LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
 import { summarizeElements, summarizeSection } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
@@ -23,7 +23,7 @@ const PROBE = `${LOG} [CE-PROBE]`;
 
 export async function handleMainAction() {
   if (isRunning) {
-    console.log(`${LOG} handleMainAction already running — ignoring re-entrant button press`);
+    dlog(`${LOG} handleMainAction already running — ignoring re-entrant button press`);
     // Tell the user the rejection is intentional — otherwise a swallowed tap
     // looks like a broken button. This fires while a prior collapse/expand is
     // still in flight (operations can take several seconds, longer as the note
@@ -81,22 +81,22 @@ export async function handleMainAction() {
     const actionType = iconElement && section
       ? (section.isExpanded ? 'RECOLLAPSE' : 'EXPAND')
       : 'COLLAPSE';
-    console.info(`${PROBE} #${actionSeq} ${actionType} BEGIN page=${page} build=${BUILD_TAG}`);
+    dlog(`${PROBE} #${actionSeq} ${actionType} BEGIN page=${page} build=${BUILD_TAG}`);
     try {
       if (iconElement && section) {
         if (section.isExpanded) {
-          console.info(`${LOG} RECOLLAPSE - section: ${summarizeSection(section)}`);
+          dlog(`${LOG} RECOLLAPSE - section: ${summarizeSection(section)}`);
           await recollapseAction(section, iconElement, filePath, page);
         } else {
-          console.info(`${LOG} EXPAND - section: ${summarizeSection(section)}`);
+          dlog(`${LOG} EXPAND - section: ${summarizeSection(section)}`);
           await expandAction(section, iconElement, filePath, page);
         }
       } else {
-        console.info(`${LOG} COLLAPSE - elements: ${summarizeElements(elements)}`);
+        dlog(`${LOG} COLLAPSE - elements: ${summarizeElements(elements)}`);
         await collapseAction(filePath, page, elements);
       }
     } finally {
-      console.info(`${PROBE} #${actionSeq} ${actionType} END`);
+      dlog(`${PROBE} #${actionSeq} ${actionType} END`);
       for (const el of elements) {
         try { el.recycle?.(); } catch { /* ignore */ }
       }

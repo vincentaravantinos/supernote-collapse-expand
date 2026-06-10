@@ -1,6 +1,7 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
 import {
   CE_PLUG_PREFIX,
+  dlog,
   ELEMENT_TYPES,
   ICON_FONT_SIZE,
   ICON_GLYPH,
@@ -38,7 +39,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
     }
   }
 
-  console.log(`${LOG} PERF collapse serialize=${Date.now() - tSer}ms for ${collapsed.length} element(s)`);
+  dlog(`${LOG} PERF collapse serialize=${Date.now() - tSer}ms for ${collapsed.length} element(s)`);
 
   // Resolve stroke links' member references: raw page nums -> stable indexes
   // into `collapsed`. Drops any stroke link whose member strokes weren't all
@@ -86,7 +87,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   };
 
   const payload = CE_PLUG_PREFIX + JSON.stringify(section);
-  console.log(`${LOG} SIZE collapse payload=${payload.length} bytes for ${collapsed.length} element(s)`);
+  dlog(`${LOG} SIZE collapse payload=${payload.length} bytes for ${collapsed.length} element(s)`);
   if (payload.length > MAX_USERDATA_BYTES) {
     alert('Selection too large to collapse. Pick a smaller area.');
     return;
@@ -99,11 +100,11 @@ export async function collapseAction(filePath: string, page: number, elements: a
     alert('Failed to remove selected content.');
     return;
   }
-  console.log(`${LOG} PERF collapse deleteLasso=${Date.now() - tDel}ms`);
+  dlog(`${LOG} PERF collapse deleteLasso=${Date.now() - tDel}ms`);
 
   const tSave = Date.now();
   await PluginNoteAPI.saveCurrentNote();
-  console.log(`${LOG} PERF collapse saveCurrentNote=${Date.now() - tSave}ms`);
+  dlog(`${LOG} PERF collapse saveCurrentNote=${Date.now() - tSave}ms`);
   const tIns = Date.now();
 
   // VALIDATION STEP: create the icon as a TEXT element (⊕) instead of a
@@ -140,7 +141,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  console.log(`${LOG} PERF collapse create+insert=${Date.now() - tIns}ms`);
+  dlog(`${LOG} PERF collapse create+insert=${Date.now() - tIns}ms`);
 
   // Deliberately NO saveCurrentNote after the insert. insertElements wrote the
   // icon to the REAL note file; saving the (possibly stale) CACHED/displayed
@@ -157,5 +158,5 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   // Reload the displayed copy from the real file so the inserted icon appears.
   await PluginCommAPI.reloadFile();
-  console.log(`${LOG} PERF collapse close+reload=${Date.now() - tReload}ms`);
+  dlog(`${LOG} PERF collapse close+reload=${Date.now() - tReload}ms`);
 }

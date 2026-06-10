@@ -1,5 +1,15 @@
 export const LOG = '[CollapseExpand]';
 
+// Diagnostic instrumentation toggle. When false, the per-action BEGIN/END probes
+// (with the build stamp), the PERF phase timings, and the SIZE byte counts are
+// all silenced. Flip to true while developing — deploy-staleness checks via the
+// `build=` stamp, perf regressions, and the userData size budget all read off
+// these. Errors (`console.error`) and user-facing `alert`s are never gated.
+export const DEBUG = false;
+export function dlog(...args: any[]): void {
+  if (DEBUG) console.log(...args);
+}
+
 // Build stamp — logged at every action BEGIN so the trace tells us which build
 // is actually live (force-stop doesn't always re-extract a new .snplg). BUMP
 // THIS every deploy while debugging the reload, then confirm it in logcat.
