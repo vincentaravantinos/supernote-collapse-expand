@@ -47,6 +47,15 @@ export interface SerializedLink {
   fullText: string;
   showText: string;
   italic: number;
+  // --- stroke links (category 1) only ---
+  // Persisted: indexes into the section's `collapsedElements` of the strokes
+  // that form this link. On expand the link is rebuilt pointing at those
+  // strokes' NEW page nums. Resolved by `resolveLinkMemberIndices`.
+  memberIndices?: number[];
+  // Transient: the raw on-page `controlTrailNums` captured at serialize time.
+  // Converted to `memberIndices` (and deleted) by `resolveLinkMemberIndices`;
+  // never persisted in the icon userData.
+  srcControlNums?: number[];
 }
 
 export interface SerializedGeometry {

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Feature: handwritten ("stroke") links now survive collapse → expand →
+  recollapse as **working links** (tappable, jump to their target), not just
+  their bare strokes. A stroke link references its member strokes by page
+  number, which change on re-insert, so we persist *which* strokes are members
+  (as indexes into the section, not page nums) and, on expand, re-insert the
+  members and recover their fresh nums to rebuild the link. Expand of a section
+  containing a stroke link costs one extra screen refresh per link (the SDK only
+  reveals re-inserted elements' page nums after a `reloadFile`). Known
+  limitation: the device recomputes a stroke link's clickable area from its
+  strokes and ignores the area we pass, so a re-inserted link's area is the
+  strokes' tight bounding box rather than the slightly wider area an
+  interactively-drawn link reserves for its auto-icon (reported to Ratta — see
+  FEEDBACK.md).
+
 - Fix: geometry-only selections can now be collapsed. The lasso button's
   `editDataTypes` listed stroke/title/image/text-box/link but omitted geometry
   (`5`), so the Collapse / Expand button was greyed out for selections

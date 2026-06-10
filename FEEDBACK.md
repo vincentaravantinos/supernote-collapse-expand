@@ -528,3 +528,63 @@ doesn't apply a picture's rect, so we had to delete + re-insert to restore
 the size. Could a committed move translate the picture without rescaling
 it?
 ```
+
+## Inconsistency: re-inserted stroke links (`category = 1`) lose the auto-icon area allowance
+
+**Observed in**: this plugin, against the current beta SDK build
+(2026-06-10).
+
+**Context**: we round-trip handwritten ("stroke") links through
+`getElements` → store → `insertElements`. A stroke link is rebuilt with
+`category: 1` and `controlTrailNums` set to its member strokes' (new) page
+numbers.
+
+**Two SDK behaviours that, together, make the link area wrong**:
+
+1. `insertElements` **rejects a zero/empty link rect** with
+   `{"code":509,"message":"Invalid link area. Please set it again!"}`, so
+   the caller is forced to supply some `X/Y/width/height`.
+2. …but for `category = 1` the SDK then **ignores the width/height we
+   supply and recomputes the area from `controlTrailNums`** — the strokes'
+   tight bounding box plus ~7 px padding.
+
+**Trace evidence** (one link, no icon move): we sent the original link's
+own stored area `X=546 Y=550 width=256 height=176`; reading the element
+back after insert returned `X=544 Y=549 width=190 height=176`. The
+strokes' bbox is ~177×164, so 190 ≈ bbox + ~7 px each side. The supplied
+256 was discarded.
+
+**Why it matters**: an *interactively-created* stroke link reserves extra
+room on the lower-right for the auto-added link icon (its stored
+`width` = 256 includes it). A stroke link rebuilt via `insertElements`
+gets the tight-bbox area (190) instead, so the icon spills past the
+clickable/visual region — the area comes out visibly **too narrow**. Since
+the SDK overrides whatever rect we pass, a plugin has **no way** to
+reproduce the interactive area.
+
+**What would help**:
+- Either honor the `width/height` passed to `insertElements` for
+  `category = 1` links, or
+- Recompute the area the same way interactive creation does (include the
+  auto-icon allowance), so re-inserted stroke links match hand-drawn ones.
+- Also document, for stroke links specifically, that `X/Y/width/height` is
+  derived from `controlTrailNums` and that a non-empty placeholder is
+  nonetheless required to pass validation (the 509 above).
+
+**Proposed Reddit comment** (reply on the plugin-preview thread):
+
+```
+On stroke links (Link.category = 1) round-tripped through
+insertElements: two things bite. First, insertElements rejects an empty
+link area with code 509 ("Invalid link area"), so you must pass some
+X/Y/width/height. But then for category 1 the SDK ignores the width/height
+you pass and recomputes the area from controlTrailNums as the strokes'
+tight bbox + a few px. We sent width=256 (the link's own original area,
+which included room for the auto link-icon at the lower-right) and reading
+it back after insert gave width=190 = just the stroke bbox. So a
+re-inserted handwriting link ends up narrower than the same link drawn by
+hand, and the lower-right icon spills outside the clickable area, with no
+way for the plugin to widen it. Could insertElements either honor the
+passed area for category-1 links, or recompute it the way interactive
+creation does (including the icon allowance)?
+```

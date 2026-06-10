@@ -3,6 +3,7 @@ import { CE_PART_PREFIX, LOG } from '../constants';
 import { buildElement } from '../utils/elementSerializer';
 import { getCurrentIconRect, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
+import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { CollapseSection } from '../model/types';
 
 export async function expandAction(
@@ -57,33 +58,52 @@ export async function expandAction(
 
   console.log(`${LOG} PERF expand entry(save+iconrect+dismiss-lasso)=${Date.now() - tEntry}ms`);
 
-  const fileElements: any[] = [];
+  // Stroke links (category 1) are re-inserted out-of-band (their member strokes
+  // get fresh page nums on re-insert), so EXCLUDE those members from the main
+  // content here. Build masks and the non-member content separately.
+  const memberIndexSet = strokeLinkMemberIndices(section.collapsedElements);
+  const hasStrokeLinks = section.collapsedElements.some((ce) => ce.data.kind === 'link' && ce.data.category === 1);
 
   const tBuild = Date.now();
-  // Mask rings first so they sit below the collapsed content in this batch.
+  // Mask rings first so they sit below the collapsed content.
   const maskElements = await createMaskElements(contentRect, page, section.id);
-  for (const m of maskElements) fileElements.push(m);
 
-  for (const ce of section.collapsedElements) {
+  const otherElements: any[] = [];
+  for (let i = 0; i < section.collapsedElements.length; i++) {
+    // Stroke-link members are inserted by rebuildStrokeLinks; the category-1
+    // links themselves are skipped here (buildElement returns null for them).
+    if (memberIndexSet.has(i)) continue;
+    const ce = section.collapsedElements[i];
     const el = await buildElement(ce.data, page, CE_PART_PREFIX + section.id, emrDelta, pageMaxX, pageMaxY, dx, dy);
-    if (el) fileElements.push(el);
-    else console.error(`${LOG} buildElement returned null for kind=${ce.data.kind}`);
+    if (el) otherElements.push(el);
+    else if (!(ce.data.kind === 'link' && ce.data.category === 1)) console.error(`${LOG} buildElement returned null for kind=${ce.data.kind}`);
   }
-  console.log(`${LOG} PERF expand build=${Date.now() - tBuild}ms for ${fileElements.length} element(s)`);
+  console.log(`${LOG} PERF expand build=${Date.now() - tBuild}ms`);
 
   let insertOk = true;
-  if (fileElements.length > 0) {
-    const tIns = Date.now();
-    const ins: any = await PluginFileAPI.insertElements(filePath, page, fileElements);
-    console.log(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
-    insertOk = !!ins?.success;
-    if (!insertOk) {
-      console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
+  const tIns = Date.now();
+  if (!hasStrokeLinks) {
+    // Simple path: masks + content in one batch; the end-of-expand reload below
+    // is the only refresh.
+    const batch = [...maskElements, ...otherElements];
+    if (batch.length > 0) {
+      const ins: any = await PluginFileAPI.insertElements(filePath, page, batch);
+      insertOk = !!ins?.success;
+      if (!insertOk) console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
+      for (const el of batch) { try { el.recycle?.(); } catch { /* ignore */ } }
     }
-    for (const el of fileElements) {
-      try { el.recycle?.(); } catch { /* ignore */ }
-    }
+  } else {
+    // Stroke-link path: rebuildStrokeLinks owns the entire insert sequence so it
+    // can recover the members' fresh nums with one reload per link (no extra
+    // baseline reload). It inserts masks + members, then content + the rebuilt
+    // links; the end-of-expand reload surfaces the links.
+    insertOk = await rebuildStrokeLinks({
+      filePath, page, collapsedElements: section.collapsedElements,
+      sectionId: section.id, emrDelta, pageMaxX, pageMaxY, dx, dy,
+      maskElements, otherElements,
+    });
   }
+  console.log(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
 
   // Deliberately NO saveCurrentNote here. insertElements wrote the content to
   // the REAL note file; saveCurrentNote would push the (often still-stale)

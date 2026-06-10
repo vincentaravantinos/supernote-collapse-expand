@@ -4,7 +4,7 @@ import {
   MAX_USERDATA_BYTES,
   CE_PLUG_PREFIX,
 } from '../constants';
-import { serializeElement } from '../utils/elementSerializer';
+import { resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -56,7 +56,7 @@ export async function recollapseAction(
     else if (ud.kind === 'part' && ud.id === section.id) partEls.push(el);
   }
 
-  const newCollapsed: CollapsedElement[] = [];
+  let newCollapsed: CollapsedElement[] = [];
   const numSet = new Set<number>();
 
   for (const el of partEls) {
@@ -106,6 +106,11 @@ export async function recollapseAction(
   for (const m of maskEls) {
     if (typeof m.numInPage === 'number') numSet.add(m.numInPage);
   }
+
+  // Re-resolve stroke links' member references (raw page nums of the re-created
+  // link -> stable indexes into `newCollapsed`), symmetric with collapse, so
+  // the link round-trips across repeated expand/recollapse cycles.
+  newCollapsed = resolveLinkMemberIndices(newCollapsed);
 
   // 3. Update section state. Drop preservedNums — only meaningful while expanded.
   const updatedSection: CollapseSection = {

@@ -1,6 +1,7 @@
 import { PluginCommAPI, Point, Rect } from 'sn-plugin-lib';
-import { ELEMENT_TYPES } from '../constants';
+import { ELEMENT_TYPES, LOG } from '../constants';
 import {
+  CollapsedElement,
   SerializedElement,
   SerializedGeometry,
   SerializedLink,
@@ -89,12 +90,6 @@ export async function serializeElement(el: any): Promise<SerializedElement | nul
   if (type === ELEMENT_TYPES.LINK) {
     const lk = el.link;
     if (!lk) return null;
-    // Stroke links (category 1) reference the strokes that form them via
-    // controlTrailNums, which don't survive a collapse round-trip — the SDK
-    // rejects a rebuilt stroke link that has no control nums (error 510). We
-    // can't faithfully restore them, so don't collapse them (the strokes
-    // themselves still collapse). Text links (category 0) round-trip fine.
-    if ((lk.category ?? 0) === 1) return null;
     const data: SerializedLink = {
       kind: 'link',
       category: lk.category ?? 0,
@@ -113,6 +108,15 @@ export async function serializeElement(el: any): Promise<SerializedElement | nul
       showText: lk.showText ?? '',
       italic: lk.italic ?? 0,
     };
+    // Stroke links (category 1) are made of strokes referenced by
+    // controlTrailNums (a plain number[] of page nums). Capture them raw;
+    // resolveLinkMemberIndices then converts them to stable indexes into
+    // collapsedElements (the page nums don't survive the round-trip), and
+    // expandAction rebuilds the link pointing at the strokes' new nums.
+    if ((lk.category ?? 0) === 1) {
+      const ctn = (lk as any).controlTrailNums;
+      data.srcControlNums = Array.isArray(ctn) ? [...ctn] : [];
+    }
     return data;
   }
 
@@ -222,11 +226,11 @@ async function buildLink(
   dx: number,
   dy: number,
 ): Promise<any | null> {
-  // Defensive: never rebuild a stroke link (category 1). Its controlTrailNums
-  // can't be restored, and inserting one with empty control nums throws error
-  // 510 (which can hang the whole expand). New collapses already skip these in
-  // serializeElement; this also covers links collapsed before that guard
-  // existed. (expandAction logs the null return.)
+  // Stroke links (category 1) are NOT built here: their controlTrailNums must
+  // point at the strokes' NEW page nums, which aren't known until after the
+  // member strokes are re-inserted. expandAction builds them via
+  // `buildStrokeLink` after that insert. So skip them in the normal build loop.
+  // (Building one with empty/invalid control nums throws error 510.)
   if (data.category === 1) return null;
   const res: any = await PluginCommAPI.createElement(ELEMENT_TYPES.LINK);
   if (!res?.success || !res.result) return null;
@@ -258,6 +262,84 @@ async function buildLink(
   element.pageNum = page;
   if (userData !== null) element.userData = userData;
   return element;
+}
+
+// Build a stroke link (category 1). Unlike buildLink, this is called from
+// expandAction AFTER its member strokes are re-inserted, with `controlNums` set
+// to those strokes' NEW page nums.
+//
+// `rect` only has to be a valid, non-empty placeholder: the device rejects a
+// zero rect (error 509 "Invalid link area") but otherwise IGNORES the width/
+// height we pass — it recomputes a stroke link's area from `controlTrailNums` on
+// insert (confirmed on-device: we sent w=256, it stored w=190 = strokes bbox +
+// padding). So we can't reproduce the interactive icon allowance here; see
+// SDK_DOC / FEEDBACK. (Text links DO honor their rect — that's `buildLink`.)
+export async function buildStrokeLink(
+  data: SerializedLink,
+  page: number,
+  userData: string | null,
+  controlNums: number[],
+  rect: Rect,
+): Promise<any | null> {
+  const res: any = await PluginCommAPI.createElement(ELEMENT_TYPES.LINK);
+  if (!res?.success || !res.result) return null;
+  const element: any = res.result;
+
+  const r = roundRect(rect);
+  element.link = {
+    category: 1,
+    X: r.left,
+    Y: r.top,
+    width: r.right - r.left,
+    height: r.bottom - r.top,
+    page,
+    style: data.style,
+    linkType: data.linkType,
+    destPath: data.destPath,
+    destPage: data.destPage,
+    fontSize: data.fontSize,
+    fullText: data.fullText,
+    showText: data.showText,
+    italic: data.italic,
+    controlTrailNums: controlNums,
+  };
+  element.pageNum = page;
+  if (userData !== null) element.userData = userData;
+  return element;
+}
+
+// For each stroke link (category 1) in a freshly-serialized collapsed array,
+// convert its raw page-num controlTrailNums (srcControlNums) into stable indexes
+// into that array (memberIndices) so the reference survives a round-trip. If a
+// link's members aren't all in the array (shouldn't happen — lassoing a stroke
+// link selects its strokes), drop the link (its strokes stay) and alert.
+export function resolveLinkMemberIndices(collapsed: CollapsedElement[]): CollapsedElement[] {
+  let dropped = false;
+  const presentNums = new Set(collapsed.map((ce) => ce.numInPage));
+  const kept = collapsed.filter((ce) => {
+    const d = ce.data;
+    if (d.kind === 'link' && d.category === 1 && d.srcControlNums) {
+      if (!d.srcControlNums.every((n) => presentNums.has(n))) {
+        console.error(`${LOG} stroke link dropped: member stroke(s) not in collapsed set (controlTrailNums=[${d.srcControlNums.join(',')}])`);
+        dropped = true;
+        return false;
+      }
+    }
+    return true;
+  });
+  const numToIndex = new Map<number, number>();
+  kept.forEach((ce, i) => numToIndex.set(ce.numInPage, i));
+  for (const ce of kept) {
+    const d = ce.data;
+    if (d.kind === 'link' && d.category === 1 && d.srcControlNums) {
+      d.memberIndices = d.srcControlNums.map((n) => numToIndex.get(n) as number);
+      delete d.srcControlNums;
+    }
+  }
+  if (dropped) {
+    alert('A handwritten link could not be fully collapsed and was dropped (its strokes were kept).');
+  }
+  return kept;
 }
 
 async function buildGeometry(

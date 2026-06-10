@@ -9,7 +9,7 @@ import {
   MAX_USERDATA_BYTES,
   SCHEMA_VERSION,
 } from '../constants';
-import { serializeElement } from '../utils/elementSerializer';
+import { resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -25,7 +25,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   }
   const lasso = lassoRes.result;
 
-  const collapsed: CollapsedElement[] = [];
+  let collapsed: CollapsedElement[] = [];
   const tSer = Date.now();
   for (const el of elements) {
     if (el.type === ELEMENT_TYPES.PICTURE) continue;
@@ -39,6 +39,12 @@ export async function collapseAction(filePath: string, page: number, elements: a
   }
 
   console.log(`${LOG} PERF collapse serialize=${Date.now() - tSer}ms for ${collapsed.length} element(s)`);
+
+  // Resolve stroke links' member references: raw page nums -> stable indexes
+  // into `collapsed`. Drops any stroke link whose member strokes weren't all
+  // collapsed (alerts the user).
+  collapsed = resolveLinkMemberIndices(collapsed);
+
   if (collapsed.length === 0) {
     alert('Nothing collapsable in selection.');
     return;
