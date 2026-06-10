@@ -41,8 +41,11 @@ the plugin button.
   expansion (see Recollapse).
 
 ### Recollapse
-**Trigger**: user lassoes the "+" icon of an expanded section and presses
-the plugin button.
+**Trigger**: user lassoes the "+" icon **or any restored content / mask** of an
+expanded section and presses the plugin button. If the selection spans multiple
+expanded sections, all of them are recollapsed in one press. (Recollapse takes
+priority: a selection that mixes an expanded section with a collapsed icon
+recollapses the expanded one(s) and ignores the collapse/expand that press.)
 
 **Outcome**:
 - The "+" icon stays where it is.

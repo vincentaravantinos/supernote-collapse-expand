@@ -25,29 +25,26 @@ import { CollapseSection, CollapsedElement } from '../model/types';
 // to restore the old absorbing behavior (one line).
 const ABSORB_STROKES_VIA_LASSO = false;
 
-export async function recollapseAction(
+// Recollapse ONE section using a pre-fetched element list `all`. Re-serializes
+// the section's on-page parts back into the icon's userData and deletes the
+// parts/masks. Deliberately does NOT saveCurrentNote / reloadFile / dismiss the
+// lasso — `recollapseSections` batches those so N sections cost a single
+// refresh. Returns false if the section was skipped (payload over the size
+// cap), true otherwise.
+async function recollapseOne(
   section: CollapseSection,
   iconElement: any,
+  all: any[],
   filePath: string,
   page: number,
-) {
-  // Flush any in-memory edits to the file so getElements below sees strokes
-  // the user drew while the section was expanded.
-  await PluginNoteAPI.saveCurrentNote();
-
-  // 1. Find every element belonging to this section via userData id.
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
-
+): Promise<boolean> {
   // Deliberately do NOT recompute the icon rect here. `section.iconRect` (from
   // userData) is the EXPAND-TIME anchor the on-page strokes are aligned to; the
   // icon's current physical position can differ if the user moved the icon
   // WHILE EXPANDED (the strokes don't move with it). Keeping the stored anchor
   // (it carries through via the `...section` spread below) keeps the strokes
   // and section.iconRect consistent, so the next expand's emrDelta correctly
-  // carries the content to wherever the icon now is. (expand re-anchors
-  // iconRect on its side, so move-while-collapsed still works.)
-
+  // carries the content to wherever the icon now is.
   const maskEls: any[] = [];
   const partEls: any[] = [];
   for (const el of all) {
@@ -96,11 +93,6 @@ export async function recollapseAction(
     }
     for (const el of lassoed) { try { el.recycle?.(); } catch { /* ignore */ } }
     dlog(`${LOG} recollapse skippedPreserved=${skippedPreserved} of preservedNums=${preservedSet.size}`);
-
-    // Close the programmatic read-lasso now that we've read it, BEFORE the
-    // deleteElements below. A dangling lasso holding lifted pre-existing
-    // strokes is what makes the by-number delete silently no-op in the
-    // "strokes below" case.
     await PluginCommAPI.setLassoBoxState(2);
   }
 
@@ -113,7 +105,7 @@ export async function recollapseAction(
   // the link round-trips across repeated expand/recollapse cycles.
   newCollapsed = resolveLinkMemberIndices(newCollapsed);
 
-  // 3. Update section state. Drop preservedNums — only meaningful while expanded.
+  // Update section state. Drop preservedNums — only meaningful while expanded.
   const updatedSection: CollapseSection = {
     ...section,
     collapsedElements: newCollapsed,
@@ -126,33 +118,67 @@ export async function recollapseAction(
   dlog(`${LOG} SIZE recollapse payload=${payload.length} bytes for ${newCollapsed.length} element(s)`);
   if (payload.length > MAX_USERDATA_BYTES) {
     alert('Content too large to re-collapse. Remove some content from this section.');
-    return;
+    return false;
   }
 
-  // 4. Delete tagged + new content + mask rings, commit.
+  // Delete tagged + new content + mask rings (writes the REAL file; surfaced by
+  // the single reloadFile in recollapseSections). No saveCurrentNote here — it
+  // would push the still-stale cached copy back over the deletion.
   const numsToDelete = Array.from(numSet);
   if (numsToDelete.length > 0) {
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, numsToDelete);
     if (!delRes?.success) {
       console.error(`${LOG} deleteElements failed res=${JSON.stringify(delRes)}`);
     }
-
-    // Deliberately NO saveCurrentNote here. deleteElements removed the
-    // parts/masks from the REAL note file; saveCurrentNote would push the
-    // (often still-stale) CACHED/displayed copy — which still HAS the parts —
-    // back over the real file and re-add them. reloadFile at the end reloads
-    // the displayed copy FROM the real file, deterministically surfacing the
-    // deletion. See SDK_DOC.md ("Plugin writes hit the REAL file …").
   }
 
-  // 5. Update icon userData.
   const ok = await writeSection(filePath, page, iconElement, updatedSection);
   if (!ok) console.error(`${LOG} failed to update section userData after recollapse`);
+  return true;
+}
 
-  // Dismiss the user's icon-lasso LAST — after all mutations — exactly as
-  // collapse does. Doing it here (rather than mid-operation, before the
-  // delete) keeps the async state-2 commit from racing the deleteElements.
+// Recollapse one or more sections. The user can trigger recollapse by lassoing
+// any of a section's content/mask (not just the icon), and a single selection
+// can span several expanded sections — all of them are recollapsed here.
+//
+// Flush once, read the page once, mutate every section, then dismiss the lasso
+// and reloadFile ONCE — so N sections cost a SINGLE on-screen refresh. Each
+// section's parts/masks are read from the same pre-mutation snapshot; sections
+// don't overlap, and deleting one section's elements doesn't affect another's
+// page nums, so the shared snapshot stays valid across the loop.
+export async function recollapseSections(
+  sectionIds: string[],
+  filePath: string,
+  page: number,
+): Promise<void> {
+  if (sectionIds.length === 0) return;
+
+  // Flush the user's in-flight edits so the read below sees strokes drawn while
+  // expanded. Done once, before any mutation.
+  await PluginNoteAPI.saveCurrentNote();
+
+  const allRes: any = await PluginFileAPI.getElements(page, filePath);
+  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+
+  const iconById = new Map<string, any>();
+  for (const el of all) {
+    const ud = readUserData(el);
+    if (ud?.kind === 'section' && ud.section?.id) iconById.set(ud.section.id, el);
+  }
+
+  for (const id of sectionIds) {
+    const icon = iconById.get(id);
+    const ud = icon ? readUserData(icon) : null;
+    if (!icon || ud?.kind !== 'section') {
+      console.error(`${LOG} recollapse: no section icon for id=${id} (orphaned content?) — skipping`);
+      continue;
+    }
+    await recollapseOne(ud.section, icon, all, filePath, page);
+  }
+
+  // Dismiss the user's lasso LAST, then surface every deletion/userData update
+  // with a single reloadFile (writes hit the REAL file; reloadFile syncs
+  // cached:=real). One refresh regardless of how many sections recollapsed.
   await PluginCommAPI.setLassoBoxState(2);
-
   await PluginCommAPI.reloadFile();
 }

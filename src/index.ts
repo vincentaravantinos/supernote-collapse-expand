@@ -4,7 +4,7 @@ import { readUserData } from './utils/userDataManager';
 import { summarizeElements, summarizeSection } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
 import { expandAction } from './logic/expandAction';
-import { recollapseAction } from './logic/recollapseAction';
+import { recollapseSections } from './logic/recollapseAction';
 
 // Re-entrancy guard: the button can be tapped again while a previous
 // invocation is still awaiting SDK calls. A concurrent second run would
@@ -66,37 +66,61 @@ export async function handleMainAction() {
       return;
     }
 
-    let iconElement: any = null;
-    let section = null;
+    // Classify the selection. RECOLLAPSE is triggered by lassoing the icon OR
+    // any element that belongs to an expanded section (its CE_PART content or
+    // CE_MASK), and recollapses every expanded section the lasso spans. EXPAND
+    // and COLLAPSE are only reachable when no expanded section is referenced —
+    // parts/masks exist only while a section is expanded, so their presence
+    // unambiguously means "recollapse". Recollapse takes priority: a lasso that
+    // mixes an expanded section with a collapsed icon recollapses the expanded
+    // one(s) and ignores the collapse/expand this press.
+    const expandedIds = new Set<string>();
+    let collapsedIconEl: any = null;
+    let collapsedSection: any = null;
     for (const el of elements) {
       const ud = readUserData(el);
-      if (ud?.kind === 'section') {
-        iconElement = el;
-        section = ud.section;
-        break;
+      if (!ud) continue;
+      if (ud.kind === 'part' || ud.kind === 'mask') {
+        expandedIds.add(ud.id);
+      } else if (ud.kind === 'section') {
+        if (ud.section.isExpanded) expandedIds.add(ud.section.id);
+        else if (!collapsedIconEl) { collapsedIconEl = el; collapsedSection = ud.section; }
       }
     }
 
-    actionSeq++;
-    const actionType = iconElement && section
-      ? (section.isExpanded ? 'RECOLLAPSE' : 'EXPAND')
-      : 'COLLAPSE';
-    dlog(`${PROBE} #${actionSeq} ${actionType} BEGIN page=${page} build=${BUILD_TAG}`);
     try {
-      if (iconElement && section) {
-        if (section.isExpanded) {
-          dlog(`${LOG} RECOLLAPSE - section: ${summarizeSection(section)}`);
-          await recollapseAction(section, iconElement, filePath, page);
-        } else {
-          dlog(`${LOG} EXPAND - section: ${summarizeSection(section)}`);
-          await expandAction(section, iconElement, filePath, page);
+      if (expandedIds.size > 0) {
+        // Recollapse every expanded section the lasso spans, batched into a
+        // single refresh. recollapseSections resolves each icon by id and works
+        // by section id, so anything else in the lasso is irrelevant to it.
+        const ids = Array.from(expandedIds);
+        actionSeq++;
+        dlog(`${PROBE} #${actionSeq} RECOLLAPSE BEGIN page=${page} build=${BUILD_TAG} sections=${ids.length}`);
+        try {
+          await recollapseSections(ids, filePath, page);
+        } finally {
+          dlog(`${PROBE} #${actionSeq} RECOLLAPSE END`);
+        }
+      } else if (collapsedIconEl && collapsedSection) {
+        actionSeq++;
+        dlog(`${PROBE} #${actionSeq} EXPAND BEGIN page=${page} build=${BUILD_TAG}`);
+        try {
+          dlog(`${LOG} EXPAND - section: ${summarizeSection(collapsedSection)}`);
+          await expandAction(collapsedSection, collapsedIconEl, filePath, page);
+        } finally {
+          dlog(`${PROBE} #${actionSeq} EXPAND END`);
         }
       } else {
-        dlog(`${LOG} COLLAPSE - elements: ${summarizeElements(elements)}`);
-        await collapseAction(filePath, page, elements);
+        actionSeq++;
+        dlog(`${PROBE} #${actionSeq} COLLAPSE BEGIN page=${page} build=${BUILD_TAG}`);
+        try {
+          dlog(`${LOG} COLLAPSE - elements: ${summarizeElements(elements)}`);
+          await collapseAction(filePath, page, elements);
+        } finally {
+          dlog(`${PROBE} #${actionSeq} COLLAPSE END`);
+        }
       }
     } finally {
-      dlog(`${PROBE} #${actionSeq} ${actionType} END`);
       for (const el of elements) {
         try { el.recycle?.(); } catch { /* ignore */ }
       }

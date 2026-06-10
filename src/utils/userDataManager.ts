@@ -72,20 +72,31 @@ export function readUserData(element: any): UserDataKind {
   return null;
 }
 
-// Resolve the section's icon element FRESH from getElements (by section id),
-// rather than trusting a lassoed snapshot. Returns null if not found.
+// Map every section's id -> its icon element, resolved FRESH from getElements
+// (one read), rather than trusting lassoed snapshots. Used to find the icon(s)
+// for a recollapse triggered by lassoing section content rather than the icon.
+export async function findSectionIcons(
+  filePath: string,
+  page: number,
+): Promise<Map<string, any>> {
+  const allRes: any = await PluginFileAPI.getElements(page, filePath);
+  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  const byId = new Map<string, any>();
+  for (const el of all) {
+    const ud = readUserData(el);
+    if (ud?.kind === 'section' && ud.section?.id) byId.set(ud.section.id, el);
+  }
+  return byId;
+}
+
+// Resolve a single section's icon element FRESH from getElements (by section
+// id), rather than trusting a lassoed snapshot. Returns null if not found.
 async function resolveFreshIcon(
   filePath: string,
   page: number,
   sectionId: string,
 ): Promise<any | null> {
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
-  for (const el of all) {
-    const ud = readUserData(el);
-    if (ud?.kind === 'section' && ud.section?.id === sectionId) return el;
-  }
-  return null;
+  return (await findSectionIcons(filePath, page)).get(sectionId) ?? null;
 }
 
 export async function writeSection(

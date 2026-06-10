@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Feature: recollapse can now be triggered by lassoing **any element of an
+  expanded section** — its restored content or the mask covering it — not just
+  the `+` icon. If the selection spans several expanded sections, all of them
+  recollapse in a single press (and a single screen refresh). Recollapse takes
+  priority: a selection mixing an expanded section with a collapsed icon
+  recollapses the expanded one(s) and leaves the rest for that press.
+
 - Feature: handwritten ("stroke") links now survive collapse → expand →
   recollapse as **working links** (tappable, jump to their target), not just
   their bare strokes. A stroke link references its member strokes by page
