@@ -159,6 +159,23 @@ When recreating one with `insertElements`:
 
 ---
 
+## Geometry elements
+
+- `Geometry.type` is one of `straightLine`, `GEO_circle`, `GEO_ellipse`,
+  `GEO_polygon`. A `GEO_polygon` renders an **outline** through its `points`
+  (not a filled shape) — to fake a filled rectangle, stack concentric polygon
+  rings with a thick `penWidth`.
+- `penType` only has **solid** pens (10 = fineliner, 1 = pressure, 11 = marker,
+  14 = calligraphy). There is **no dashed/dotted line style** for geometry; a
+  dashed border exists only for link elements (`Link.style = 2`) and the lasso
+  box. A dotted outline must be faked from many short segments.
+- `penWidth` scales roughly 100 units per on-screen px (≈18000 renders a ~180px
+  band); `penColor` accepts only specific palette values (e.g. `0x00` black,
+  `0x9D` dark gray, `0xC9` light gray, `0xFE` white). `penType` 0 is rejected.
+- `points` are Android screen coordinates (relative to top-left), not EMR.
+
+---
+
 ## Beyond the JS bridge: native host API and background execution
 
 - **`HostCommonAPI`** (the Java host surface, in
