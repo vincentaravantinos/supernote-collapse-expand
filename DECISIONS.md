@@ -17,6 +17,33 @@ Each entry should capture:
 
 ---
 
+## 2026-06-10 — Expand multiple sections in one press, batched into a single refresh
+
+**Decision.** A press expands every collapsed section icon in the lasso (not just
+the first), leaving any loose strokes in place; recollapse keeps priority over
+expand. Like recollapse, this is batched — `expandAction` was split into
+`expandOne` (per-section mutation, no save/lasso/reload) and `expandSections`
+(flush + dismiss-lasso once, expand each, `reloadFile` once) — so N sections cost
+one refresh.
+
+**Alternatives considered.**
+- *One refresh per section (loop the existing expand).* Rejected by the PO in
+  favor of a single refresh, consistent with the recollapse-all decision.
+- *Options that conflicted with "expand + leave loose strokes":* a "collapse the
+  loose strokes while keeping the existing section" rule was rejected because it
+  is the exact opposite action for the same selection (collapsed icon + loose
+  strokes) — one button can't do both, and expand-wins matches existing behavior.
+
+**Constraint.** Batching expand is only safe with stroke-link sections because
+member-num recovery filters by the **section-specific `CE_PART:<id>` tag**: a
+mid-batch `reloadFile` (forced by stroke-link num recovery) surfaces a prior
+section's content, but that content carries a different id, so it is never
+miscounted as the current section's members. A stroke-link section still adds its
+own internal reloads (the real↔cached split requires a reload to read re-inserted
+nums — see SDK_DOC.md).
+
+---
+
 ## 2026-06-10 — Recollapse by section content: recollapse-priority + recollapse all spanned, batched into one refresh
 
 **Decision.** Recollapse can be triggered by lassoing any element bearing a
