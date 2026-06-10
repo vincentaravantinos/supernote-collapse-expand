@@ -134,6 +134,10 @@ fills the section's area. The mask must:
 - Not visibly overshoot the section boundary.
 - Not leave seams or gaps between adjacent rings.
 
+A thin rectangle outline traces the section boundary to mark the expanded
+area more clearly. (A dotted/dashed outline isn't possible — the SDK has no
+dashed-line geometry — so the outline is solid.)
+
 Empirical parameters live in `maskHelpers.ts`; tune via the constants
 there if rendering changes.
 

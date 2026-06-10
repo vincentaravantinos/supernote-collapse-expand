@@ -7,8 +7,10 @@ import { getRectPoints } from './geometryHelpers';
 // of concentric polygon rings that nest inward — each ring's thick outline
 // covers a band, and stacked rings fill the interior.
 // Swap the body of createMaskElements once the SDK provides a real filled shape.
-// penColor goes through a native palette; only specific values are accepted.
-const MASK_PEN_COLOR = 0xC9;
+// penColor goes through a native palette; only specific values are accepted
+// (0x00 black, 0x9D dark gray, 0xC9 light gray, 0xFE white). White blends with
+// the page so the masked area reads as blank inside the boundary outline.
+const MASK_PEN_COLOR = 0xFE;
 const MASK_PEN_TYPE = 10; // penType 0 is rejected by the API
 // Empirical: at penWidth=18000 the stroke renders a visible band ~180 wide
 // (~90 either side of the geometric path). Pen sits well below the SDK's
@@ -20,6 +22,34 @@ const VISIBLE_HALF_BAND = 90; // per-side outward extension of the stroke
 // hairline seams disappear. Bump RING_OVERLAP if white spots reappear.
 const RING_OVERLAP = 30;
 const RING_STEP = 2 * VISIBLE_HALF_BAND - RING_OVERLAP; // = 150
+
+// Thin outline drawn at the section boundary to mark the expanded area. The SDK
+// has no dashed-line geometry, so this is a solid frame. penColor 0x00 = black,
+// readable against the light-gray fill and the page. penWidth scales ~100/px
+// (the fill band uses 18000 ≈ 180px), so ~400 ≈ a 4px line.
+const BORDER_PEN_COLOR = 0x00;
+const BORDER_PEN_TYPE = 10; // fineliner (solid); penType 0 is rejected
+const BORDER_PEN_WIDTH = 400;
+
+async function createBorderRectangle(rect: Rect, page: number, sectionId: string): Promise<any | null> {
+  const points = getRectPoints(rect);
+  const res: any = await PluginCommAPI.createElement(ELEMENT_TYPES.GEO);
+  if (!res?.success || !res.result) {
+    console.log(`${LOG} createBorderRectangle FAILED rect=[${rect.left},${rect.top},${rect.right},${rect.bottom}] success=${res?.success} hasResult=${!!res?.result}`);
+    return null;
+  }
+  const el: any = res.result;
+  el.geometry = {
+    type: 'GEO_polygon',
+    points,
+    penColor: BORDER_PEN_COLOR,
+    penType: BORDER_PEN_TYPE,
+    penWidth: BORDER_PEN_WIDTH,
+  };
+  el.pageNum = page;
+  el.userData = CE_MASK_PREFIX + sectionId;
+  return el;
+}
 
 async function createMaskRectangle(rect: Rect, page: number, sectionId: string): Promise<any | null> {
   const points = getRectPoints(rect);
@@ -89,5 +119,9 @@ export async function createMaskElements(
     const el = await createMaskRectangle(ringRect, page, sectionId);
     if (el) result.push(el);
   }
+  // Thin outline at the section boundary, pushed last so it sits on top of the
+  // fill rings (below restored content, which is inside the boundary anyway).
+  const border = await createBorderRectangle(rect, page, sectionId);
+  if (border) result.push(border);
   return result;
 }

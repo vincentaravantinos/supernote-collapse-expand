@@ -51,13 +51,14 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  // Place the icon half an icon-size up and to the left of the lasso area, so
-  // when the section is expanded the icon peeks out past the restored content
-  // + mask and stays easy to select (instead of being covered by it).
+  // Place the icon up and to the left of the lasso area so it clears the
+  // restored content + mask + boundary outline and stays easy to select instead
+  // of overlapping the frame. Offset = half an icon (which alone centers the
+  // icon on the lasso's top-left corner) plus a third for clearance.
   // relativeRect's offset compensates so the content still restores at its
   // original lasso position. Clamp at the page edge so the icon never goes
   // off-page.
-  const ICON_OFFSET = Math.round(ICON_SIZE / 2);
+  const ICON_OFFSET = Math.round(ICON_SIZE / 2 + ICON_SIZE / 3);
   const lassoLeft = Math.round(lasso.left);
   const lassoTop = Math.round(lasso.top);
   const iconLeft = Math.max(0, lassoLeft - ICON_OFFSET);

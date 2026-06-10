@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Visuals: an expanded section is now marked by a **thin rectangle outline** at
+  its boundary, the **mask fill is white** (blends with the page so the area
+  reads as blank inside the frame) instead of gray, and the **`+` icon sits a
+  little further up-left** so it no longer overlaps the frame. (The outline is
+  solid, not dotted — the SDK has no dashed-line geometry.) The icon-placement
+  change applies to newly collapsed sections.
+
 - Feature: one button press can now **expand several collapsed sections at
   once** — lasso multiple `+` icons (optionally with other content) and they all
   expand in a single screen refresh. Any other selected strokes are left in
