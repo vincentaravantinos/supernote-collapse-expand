@@ -4,8 +4,9 @@ import {
   LOG,
   MAX_USERDATA_BYTES,
   CE_PLUG_PREFIX,
+  ZONE_MARGIN,
 } from '../constants';
-import { resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
+import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -37,6 +38,7 @@ async function recollapseOne(
   all: any[],
   filePath: string,
   page: number,
+  pageSize: { width: number; height: number },
 ): Promise<boolean> {
   // Deliberately do NOT recompute the icon rect here. `section.iconRect` (from
   // userData) is the EXPAND-TIME anchor the on-page strokes are aligned to; the
@@ -105,10 +107,27 @@ async function recollapseOne(
   // the link round-trips across repeated expand/recollapse cycles.
   newCollapsed = resolveLinkMemberIndices(newCollapsed);
 
+  // Recompute the zone (mask fill + boundary outline) from the content's CURRENT
+  // bounding box + margin, keeping the icon anchor — so the zone follows content
+  // moved while expanded, instead of staying at the original lasso area. Same
+  // definition collapse uses (relativeRect = zone − iconRect). Fall back to the
+  // existing relativeRect if there's no content. (Shifting the icon when the zone
+  // stretches left/up of it is a separate backlog follow-up.)
+  const bbox = contentBoundingBox(newCollapsed, pageSize);
+  const relativeRect = bbox
+    ? {
+        left: (bbox.left - ZONE_MARGIN) - section.iconRect.left,
+        top: (bbox.top - ZONE_MARGIN) - section.iconRect.top,
+        width: (bbox.right - bbox.left) + 2 * ZONE_MARGIN,
+        height: (bbox.bottom - bbox.top) + 2 * ZONE_MARGIN,
+      }
+    : section.relativeRect;
+
   // Update section state. Drop preservedNums — only meaningful while expanded.
   const updatedSection: CollapseSection = {
     ...section,
     collapsedElements: newCollapsed,
+    relativeRect,
     isExpanded: false,
     // iconRect kept from `...section` (the expand-time anchor) — see note above.
     preservedNums: undefined,
@@ -160,6 +179,11 @@ export async function recollapseSections(
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
 
+  const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
+  const pageSize = sizeRes?.success && sizeRes.result
+    ? { width: sizeRes.result.width, height: sizeRes.result.height }
+    : { width: 1404, height: 1872 };
+
   const iconById = new Map<string, any>();
   for (const el of all) {
     const ud = readUserData(el);
@@ -173,7 +197,7 @@ export async function recollapseSections(
       console.error(`${LOG} recollapse: no section icon for id=${id} (orphaned content?) — skipping`);
       continue;
     }
-    await recollapseOne(ud.section, icon, all, filePath, page);
+    await recollapseOne(ud.section, icon, all, filePath, page, pageSize);
   }
 
   // Dismiss the user's lasso LAST, then surface every deletion/userData update

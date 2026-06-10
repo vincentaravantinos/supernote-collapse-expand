@@ -13,9 +13,12 @@ export function dlog(...args: any[]): void {
 // Build stamp — logged at every action BEGIN so the trace tells us which build
 // is actually live (force-stop doesn't always re-extract a new .snplg). BUMP
 // THIS every deploy while debugging the reload, then confirm it in logcat.
-export const BUILD_TAG = 'r37-icon-offset-5of6';
+export const BUILD_TAG = 'r38-zone-from-content';
 
 export const ICON_SIZE = 50; // pixels
+// Uniform padding (px) added around a section's content bounding box to form its
+// zone (mask fill + boundary outline), so strokes don't touch the frame.
+export const ZONE_MARGIN = 20;
 // The collapsed-section icon is a TEXT glyph (⊕ = U+2295 CIRCLED PLUS),
 // not a picture element — picture inserts triggered an SDK bridge desync
 // that made insertElements silently no-op. Text dodges that entire class.

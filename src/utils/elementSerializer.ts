@@ -1,4 +1,4 @@
-import { PluginCommAPI, Point, Rect } from 'sn-plugin-lib';
+import { PluginCommAPI, Point, PointUtils, Rect } from 'sn-plugin-lib';
 import { ELEMENT_TYPES, LOG } from '../constants';
 import {
   CollapsedElement,
@@ -29,6 +29,48 @@ function roundRect(rect: Rect): Rect {
     right: Math.round(rect.right),
     bottom: Math.round(rect.bottom),
   };
+}
+
+// Bounding box, in android page coords, of a set of serialized elements — i.e.
+// the area the content actually occupies on the page. Strokes are stored in EMR
+// space (with their own maxX/maxY), so convert each point to android the same
+// way buildStroke positions it; text/link/geometry rects/points are already
+// android. Used to define a section's zone (mask + outline) from its content
+// rather than from the user's lasso. Returns null if there's no content.
+export function contentBoundingBox(
+  collapsed: CollapsedElement[],
+  pageSize: { width: number; height: number },
+): Rect | null {
+  const pageMaxX = PointUtils.getRealMaxX(pageSize);
+  const pageMaxY = PointUtils.getRealMaxY(pageSize);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const ext = (x: number, y: number) => {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  };
+  for (const ce of collapsed) {
+    const d = ce.data;
+    if (d.kind === 'stroke') {
+      const sx = d.maxX && d.maxX > 0 ? pageMaxX / d.maxX : 1;
+      const sy = d.maxY && d.maxY > 0 ? pageMaxY / d.maxY : 1;
+      for (const p of d.points) {
+        const a = PointUtils.emrPoint2Android({ x: p.x * sx, y: p.y * sy }, pageSize);
+        ext(a.x, a.y);
+      }
+    } else if (d.kind === 'text') {
+      ext(d.textRect.left, d.textRect.top);
+      ext(d.textRect.right, d.textRect.bottom);
+    } else if (d.kind === 'link') {
+      ext(d.rect.left, d.rect.top);
+      ext(d.rect.right, d.rect.bottom);
+    } else if (d.kind === 'geometry') {
+      for (const p of d.points) ext(p.x, p.y);
+    }
+  }
+  if (minX === Infinity) return null;
+  return roundRect({ left: minX, top: minY, right: maxX, bottom: maxY });
 }
 
 async function drainAccessor<T>(accessor: any): Promise<T[]> {

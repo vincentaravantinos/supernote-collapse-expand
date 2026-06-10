@@ -9,8 +9,9 @@ import {
   LOG,
   MAX_USERDATA_BYTES,
   SCHEMA_VERSION,
+  ZONE_MARGIN,
 } from '../constants';
-import { resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
+import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -51,18 +52,28 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  // Place the icon up and to the left of the lasso area so it clears the
-  // restored content + mask + boundary outline and stays easy to select instead
-  // of overlapping the frame. Offset = half an icon (which alone centers the
-  // icon on the lasso's top-left corner) plus a third for clearance.
-  // relativeRect's offset compensates so the content still restores at its
-  // original lasso position. Clamp at the page edge so the icon never goes
-  // off-page.
+  // Zone = the section content's bounding box + a margin (NOT the user's lasso
+  // rect), so the mask fill and boundary outline hug the actual strokes. Fall
+  // back to the lasso rect only if the bbox can't be computed.
+  const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
+  const pageSize = sizeRes?.success && sizeRes.result
+    ? { width: sizeRes.result.width, height: sizeRes.result.height }
+    : { width: 1404, height: 1872 };
+  const bbox = contentBoundingBox(collapsed, pageSize);
+  const zone: Rect = bbox
+    ? { left: bbox.left - ZONE_MARGIN, top: bbox.top - ZONE_MARGIN, right: bbox.right + ZONE_MARGIN, bottom: bbox.bottom + ZONE_MARGIN }
+    : { left: Math.round(lasso.left), top: Math.round(lasso.top), right: Math.round(lasso.right), bottom: Math.round(lasso.bottom) };
+
+  // Place the icon up and to the left of the zone so it clears the restored
+  // content + mask + boundary outline and stays easy to select. Offset = half an
+  // icon (which alone centers the icon on the zone's top-left corner) plus a
+  // third for clearance. relativeRect compensates so the content restores at its
+  // place. Clamp at the page edge so the icon never goes off-page.
   const ICON_OFFSET = Math.round(ICON_SIZE / 2 + ICON_SIZE / 3);
-  const lassoLeft = Math.round(lasso.left);
-  const lassoTop = Math.round(lasso.top);
-  const iconLeft = Math.max(0, lassoLeft - ICON_OFFSET);
-  const iconTop = Math.max(0, lassoTop - ICON_OFFSET);
+  const zoneLeft = zone.left;
+  const zoneTop = zone.top;
+  const iconLeft = Math.max(0, zoneLeft - ICON_OFFSET);
+  const iconTop = Math.max(0, zoneTop - ICON_OFFSET);
   const iconRect: Rect = {
     left: iconLeft,
     top: iconTop,
@@ -75,13 +86,12 @@ export async function collapseAction(filePath: string, page: number, elements: a
     id: generateSectionId(),
     iconRect,
     relativeRect: {
-      // Offset from the icon's top-left to the content's top-left (= the icon
-      // shift, or less if clamped at the edge), so contentRect lands on the
-      // original lasso area.
-      left: lassoLeft - iconLeft,
-      top: lassoTop - iconTop,
-      width: Math.round(lasso.right - lasso.left),
-      height: Math.round(lasso.bottom - lasso.top),
+      // Offset from the icon's top-left to the zone's top-left, so contentRect
+      // lands on the zone (content bbox + margin).
+      left: zoneLeft - iconLeft,
+      top: zoneTop - iconTop,
+      width: zone.right - zone.left,
+      height: zone.bottom - zone.top,
     },
     collapsedElements: collapsed,
     isExpanded: false,

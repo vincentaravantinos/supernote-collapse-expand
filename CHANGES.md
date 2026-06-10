@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Behavior: a section's zone (white mask fill + boundary outline) is now defined
+  by the **bounding box of its content + a small margin**, computed the same way
+  at the initial collapse and at every recollapse — instead of the user's lasso
+  rect. So the zone hugs the actual strokes (a loose lasso no longer leaves a big
+  empty frame) and **adapts when a stroke is moved while expanded**. (If content
+  is moved up/left past the `+` icon the zone currently extends toward the icon;
+  auto-shifting the icon to stay clear is a planned follow-up.)
+
 - Visuals: an expanded section is now marked by a **thin rectangle outline** at
   its boundary, the **mask fill is white** (blends with the page so the area
   reads as blank inside the frame) instead of gray, and the **`+` icon sits a
