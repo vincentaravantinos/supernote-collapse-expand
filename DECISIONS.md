@@ -17,6 +17,39 @@ Each entry should capture:
 
 ---
 
+## 2026-06-10 — Recollapse by section content: recollapse-priority + recollapse all spanned, batched into one refresh
+
+**Decision.** Recollapse can be triggered by lassoing any element bearing a
+section id (restored `CE_PART` content **or** the `CE_MASK`), not just the icon.
+A single press recollapses **every** expanded section the selection spans, and
+**recollapse takes priority**: if the lasso mixes an expanded section with a
+collapsed icon, the expanded one(s) recollapse and the collapse/expand is ignored
+that press. The N sections are mutated against one `getElements` snapshot and
+surfaced with a single `setLassoBoxState(2)` + `reloadFile`, so N sections cost
+one refresh.
+
+**Alternatives considered.**
+- *Trigger on restored content only (not the mask).* Rejected: the mask sits on
+  top of the section and is often what the lasso actually grabs (especially over
+  an empty patch), so excluding it would make the trigger miss obvious cases.
+- *Recollapse only the first spanned section.* Rejected by the PO in favor of
+  recollapsing all spanned sections.
+- *Reuse the existing per-section `recollapseAction` in a loop.* Rejected: each
+  call ended with its own `reloadFile`, giving one screen refresh per section.
+  Split into `recollapseOne` (pure per-section mutation) + `recollapseSections`
+  (flush/read once, mutate all, refresh once).
+- *Mixed multi-operation in one press* (e.g. expand a collapsed section AND
+  recollapse an expanded one): out of scope — deferred to the multi-section
+  backlog item; recollapse-priority keeps the current press unambiguous.
+
+**Constraint.** Sharing one pre-mutation `getElements` snapshot across the loop
+is only safe because sections don't overlap and `deleteElements` doesn't renumber
+other elements, so one section's deletions don't invalidate another's page nums.
+The single-refresh batching relies on the real↔cached model (writes hit the real
+file; one `reloadFile` at the end syncs cached:=real) — see SDK_DOC.md.
+
+---
+
 ## 2026-06-10 — Stroke-link round-trip: store member indexes, recover new nums via reload+getElements, accept device-owned area
 
 **Decision.** To round-trip a handwritten stroke link (`Link.category = 1`)
