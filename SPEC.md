@@ -27,12 +27,14 @@ button.
 - Pictures and titles in the lasso are left in place (not collapsable).
 
 ### Expand
-**Trigger**: user lassoes the "+" icon of a collapsed section and presses
-the plugin button.
+**Trigger**: user lassoes the "+" icon of one or more collapsed sections
+(optionally together with other content) and presses the plugin button.
 
 **Outcome**:
 - The original content reappears at its location (translated if the icon
   was moved while collapsed).
+- If multiple collapsed sections are selected, all of them expand in one
+  press; any other selected content is left in place.
 - A visual mask covers the section's area so any user content the user
   drew on top of (or under) the icon while collapsed is hidden behind the
   expanded section.

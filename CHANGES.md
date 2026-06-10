@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Feature: one button press can now **expand several collapsed sections at
+  once** — lasso multiple `+` icons (optionally with other content) and they all
+  expand in a single screen refresh. Any other selected strokes are left in
+  place. (Recollapse keeps priority: a selection mixing an expanded section with
+  collapsed icons recollapses the expanded one(s) that press.)
+
 - Feature: recollapse can now be triggered by lassoing **any element of an
   expanded section** — its restored content or the mask covering it — not just
   the `+` icon. If the selection spans several expanded sections, all of them

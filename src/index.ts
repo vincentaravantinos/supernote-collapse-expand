@@ -1,9 +1,9 @@
 import { PluginCommAPI } from 'sn-plugin-lib';
 import { BUILD_TAG, dlog, LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
-import { summarizeElements, summarizeSection } from './utils/diagnostics';
+import { summarizeElements } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
-import { expandAction } from './logic/expandAction';
+import { expandSections } from './logic/expandAction';
 import { recollapseSections } from './logic/recollapseAction';
 
 // Re-entrancy guard: the button can be tapped again while a previous
@@ -75,8 +75,8 @@ export async function handleMainAction() {
     // mixes an expanded section with a collapsed icon recollapses the expanded
     // one(s) and ignores the collapse/expand this press.
     const expandedIds = new Set<string>();
-    let collapsedIconEl: any = null;
-    let collapsedSection: any = null;
+    const collapsedTargets: { section: any; icon: any }[] = [];
+    const seenCollapsed = new Set<string>();
     for (const el of elements) {
       const ud = readUserData(el);
       if (!ud) continue;
@@ -84,7 +84,10 @@ export async function handleMainAction() {
         expandedIds.add(ud.id);
       } else if (ud.kind === 'section') {
         if (ud.section.isExpanded) expandedIds.add(ud.section.id);
-        else if (!collapsedIconEl) { collapsedIconEl = el; collapsedSection = ud.section; }
+        else if (!seenCollapsed.has(ud.section.id)) {
+          seenCollapsed.add(ud.section.id);
+          collapsedTargets.push({ section: ud.section, icon: el });
+        }
       }
     }
 
@@ -101,12 +104,13 @@ export async function handleMainAction() {
         } finally {
           dlog(`${PROBE} #${actionSeq} RECOLLAPSE END`);
         }
-      } else if (collapsedIconEl && collapsedSection) {
+      } else if (collapsedTargets.length > 0) {
+        // Expand every collapsed section in the lasso, batched into a single
+        // refresh; loose strokes in the selection are left in place.
         actionSeq++;
-        dlog(`${PROBE} #${actionSeq} EXPAND BEGIN page=${page} build=${BUILD_TAG}`);
+        dlog(`${PROBE} #${actionSeq} EXPAND BEGIN page=${page} build=${BUILD_TAG} sections=${collapsedTargets.length}`);
         try {
-          dlog(`${LOG} EXPAND - section: ${summarizeSection(collapsedSection)}`);
-          await expandAction(collapsedSection, collapsedIconEl, filePath, page);
+          await expandSections(collapsedTargets, filePath, page);
         } finally {
           dlog(`${PROBE} #${actionSeq} EXPAND END`);
         }

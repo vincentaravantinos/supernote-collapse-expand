@@ -6,22 +6,26 @@ import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { CollapseSection } from '../model/types';
 
-export async function expandAction(
+// Expand ONE section: insert its mask + restored content (stroke links rebuilt
+// via rebuildStrokeLinks) and flip the icon's userData to isExpanded.
+//
+// Deliberately does NOT saveCurrentNote / setLassoBoxState / reloadFile —
+// expandSections does those once around the loop so N sections cost a single
+// refresh. Reads only this section's own icon (resolved fresh by id), so it is
+// unaffected by sibling sections inserted earlier in the same batch but not yet
+// reloaded (their content carries a different CE_PART:<id> tag).
+async function expandOne(
   section: CollapseSection,
   iconElement: any,
   filePath: string,
   page: number,
-) {
+): Promise<void> {
   // SIZE PROBE: the round-tripped userData length read back from the icon. If
   // this is much smaller than what collapse wrote, the userData was truncated
   // (real ceiling); if it matches, big payloads survive the write/read.
   dlog(`${LOG} SIZE expand icon userData=${iconElement?.userData?.length ?? 0} bytes, collapsed=${section.collapsedElements?.length ?? 0} element(s)`);
 
-  const tEntry = Date.now();
-  // Flush any in-flight strokes the user drew while collapsed so getElements
-  // below sees them.
-  await PluginNoteAPI.saveCurrentNote();
-
+  const tPrep = Date.now();
   // Read the icon's CURRENT rect from the persisted element list, not from
   // the lassoed element (which can report a stale rect after a move).
   const iconRectNow = await getCurrentIconRect(filePath, page, section, iconElement);
@@ -45,18 +49,7 @@ export async function expandAction(
   const emrDelta = { x: emrNow.x - emrSaved.x, y: emrNow.y - emrSaved.y };
   const pageMaxX = PointUtils.getRealMaxX(pageSize);
   const pageMaxY = PointUtils.getRealMaxY(pageSize);
-
-  // Dismiss the user's lasso (they lassoed the icon to trigger expand) BEFORE
-  // the file-level inserts below, so we never mutate with a lifted selection.
-  // We used to also lasso contentRect here to record `preservedNums` for
-  // recollapse's "absorb strokes drawn during expansion" feature — but that
-  // feature is disabled (see ABSORB_STROKES_VIA_LASSO in recollapseAction), so
-  // that whole read-lasso (lassoElements + getLassoElements + iterate) was dead
-  // work. Removing it drops ~1.4s off expand. If absorb is ever re-enabled,
-  // restore the preservedNums capture here.
-  await PluginCommAPI.setLassoBoxState(2);
-
-  dlog(`${LOG} PERF expand entry(save+iconrect+dismiss-lasso)=${Date.now() - tEntry}ms`);
+  dlog(`${LOG} PERF expand prep(iconrect+pagesize)=${Date.now() - tPrep}ms`);
 
   // Stroke links (category 1) are re-inserted out-of-band (their member strokes
   // get fresh page nums on re-insert), so EXCLUDE those members from the main
@@ -83,8 +76,8 @@ export async function expandAction(
   let insertOk = true;
   const tIns = Date.now();
   if (!hasStrokeLinks) {
-    // Simple path: masks + content in one batch; the end-of-expand reload below
-    // is the only refresh.
+    // Simple path: masks + content in one batch; the end-of-expand reload (in
+    // expandSections) is the only refresh.
     const batch = [...maskElements, ...otherElements];
     if (batch.length > 0) {
       const ins: any = await PluginFileAPI.insertElements(filePath, page, batch);
@@ -94,9 +87,9 @@ export async function expandAction(
     }
   } else {
     // Stroke-link path: rebuildStrokeLinks owns the entire insert sequence so it
-    // can recover the members' fresh nums with one reload per link (no extra
-    // baseline reload). It inserts masks + members, then content + the rebuilt
-    // links; the end-of-expand reload surfaces the links.
+    // can recover the members' fresh nums with one reload per link. It inserts
+    // masks + members, then content + the rebuilt links; the end-of-expand
+    // reload surfaces the links.
     insertOk = await rebuildStrokeLinks({
       filePath, page, collapsedElements: section.collapsedElements,
       sectionId: section.id, emrDelta, pageMaxX, pageMaxY, dx, dy,
@@ -108,11 +101,8 @@ export async function expandAction(
   // Deliberately NO saveCurrentNote here. insertElements wrote the content to
   // the REAL note file; saveCurrentNote would push the (often still-stale)
   // CACHED/displayed copy back over the real file and clobber the inserts. The
-  // SDK's async real→cached sync is unreliable — it sometimes never fires, so
-  // getElements can stay stale for >10s. reloadFile below instead reloads the
-  // displayed copy FROM the real file, which deterministically surfaces the
-  // inserts (confirmed: reloadFile shows the full count even when the async
-  // sync never landed). See SDK_DOC.md ("Plugin writes hit the REAL file …").
+  // end-of-batch reloadFile (in expandSections) reloads the displayed copy FROM
+  // the real file, which deterministically surfaces the inserts. See SDK_DOC.md.
   // While expanded, the collapsed content is live on the page as CE_PART
   // elements, and recollapse rebuilds the payload by re-serializing those — so
   // the icon's userData does NOT need to carry `collapsedElements` while
@@ -132,7 +122,36 @@ export async function expandAction(
   const ok = await writeSection(filePath, page, iconElement, expandedState);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
   dlog(`${LOG} PERF expand writeSection=${Date.now() - tWrite}ms`);
+}
 
+// Expand one or more sections. The user can lasso several collapsed section
+// icons (optionally together with loose strokes) and expand them all in one
+// press. Flush once, dismiss the lasso once, expand each section, then reloadFile
+// ONCE — so N sections cost a SINGLE on-screen refresh (a section containing a
+// stroke link still adds its own internal reloads; see rebuildStrokeLinks). Any
+// loose strokes in the selection are left untouched (expand only inserts; the
+// lasso dismissal commits them back to the page unchanged).
+export async function expandSections(
+  targets: { section: CollapseSection; icon: any }[],
+  filePath: string,
+  page: number,
+): Promise<void> {
+  if (targets.length === 0) return;
+
+  // Flush in-flight strokes (e.g. the icon moved while collapsed) once, so the
+  // per-section icon-rect reads below see the current state.
+  await PluginNoteAPI.saveCurrentNote();
+
+  // Dismiss the user's lasso once, before any file-level insert, so we never
+  // mutate with a lifted selection. (Committing the lasso also returns any loose
+  // selected strokes to the page unchanged.)
+  await PluginCommAPI.setLassoBoxState(2);
+
+  for (const t of targets) {
+    await expandOne(t.section, t.icon, filePath, page);
+  }
+
+  // Surface every section's inserts with a single refresh.
   const tReload = Date.now();
   await PluginCommAPI.reloadFile();
   dlog(`${LOG} PERF expand reload=${Date.now() - tReload}ms`);
