@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix: geometry-only selections can now be collapsed. The lasso button's
+  `editDataTypes` listed stroke/title/image/text-box/link but omitted geometry
+  (`5`), so the Collapse / Expand button was greyed out for selections
+  containing only shapes — even though geometry was already serialized. Added
+  `5`.
+
 - Fix: collapse/expand/recollapse now dismiss the lasso selection
   (`setLassoBoxState(2)`) instead of leaving it dangling. This removes the
   collapse flicker and, more importantly, fixes the cumulative failure where

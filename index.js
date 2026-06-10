@@ -19,8 +19,12 @@ PluginManager.registerButton(2, ['NOTE'], {
   id: PLUGIN_MENU_ID,
   name: PLUGIN_BUTTON_NAME,
   icon: Image.resolveAssetSource(require('./assets/icon_plus.png')).uri,
-  // editDataTypes specifies which elements trigger this button in the lasso menu
-  editDataTypes: [0, 1, 2, 3, 4],
+  // editDataTypes specifies which selection element types enable this button in
+  // the lasso menu. Values (per prelude-rs/sn-align-plugin): 0=stroke, 1=title,
+  // 2=image, 3=text-box, 4=link, 5=geometry. Include 5 so a geometry-only
+  // selection can collapse too — omitting it greyed the button out for pure
+  // shapes (confirmed on-device, 2026-06), even though we serialize geometry.
+  editDataTypes: [0, 1, 2, 3, 4, 5],
   showType: 0,
 }).then(
   res => console.log(`${LOG} registerButton resolved:`, res),
