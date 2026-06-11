@@ -17,36 +17,41 @@ Each entry should capture:
 
 ---
 
-## 2026-06-11 — Live box redraw on icon drag: motion listener, outline-only, in-memory gate
+## 2026-06-11 — Live box redraw on icon drag: motion listener + in-memory gate; full redraw (fill + strokes)
 
-**Decision.** While a section is expanded, dragging its icon redraws the boundary
-**outline** live (on `ACTION_UP`), via a `registerMotionListener`. A module-level
-registry of expanded sections (`id → { iconRect, contentBBox }`, populated on
-expand, cleared on recollapse) gates the work: on `ACTION_DOWN` an in-memory
-point-in-rect test (icon rect padded by ~60px to cover the selection box) decides
-if a drag grabbed an icon; only then, on `UP`, do we `getElements` (to read the
-icon's new rect) and swap the outline. A shared busy guard (`busy.ts`) keeps this
-from racing the button handler.
+**Decision.** While a section is expanded, dragging its icon redraws the **whole
+section** live (on `ACTION_UP`) — white fill, outline, and strokes — at the new
+stretched area, via a `registerMotionListener`. A module-level registry of
+expanded sections (`expandedRegistry.ts`: `id → { iconRect, contentBBox }`,
+populated on expand, cleared on recollapse) gates the work: on `ACTION_DOWN` an
+in-memory point-in-rect test (icon rect padded ~60px for the selection box)
+decides if a drag grabbed an icon; only then, on `UP`, do we touch the SDK. The
+redraw re-serializes the on-page strokes, deletes the section's content + fill +
+outline, and re-expands in place via `expandOne` (reusing the tested mask/content
+z-order and stroke-link handling) in a single `reloadFile`. A shared busy guard
+(`busy.ts`) keeps it from racing the button handler.
 
-**Outline-only (not the fill).** The live redraw moves only the `CE_FRAME`
-outline; the white `CE_MASK` fill is left in place and reshaped at the next
-recollapse. So the stretched arm isn't whited-out during a live drag (pre-existing
-strokes under it stay visible until recollapse).
+**Full redraw, cost accepted.** Re-filling the white mask requires the strokes
+above it, and the SDK only inserts on top — so correct z-order means rebuilding
+the strokes each drag (≈ an `expand` cost per drag; worse for stroke-link
+sections via `rebuildStrokeLinks`' reloads). We first shipped an outline-only
+variant to dodge this, but the PO judged the full redraw more natural and
+accepted the latency since repositioning is rare (pairs with a "busy" indicator,
+backlog item). The outline is still its own `CE_FRAME` element (kept distinct for
+clarity / possible future outline-only paths), but the live redraw rebuilds
+everything.
 
 **Alternatives considered.**
+- *Outline-only (ship on `main` first).* Cheaper and snappy, but leaves the
+  stretched arm un-whited-out until recollapse; superseded by the full redraw.
 - *Truly live during the drag (per `ACTION_MOVE`).* Rejected: redrawing per
-  motion tick (delete + insert + `reloadFile` ≈ 0.5–1s each) is infeasible.
-- *`PEN_UP` instead of motion.* Rejected: it doesn't fire on a selection-move,
-  only on drawing — confirmed by probe.
-- *Redraw the fill too (the "correct" version).* Rejected as disproportionate:
-  the fill must sit under the content, and the SDK only inserts on top, so
-  keeping z-order means deleting and rebuilding every stroke on each drag — an
-  `expand`-cost per drag, made worse for stroke-link sections (the
-  `rebuildStrokeLinks` reload-dance per drag). It fights the snappy "live" goal
-  for a transient state the recollapse already corrects.
-- *Drop the DOWN gate, check on every UP.* Rejected: that `getElements` on every
-  touch-up while expanded (the user draws a lot then); the DOWN gate keeps SDK
-  calls to actual icon grabs.
+  motion tick (≈0.5–1s each) is infeasible.
+- *`PEN_UP` instead of motion.* Rejected: doesn't fire on a selection-move, only
+  on drawing — confirmed by probe.
+- *Recollapse then expand (two ops).* Rejected: two `reloadFile`s with a visible
+  collapsed flash; reusing `expandOne` after an in-line delete does it in one.
+- *Drop the DOWN gate, check on every UP.* Rejected: that's a `getElements` on
+  every touch-up while expanded; the DOWN gate keeps SDK calls to real grabs.
 
 **Constraint.** The motion payload has no element identity (coordinates only), so
 the position↔element correlation (registry + DOWN gate) is unavoidable. See
