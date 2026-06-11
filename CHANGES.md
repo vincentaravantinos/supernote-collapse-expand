@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Docs: added a **user guide** (now the project `README.md`) covering the
+  collapse / expand / recollapse actions, multi-section selections, resizing or
+  relocating a section by dragging its `+` icon, adding content to an expanded
+  section, and the persistence / single-page / no-overlap limits. (Replaces the
+  default React Native boilerplate README.)
+
 - Feature: a **"working" indicator** now appears during slow operations
   (collapse / expand / recollapse, and the live icon-move redraw), so the plugin
   no longer looks frozen on a large note. It's a small card centered on the page

@@ -1,97 +1,96 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Collapse / Expand — User Guide
 
-# Getting Started
+Collapse / Expand lets you hide a region of your handwriting behind a small `+`
+icon, bring it back when you need it, and tuck it away again when you're done.
+The rest of the page stays fully usable the whole time — you can keep writing,
+panning, and selecting around a collapsed region.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+All actions use the **Collapse / Expand** button in the lasso menu: make a
+selection with the lasso, then tap the button.
 
-## Step 1: Start Metro
+---
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## The three actions
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### Collapse — hide a region
 
-```sh
-# Using npm
-npm start
+1. Lasso the handwriting you want to hide.
+2. Tap **Collapse / Expand**.
 
-# OR using Yarn
-yarn start
-```
+The selected content disappears and a small `+` icon appears just above and to
+the left of where it was. The icon holds everything needed to bring the content
+back later.
 
-## Step 2: Build and run your app
+Pictures and titles inside the lasso are left in place — they aren't collapsed.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+### Expand — bring it back
 
-### Android
+1. Lasso the `+` icon.
+2. Tap **Collapse / Expand**.
 
-```sh
-# Using npm
-npm run android
+The content reappears where it was. A white area with a thin outline marks the
+section's boundary, so you can see exactly what belongs to it.
 
-# OR using Yarn
-yarn android
-```
+### Recollapse — put it away again
 
-### iOS
+1. Lasso the `+` icon **or** any of the restored content, or the white area
+   itself.
+2. Tap **Collapse / Expand**.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+The content hides again and the white area disappears. The `+` icon stays right
+where it is.
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+---
 
-```sh
-bundle install
-```
+## Working with several sections at once
 
-Then, and every time you update your native dependencies, run:
+- **Expand many at once** — lasso several `+` icons together and tap the button;
+  they all expand in one go. Any other handwriting in the lasso is left alone.
+- **Recollapse many at once** — one lasso that covers several expanded sections
+  recollapses all of them at once.
+- **Mixed selections** — if a single lasso covers both an expanded section and a
+  collapsed `+` icon, recollapsing takes priority: the expanded section(s) are
+  put away, and the collapse/expand is ignored for that tap.
 
-```sh
-bundle exec pod install
-```
+---
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+## How to resize an existing section or move the anchor position
 
-```sh
-# Using npm
-npm run ios
+You reshape or relocate a section by **dragging its `+` icon** — and it behaves
+differently depending on whether the section is collapsed or expanded:
 
-# OR using Yarn
-yarn ios
-```
+- **While collapsed** — dragging the icon moves the **whole section**. When you
+  expand it again, the content reappears at the icon's new spot.
+- **While expanded** — dragging the icon **reshapes the section's area** instead.
+  The restored content stays where it is, and the white area stretches so the
+  icon sits at its edge. Drag the icon a little to fine-tune the boundary, or
+  drag it far away to turn the section into a large, mostly-empty area.
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+  When you release the icon while expanded, the section redraws at its new shape.
+  This takes a moment longer than an ordinary page pan, so it's meant for the
+  occasional adjustment rather than continuous dragging.
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+---
 
-## Step 3: Modify your app
+## Modifying the content of an existing section
 
-Now that you have successfully run the app, let's make changes!
+You can add to a section while it's expanded. Any new strokes you write on top of
+an expanded section are folded into it when you recollapse — so they come back
+the next time you expand.
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+Handwriting that was already on the page underneath the section (before you
+expanded it) is left exactly where it is and is **not** pulled into the section.
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+---
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+## Good to know
 
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- **It's safe to power off.** Sections are remembered across turning the device
+  off, app restarts, and page reloads. You can always perform the next action on
+  any section after powering back on.
+- **One page at a time.** A section lives on a single page; it doesn't span pages.
+- **Don't overlap or nest sections.** Collapsing a region that contains another
+  section's icon isn't supported.
+- **Very large selections.** If a selection is too big to store, the plugin
+  declines with a message rather than collapsing it partially — just collapse a
+  smaller region.

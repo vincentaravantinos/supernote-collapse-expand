@@ -5,4 +5,5 @@ Open feature requests and deferred items. Worked per the workflows in
 geometry item below is a bugfix-workflow item). Remove an item once the
 user confirms it's done.
 
-1. FEATURE: write a user manual (a `.md` file in the repo is fine) documenting the plugin's behaviour for end users — e.g. moving the icon **while collapsed** moves the entire section, while moving it **while expanded** modifies the section area (stretches it / decides icon positioning relative to the area); the collapse / expand / recollapse triggers; recollapsing or expanding by lassoing any section element; multi-section select; the boundary outline + white mask. Keep it user-facing (not implementation detail).
+1. FEATURE: support **nested sections** — collapsing a region that contains another section's icon (and recollapsing/expanding correctly when sections are nested or overlap). Currently a non-goal (SPEC: "Sections do not nest or overlap"); this item is to lift that restriction.
+2. FEATURE: make the **menu button label reflect the action that will occur** for the current selection — e.g. "Collapse" / "Expand" / "Recollapse" — instead of the single static "Collapse / Expand" label, so the user knows what the button will do before pressing it.
