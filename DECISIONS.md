@@ -17,6 +17,39 @@ Each entry should capture:
 
 ---
 
+## 2026-06-11 — Moving the icon while expanded reshapes the zone (supersedes 8ba0584's behavior)
+
+**Decision.** When the icon is moved while a section is expanded, recollapse
+**re-anchors the section to the icon's current physical position** and sets the
+zone to the content bbox + margin **stretched to touch the icon's near edge**
+(per-axis). On re-expand the content stays put and the zone reaches the icon, so
+the icon's position relative to the area is preserved (drag bottom-right ⇒ icon at
+the area's bottom-right; drag far ⇒ big mostly-empty area). The zone stops at the
+icon's near edge so the expand-time mask (which renders over the older icon
+element) never covers the icon. Move-icon-*while-collapsed* still relocates the
+whole section via expand's `emrDelta`.
+
+**This deliberately supersedes commit 8ba0584** ("moving the icon while expanded
+no longer shifts strokes on re-expand"), which kept the *expand-time* anchor so
+the section translated to follow the icon. The new behavior is the opposite
+(content stays, zone stretches) — the PO wants moving the icon while expanded to
+reshape the area, not move the section.
+
+**Why it doesn't reintroduce 8ba0584's bug.** That bug was a *mismatch*:
+`iconRect` was set to the post-move physical rect while `relativeRect` was still
+computed against the old anchor, so strokes drifted from the mask. Here both
+`iconRect` and `relativeRect` are derived from the *same* current icon rect, so
+strokes and mask stay aligned (`emrDelta = 0` on re-expand when the icon hasn't
+moved since).
+
+**Alternatives considered.**
+- *Shift the icon to stay just outside the zone (former backlog "Part 2").*
+  Rejected/obsoleted: stretching the *zone* to the icon achieves the same
+  icon↔zone adjacency without ever moving the icon (which had no proven SDK
+  mechanism and would override manual icon moves).
+
+---
+
 ## 2026-06-10 — Section zone defined by content bounding box, not the lasso; icon-shift staged
 
 **Decision.** A section's zone (mask fill + boundary outline, via `relativeRect`)
