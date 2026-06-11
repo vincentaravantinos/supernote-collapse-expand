@@ -201,6 +201,25 @@ For reacting to user input outside the plugin button:
 
 ---
 
+## Toolbar button labels are fixed for the open toolbar
+
+`PluginManager.registerButton(type, appTypes, {id, name, icon, ...})` sets the
+button label (`name`) at registration. There is **no** call to change a label
+in place — only `unregisterButton(id)`, `getButtonState`/`setButtonState`
+(enable/disable), and re-registering.
+
+Re-registering with the same `id` and a new `name` does **not** relabel the
+button on a lasso toolbar that is **already open**; the new label only takes
+effect the next time the toolbar opens. The host snapshots button definitions
+when the toolbar renders. Combined with the fact that **no event fires when a
+selection is made or the lasso menu opens** (the only events are `PEN_UP`,
+`IMPORT_STICKER`, `MOTION_EVENT`, and the button listener fires on *press*), a
+plugin **cannot** make a lasso-toolbar button's label reflect the current
+selection — there is no moment at which it can both know the selection and
+update the label before the toolbar paints. Plan for a fixed label.
+
+---
+
 ## JS timers don't fire while the plugin is idle
 
 `setTimeout` / `setInterval` callbacks only run when the JS runtime is being
