@@ -176,6 +176,22 @@ When recreating one with `insertElements`:
 
 ---
 
+## Render order is fixed by element type, not by insertion order or layer
+
+The device composites a page in a fixed order **by element type**, not by element
+num (insertion order) and not overridable per-layer: **text boxes draw beneath
+handwriting and geometry**. So a stroke or `GEO_polygon` always covers a text box
+that overlaps it, regardless of which was inserted/created first or what layer
+either is on. (Confirmed both interactively — drawing ink over an existing text
+box hides the text — and via the SDK.) Within the "above text" group, strokes and
+geometry order by insertion num as expected.
+
+Consequence: you cannot place a text box on top of a geometry fill. A white fill
+used to hide content will also hide any text box under it; there's no insertion
+order or `layerNum` that lifts the text above the fill.
+
+---
+
 ## Plugin event listeners (`PluginManager`)
 
 For reacting to user input outside the plugin button:

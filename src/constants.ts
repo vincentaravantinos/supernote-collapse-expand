@@ -9,7 +9,7 @@ export function dlog(...args: any[]): void {
 
 // Logged at each action start to confirm which build is actually live: pushing a
 // new .snplg doesn't always replace the running one. Bump per deploy.
-export const BUILD_TAG = 'r59-recollapse-perf';
+export const BUILD_TAG = 'r60-textbox-caveat';
 
 export const ICON_SIZE = 50; // px
 // Padding around a section's content bbox to form its zone (mask + outline).

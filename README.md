@@ -98,3 +98,10 @@ expanded it) is left exactly where it is and is **not** pulled into the section.
   handwriting the page holds (not just what you selected) — on a very dense page
   an operation can take several seconds. The "working" indicator shows while it
   runs; just wait for it to finish.
+- **Typed text boxes are hidden when expanded.** If your selection includes a
+  typed **text box**, it still collapses and is preserved, but when you expand the
+  section the text box is covered by the section's white area and won't be
+  visible. This is a Supernote limitation, not the plugin: the device always draws
+  text boxes *beneath* handwriting and shapes, so the section's mask sits on top of
+  them. Handwriting (including recognized handwriting) is unaffected — avoid
+  collapsing typed text boxes for now.

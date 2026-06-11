@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Known limitation (documented): a typed **text box** in a collapsed selection is
+  preserved but, once expanded, is hidden behind the section's white area. This is
+  a Supernote rendering behaviour — the device always draws text boxes beneath
+  handwriting/shapes, so the mask sits on top of them — and can't be fixed from the
+  plugin. Handwriting is unaffected. (See README + SDK_DOC.md.)
+
 - Performance: expand and recollapse are markedly faster on pages with many
   strokes. The plugin no longer reads the whole page (which marshals every stroke
   across the bridge, ~7x more costly than it needs to be) when it only needs the
