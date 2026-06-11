@@ -249,6 +249,44 @@ spinner primitive.
 
 ---
 
+## Performance: element I/O cost scales with the whole page, not your selection
+
+Every `PluginFileAPI` element call pays a cost proportional to the **total number
+of elements on the page**, not to how many elements the operation actually
+touches. On a page of a few hundred handwritten strokes each call runs for
+seconds, so a collapse/expand-style operation made of several calls can take 10+
+seconds even when the user selected only a handful of strokes. Rough magnitudes
+(order-of-magnitude, not exact):
+
+| Call | Cost driver | Relative cost |
+|---|---|---|
+| `getElements(page, path)` | marshals **every** element across the JS bridge | high — ~tens of ms per element on the page |
+| `getElementNumList` | returns only the num array | ~an order of magnitude cheaper than `getElements` |
+| `getElement(path, page, num)` | one element | cheap (~tens of ms total) |
+| `insertElements` / `modifyElements` / `deleteElements` | rewrites/reprocesses the whole page file | high, **and roughly fixed regardless of how many elements you pass** (1 or 30 cost about the same) |
+| `saveCurrentNote` | persists the whole note | high |
+| `reloadFile` | re-renders the page | moderate |
+
+Practical consequences:
+
+- **Reads — fetch only what you need.** Don't call `getElements` if you only need
+  a few specific elements or just their nums. `getElementNumList` + a few
+  `getElement` calls is much cheaper than the full read, because `getElement` is
+  cheap and the full read marshals the entire page. The crossover is high (dozens
+  of `getElement` calls still beat one `getElements`), but past some count the
+  full read wins — cap it and fall back. (`getElement`/`getElementNumList` read
+  the cached copy, same as `getElements`.)
+- **Writes — minimise the *number* of calls, not their size.** Because each
+  write call reprocesses the whole page, batching many elements into one
+  `insertElements` is essentially free relative to the per-call cost, while making
+  two separate write calls roughly doubles the time. There is no cheap "update one
+  element" — `modifyElements` on a single element costs about as much as inserting
+  many. This per-write cost is the hard floor for an operation's latency on a
+  dense page.
+- The biggest lever for the write floor is to do the element I/O in a **native
+  module** (next section), which avoids the JS↔native bridge marshalling; the
+  host-side commit/render still runs, but the per-element bridge cost disappears.
+
 ## Beyond the JS bridge: native host API and background execution
 
 - **`HostCommonAPI`** (the Java host surface, in
