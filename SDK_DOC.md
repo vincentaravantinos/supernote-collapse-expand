@@ -176,6 +176,31 @@ When recreating one with `insertElements`:
 
 ---
 
+## Plugin event listeners (`PluginManager`)
+
+For reacting to user input outside the plugin button:
+
+- **`registerEventListener(EventType.PEN_UP, registerType, listener)`** — fires
+  when the pen lifts after **drawing**; `listener.onMsg(data)` receives the
+  element(s) just drawn. It does **not** fire when the user *moves* a selection
+  (drags an already-selected element), so it can't detect an element move. The
+  SDK comment notes only `event_pen_up` is supported via this call.
+- **`registerMotionListener(registerType, listener)`** — raw touch. `onMsg(m)`
+  receives a `MotionEvent`: `action` (0=DOWN, 1=UP, 2=MOVE, 3=CANCEL), primary
+  `x`/`y`, `pointers[]` (each `x/y/pressure/toolType/pointerId`), `pointerCount`,
+  `toolType` (1=finger, 2=pen), `downTime`/`eventTime`. It **does** fire
+  throughout a selection-drag, so `ACTION_UP` is a usable "gesture ended" signal.
+  Caveats: it fires for *every* touch (draw/scroll/tap), `ACTION_MOVE` streams at
+  high frequency (cheap to ignore with an early `action` check), and the payload
+  carries **no element identity** — only coordinates. To know *what* moved you
+  must correlate the touch position with element rects yourself (and the `UP`
+  event carries `downTime` but not the down coordinates, so capture the start
+  point on `ACTION_DOWN` if you need it).
+- `registerType`: 0 = always first, 1 = normal, 2 = always last (ordering when
+  multiple plugins register the same event).
+
+---
+
 ## Beyond the JS bridge: native host API and background execution
 
 - **`HostCommonAPI`** (the Java host surface, in

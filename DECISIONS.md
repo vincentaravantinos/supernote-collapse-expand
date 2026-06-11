@@ -17,6 +17,43 @@ Each entry should capture:
 
 ---
 
+## 2026-06-11 — Live box redraw on icon drag: motion listener, outline-only, in-memory gate
+
+**Decision.** While a section is expanded, dragging its icon redraws the boundary
+**outline** live (on `ACTION_UP`), via a `registerMotionListener`. A module-level
+registry of expanded sections (`id → { iconRect, contentBBox }`, populated on
+expand, cleared on recollapse) gates the work: on `ACTION_DOWN` an in-memory
+point-in-rect test (icon rect padded by ~60px to cover the selection box) decides
+if a drag grabbed an icon; only then, on `UP`, do we `getElements` (to read the
+icon's new rect) and swap the outline. A shared busy guard (`busy.ts`) keeps this
+from racing the button handler.
+
+**Outline-only (not the fill).** The live redraw moves only the `CE_FRAME`
+outline; the white `CE_MASK` fill is left in place and reshaped at the next
+recollapse. So the stretched arm isn't whited-out during a live drag (pre-existing
+strokes under it stay visible until recollapse).
+
+**Alternatives considered.**
+- *Truly live during the drag (per `ACTION_MOVE`).* Rejected: redrawing per
+  motion tick (delete + insert + `reloadFile` ≈ 0.5–1s each) is infeasible.
+- *`PEN_UP` instead of motion.* Rejected: it doesn't fire on a selection-move,
+  only on drawing — confirmed by probe.
+- *Redraw the fill too (the "correct" version).* Rejected as disproportionate:
+  the fill must sit under the content, and the SDK only inserts on top, so
+  keeping z-order means deleting and rebuilding every stroke on each drag — an
+  `expand`-cost per drag, made worse for stroke-link sections (the
+  `rebuildStrokeLinks` reload-dance per drag). It fights the snappy "live" goal
+  for a transient state the recollapse already corrects.
+- *Drop the DOWN gate, check on every UP.* Rejected: that `getElements` on every
+  touch-up while expanded (the user draws a lot then); the DOWN gate keeps SDK
+  calls to actual icon grabs.
+
+**Constraint.** The motion payload has no element identity (coordinates only), so
+the position↔element correlation (registry + DOWN gate) is unavoidable. See
+SDK_DOC.md (Plugin event listeners).
+
+---
+
 ## 2026-06-11 — Moving the icon while expanded reshapes the zone (supersedes 8ba0584's behavior)
 
 **Decision.** When the icon is moved while a section is expanded, recollapse
