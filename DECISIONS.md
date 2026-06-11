@@ -17,6 +17,37 @@ Each entry should capture:
 
 ---
 
+## 2026-06-11 — Read the section's own elements, not the whole page (perf)
+
+**Decision.** Expand and recollapse no longer call the full `getElements` on a
+dense page. Expand uses `getElementNumList` (for `preservedNums`, which only needs
+the num set) plus a single `getElement` for the icon. Recollapse, when the section
+was expanded **this session**, fetches the icon (by a num cached in the in-memory
+expanded-registry) plus only the "not preserved at expand" nums (its parts/masks/
+frame + any new strokes) via per-num `getElement`. Both fall back to the full
+`getElements` when they can't (registry empty after a restart, stale icon num,
+candidate count over a cap, or multi-section recollapse). `writeSection` also
+takes the already-fetched icon instead of re-reading the page.
+
+**Alternatives considered.**
+- *Keep the full `getElements`.* Rejected: measured ~3.2–4.2s on a ~230-element
+  page — it marshals every element across the JS bridge, while we need only a few.
+- *Per-element `getElement` for everything (incl. recollapse always).* Rejected
+  for the after-restart / multi-section / huge-candidate cases: `getElement` is
+  cheap (~28ms) but the full read amortizes better once you need many elements, so
+  a cap + fallback guards the pathological cases.
+- *Native module bypassing the JS bridge.* Deferred (backlog): biggest potential
+  win but a large, separate effort.
+
+**Constraint.** Measured SDK costs on a ~230-element page: `getElements` ~3.5s,
+`getElementNumList` ~0.5s, `getElement` ~28ms each; and — unaddressed here — each
+**write** (`insertElements` / `modifyElements` / `deleteElements` /
+`saveCurrentNote`) costs ~2–3s regardless of how few elements we touch, because
+the SDK rewrites/reprocesses the whole page. That per-write cost is the remaining
+floor (see backlog).
+
+---
+
 ## 2026-06-11 — Busy indicator via the plugin's own view; live redraw must not use idle timers
 
 **Decision.** Show a "working" indicator during slow operations by rendering the

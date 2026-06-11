@@ -9,8 +9,8 @@ import {
 } from '../constants';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
-import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
-import { forgetSection } from './expandedRegistry';
+import { getIconByNum, iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
+import { forgetSection, getExpandedEntry } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 // Types we absorb when drawn on an expanded section (strokes / text / geometry).
@@ -154,10 +154,48 @@ async function recollapseOne(
   return true;
 }
 
+// Above this many "new since expand" candidates, a full getElements is cheaper
+// than fetching each individually — and a count this high means preservedNums is
+// stale/empty, so the full read is also safer. Triggers the fallback.
+const FAST_CANDIDATE_CAP = 60;
+
+// Fast read for a single same-session section: resolve the icon by its cached num
+// and fetch only the elements that aren't pre-existing (the section's
+// parts/masks/frame + any strokes drawn since expand) via getElementNumList +
+// per-num getElement. Returns null to tell the caller to fall back to a full
+// getElements (no registry entry after a restart, stale icon num, or too many
+// candidates). recollapseOne works over whatever element list it's given.
+async function fastSectionElements(
+  id: string,
+  filePath: string,
+  page: number,
+): Promise<{ section: CollapseSection; icon: any; elements: any[] } | null> {
+  const entry = getExpandedEntry(id);
+  if (!entry || typeof entry.iconNum !== 'number') { dlog(`${LOG} recollapse fast: no registry icon num for ${id} — fallback`); return null; }
+  const icon = await getIconByNum(filePath, page, entry.iconNum, id);
+  if (!icon) { dlog(`${LOG} recollapse fast: icon num ${entry.iconNum} stale for ${id} — fallback`); return null; }
+  const ud = readUserData(icon);
+  if (ud?.kind !== 'section') return null;
+
+  const t = Date.now();
+  const nlRes: any = await PluginFileAPI.getElementNumList(filePath, page);
+  const allNums: number[] = nlRes?.success && Array.isArray(nlRes.result) ? nlRes.result : [];
+  const preserved = new Set<number>(ud.section.preservedNums ?? []);
+  const candidateNums = allNums.filter((n) => !preserved.has(n) && n !== entry.iconNum);
+  if (candidateNums.length > FAST_CANDIDATE_CAP) { dlog(`${LOG} recollapse fast: ${candidateNums.length} candidates > cap — fallback`); return null; }
+
+  const elements: any[] = [];
+  for (const n of candidateNums) {
+    const r: any = await PluginFileAPI.getElement(filePath, page, n);
+    if (r?.success && r.result) elements.push(r.result);
+  }
+  dlog(`${LOG} PERF recollapse fastRead=${Date.now() - t}ms candidates=${candidateNums.length} pageTotal=${allNums.length}`);
+  return { section: ud.section, icon, elements };
+}
+
 // Recollapse one or more sections in a single screen refresh: flush, read the
-// page once, mutate every section, then dismiss the lasso and reloadFile once.
-// Each section's parts/masks come from the same pre-mutation snapshot; deleting
-// one section's elements doesn't shift another's page nums, so it stays valid.
+// section's elements (fast path, or a full getElements), mutate, then dismiss the
+// lasso and reloadFile once.
 export async function recollapseSections(
   sectionIds: string[],
   filePath: string,
@@ -170,31 +208,46 @@ export async function recollapseSections(
   await PluginNoteAPI.saveCurrentNote();
   dlog(`${LOG} PERF recollapse saveCurrentNote=${Date.now() - tSave}ms`);
 
-  const tGE = Date.now();
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
-  dlog(`${LOG} PERF recollapse getElements=${Date.now() - tGE}ms total=${all.length} el`);
-
   const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
   const pageSize = sizeRes?.success && sizeRes.result
     ? { width: sizeRes.result.width, height: sizeRes.result.height }
     : { width: 1404, height: 1872 };
 
-  const iconById = new Map<string, any>();
-  for (const el of all) {
-    const ud = readUserData(el);
-    if (ud?.kind === 'section' && ud.section?.id) iconById.set(ud.section.id, el);
-  }
+  // Fast path: a single same-session section whose icon num we cached at expand.
+  // Fetch just the icon + the section's own elements (the nums NOT preserved at
+  // expand = its parts/masks/frame and any strokes drawn since) instead of
+  // marshalling the whole page. Falls back to a full getElements otherwise (after
+  // a restart the registry is empty; the icon num is stale; the candidate set is
+  // implausibly large; or several sections are selected).
+  const fast = sectionIds.length === 1
+    ? await fastSectionElements(sectionIds[0], filePath, page)
+    : null;
 
-  for (const id of sectionIds) {
-    const icon = iconById.get(id);
-    const ud = icon ? readUserData(icon) : null;
-    if (!icon || ud?.kind !== 'section') {
-      console.error(`${LOG} recollapse: no section icon for id=${id} (orphaned content?) — skipping`);
-      continue;
+  if (fast) {
+    await recollapseOne(fast.section, fast.icon, fast.elements, filePath, page, pageSize);
+    forgetSection(sectionIds[0]);
+  } else {
+    const tGE = Date.now();
+    const allRes: any = await PluginFileAPI.getElements(page, filePath);
+    const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+    dlog(`${LOG} PERF recollapse getElements(full)=${Date.now() - tGE}ms total=${all.length} el`);
+
+    const iconById = new Map<string, any>();
+    for (const el of all) {
+      const ud = readUserData(el);
+      if (ud?.kind === 'section' && ud.section?.id) iconById.set(ud.section.id, el);
     }
-    await recollapseOne(ud.section, icon, all, filePath, page, pageSize);
-    forgetSection(id); // no longer expanded — stop live-redrawing its box
+
+    for (const id of sectionIds) {
+      const icon = iconById.get(id);
+      const ud = icon ? readUserData(icon) : null;
+      if (!icon || ud?.kind !== 'section') {
+        console.error(`${LOG} recollapse: no section icon for id=${id} (orphaned content?) — skipping`);
+        continue;
+      }
+      await recollapseOne(ud.section, icon, all, filePath, page, pageSize);
+      forgetSection(id); // no longer expanded — stop live-redrawing its box
+    }
   }
 
   // Dismiss the lasso last, then surface every change with one reloadFile.

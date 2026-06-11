@@ -91,7 +91,7 @@ export async function expandOne(
       top: baseBBox.top + dy,
       right: baseBBox.right + dx,
       bottom: baseBBox.bottom + dy,
-    });
+    }, freshIconEl?.numInPage ?? iconElement?.numInPage); // icon num lets recollapse fetch it without a full scan
   }
 
   // Stroke-link members are re-inserted out-of-band by rebuildStrokeLinks, so

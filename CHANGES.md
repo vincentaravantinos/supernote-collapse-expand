@@ -3,13 +3,15 @@
 ## Unreleased
 
 - Performance: expand and recollapse are markedly faster on pages with many
-  strokes. Two redundant full-page reads were removed — one inside the section's
-  userData write (it re-read the whole page just to re-find the icon), and, for
-  expand, the main page read was replaced with a lightweight num-list lookup plus
-  a single fetch of the icon (the full read marshals every stroke across the
-  bridge, ~7x more costly). On a ~220-stroke page, expand dropped from ~16s to
-  ~8s. (Recollapse got the first improvement; a similar read optimization for it
-  is still to come.)
+  strokes. The plugin no longer reads the whole page (which marshals every stroke
+  across the bridge, ~7x more costly than it needs to be) when it only needs the
+  section's own elements. Removed a redundant full-page read inside the section's
+  userData write; expand now uses a lightweight num-list lookup plus a single
+  icon fetch; recollapse fetches just the section's own parts/masks plus any
+  newly-drawn strokes. On a ~230-stroke page, expand dropped from ~16s to ~8s and
+  recollapse's page read from ~4s to ~1.2s. (The remaining time is the SDK's
+  per-write file cost, which scales with total page size and isn't avoidable from
+  the plugin.)
 
 - Docs: added a **user guide** (now the project `README.md`) covering the
   collapse / expand / recollapse actions, multi-section selections, resizing or
