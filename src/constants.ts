@@ -13,7 +13,7 @@ export function dlog(...args: any[]): void {
 // Build stamp — logged at every action BEGIN so the trace tells us which build
 // is actually live (force-stop doesn't always re-extract a new .snplg). BUMP
 // THIS every deploy while debugging the reload, then confirm it in logcat.
-export const BUILD_TAG = 'r38-zone-from-content';
+export const BUILD_TAG = 'r39-stretch-zone-to-icon';
 
 export const ICON_SIZE = 50; // pixels
 // Uniform padding (px) added around a section's content bounding box to form its

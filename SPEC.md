@@ -53,6 +53,11 @@ recollapses the expanded one(s) and ignores the collapse/expand that press.)
 - The "+" icon stays where it is.
 - All restored content disappears again.
 - The mask is removed.
+- Moving the icon **while collapsed** relocates the whole section (content
+  follows the icon on the next expand). Moving the icon **while expanded**
+  instead reshapes the section's area: on the next expand the restored content
+  stays where it is and the zone stretches so the icon sits just at the area's
+  edge (move the icon far and the section becomes a large, mostly-empty area).
 - Any **new** strokes the user drew on top of the expanded section are
   absorbed into the section's saved state (so they reappear on the next
   expand).

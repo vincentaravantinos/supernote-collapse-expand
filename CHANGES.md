@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Behavior: **moving the `+` icon while a section is expanded now reshapes the
+  section's area** instead of dragging the whole section along. On the next
+  expand the restored content stays where it is and the zone (mask + outline)
+  stretches so the icon sits right at the area's edge — drag the icon to the
+  bottom-right and it ends up at the area's bottom-right; drag it far away and the
+  section becomes a large, mostly-empty area. Moving the icon **while collapsed**
+  still relocates the whole section.
+
 - Behavior: a section's zone (white mask fill + boundary outline) is now defined
   by the **bounding box of its content + a small margin**, computed the same way
   at the initial collapse and at every recollapse — instead of the user's lasso

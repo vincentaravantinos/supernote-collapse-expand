@@ -7,7 +7,7 @@ import {
   ZONE_MARGIN,
 } from '../constants';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
-import { readUserData, writeSection } from '../utils/userDataManager';
+import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 // EXPERIMENT (reproducibility probe): recollapse used to open a SECOND
@@ -40,13 +40,6 @@ async function recollapseOne(
   page: number,
   pageSize: { width: number; height: number },
 ): Promise<boolean> {
-  // Deliberately do NOT recompute the icon rect here. `section.iconRect` (from
-  // userData) is the EXPAND-TIME anchor the on-page strokes are aligned to; the
-  // icon's current physical position can differ if the user moved the icon
-  // WHILE EXPANDED (the strokes don't move with it). Keeping the stored anchor
-  // (it carries through via the `...section` spread below) keeps the strokes
-  // and section.iconRect consistent, so the next expand's emrDelta correctly
-  // carries the content to wherever the icon now is.
   const maskEls: any[] = [];
   const partEls: any[] = [];
   for (const el of all) {
@@ -107,29 +100,54 @@ async function recollapseOne(
   // the link round-trips across repeated expand/recollapse cycles.
   newCollapsed = resolveLinkMemberIndices(newCollapsed);
 
-  // Recompute the zone (mask fill + boundary outline) from the content's CURRENT
-  // bounding box + margin, keeping the icon anchor — so the zone follows content
-  // moved while expanded, instead of staying at the original lasso area. Same
-  // definition collapse uses (relativeRect = zone − iconRect). Fall back to the
-  // existing relativeRect if there's no content. (Shifting the icon when the zone
-  // stretches left/up of it is a separate backlog follow-up.)
+  // Re-anchor the section to the icon's CURRENT physical position and recompute
+  // the zone (mask fill + boundary outline) from the content's bounding box +
+  // margin, STRETCHED to touch the icon. So if the icon was moved while expanded,
+  // the content stays put and the zone reaches out to wherever the icon now is
+  // (icon dragged bottom-right ⇒ icon at the area's bottom-right; dragged far ⇒
+  // big mostly-empty zone). Anchoring iconRect and relativeRect to the same
+  // current icon keeps strokes and mask aligned on re-expand (no drift). Move-
+  // icon-while-collapsed still relocates the whole section via expand's emrDelta.
+  // The zone only reaches the icon's NEAR edge — the expand-time mask renders
+  // over the older icon element, so the icon must stay just outside the zone.
+  const iconNow = iconRectFromElements(all, section, iconElement);
   const bbox = contentBoundingBox(newCollapsed, pageSize);
-  const relativeRect = bbox
-    ? {
-        left: (bbox.left - ZONE_MARGIN) - section.iconRect.left,
-        top: (bbox.top - ZONE_MARGIN) - section.iconRect.top,
-        width: (bbox.right - bbox.left) + 2 * ZONE_MARGIN,
-        height: (bbox.bottom - bbox.top) + 2 * ZONE_MARGIN,
-      }
-    : section.relativeRect;
+  let iconRect = section.iconRect;
+  let relativeRect = section.relativeRect;
+  if (bbox) {
+    const r = {
+      left: bbox.left - ZONE_MARGIN,
+      top: bbox.top - ZONE_MARGIN,
+      right: bbox.right + ZONE_MARGIN,
+      bottom: bbox.bottom + ZONE_MARGIN,
+    };
+    const zone = {
+      left: iconNow.right <= r.left ? iconNow.right : r.left,
+      top: iconNow.bottom <= r.top ? iconNow.bottom : r.top,
+      right: iconNow.left >= r.right ? iconNow.left : r.right,
+      bottom: iconNow.top >= r.bottom ? iconNow.top : r.bottom,
+    };
+    iconRect = {
+      left: Math.round(iconNow.left),
+      top: Math.round(iconNow.top),
+      right: Math.round(iconNow.right),
+      bottom: Math.round(iconNow.bottom),
+    };
+    relativeRect = {
+      left: Math.round(zone.left) - iconRect.left,
+      top: Math.round(zone.top) - iconRect.top,
+      width: Math.round(zone.right - zone.left),
+      height: Math.round(zone.bottom - zone.top),
+    };
+  }
 
   // Update section state. Drop preservedNums — only meaningful while expanded.
   const updatedSection: CollapseSection = {
     ...section,
     collapsedElements: newCollapsed,
+    iconRect,
     relativeRect,
     isExpanded: false,
-    // iconRect kept from `...section` (the expand-time anchor) — see note above.
     preservedNums: undefined,
   };
 
