@@ -61,7 +61,7 @@ try {
     onMsg: m => {
       const a = m?.action;
       if (a === 0) onMotionDown(m?.x, m?.y);
-      else if (a === 1) onMotionUp();
+      else if (a === 1) onMotionUp(m?.x, m?.y);
     },
   });
   console.log(`${LOG} registerMotionListener (live redraw) called build=${BUILD_TAG}`);

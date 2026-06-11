@@ -1,32 +1,27 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
 import {
   dlog,
+  ELEMENT_TYPES,
   LOG,
   MAX_USERDATA_BYTES,
   CE_PLUG_PREFIX,
   ZONE_MARGIN,
 } from '../constants';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
-import { stretchZoneToIcon } from '../utils/geometryHelpers';
+import { rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
 import { forgetSection } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
-// EXPERIMENT (reproducibility probe): recollapse used to open a SECOND
-// programmatic lasso mid-operation (lassoElements(contentRect) +
-// getLassoElements) to absorb strokes the user drew on top while expanded,
-// then setLassoBoxState(2) BEFORE deleteElements. The system log
-// (AreaSelectionView state 2 -> areaSelectionFinish op 17 -> loadLayer) shows
-// that state-2 commit is ASYNC and lands AFTER the delete returns — racing it,
-// which lines up with the non-deterministic "delete reports success but
-// no-ops" failures. collapse (reliable) never does this: it mutates first and
-// dismisses the lasso LAST.
-//
-// With this false, recollapse mirrors collapse: delete tagged parts/masks by
-// number, dismiss the (user's) lasso once at the very end. Cost: strokes drawn
-// on top while expanded are not absorbed back into the section. Flip to true
-// to restore the old absorbing behavior (one line).
-const ABSORB_STROKES_VIA_LASSO = false;
+// Element types we absorb (strokes / text / geometry) — same set collapse
+// serializes, minus pictures and titles (and links, which aren't free-drawn).
+const ABSORBABLE_TYPES = new Set<number>([
+  ELEMENT_TYPES.STROKE,
+  ELEMENT_TYPES.TEXT,
+  ELEMENT_TYPES.TEXT_DIGEST_QUOTE,
+  ELEMENT_TYPES.TEXT_DIGEST_CREATE,
+  ELEMENT_TYPES.GEO,
+]);
 
 // Recollapse ONE section using a pre-fetched element list `all`. Re-serializes
 // the section's on-page parts back into the icon's userData and deletes the
@@ -60,38 +55,35 @@ async function recollapseOne(
     if (data) newCollapsed.push({ numInPage: el.numInPage, data });
   }
 
-  if (ABSORB_STROKES_VIA_LASSO) {
-    // contentRect (computed from the section state at expand time) bounds the
-    // area where user-added strokes drawn on top while expanded would sit.
-    const contentRect: Rect = {
-      left: section.iconRect.left + section.relativeRect.left,
-      top: section.iconRect.top + section.relativeRect.top,
-      right: section.iconRect.left + section.relativeRect.left + section.relativeRect.width,
-      bottom: section.iconRect.top + section.relativeRect.top + section.relativeRect.height,
-    };
-    // Lasso contentRect to absorb strokes the user drew during expansion.
-    // Skip any element whose numInPage was recorded in section.preservedNums
-    // at expand time — those are pre-existing user content that must stay in
-    // place, not be absorbed into the section.
-    const preservedSet = new Set<number>(section.preservedNums ?? []);
-    await PluginCommAPI.lassoElements(contentRect);
-    const lassoRes: any = await PluginCommAPI.getLassoElements();
-    const lassoed: any[] = lassoRes?.success ? (lassoRes.result ?? []) : [];
-    let skippedPreserved = 0;
-    for (const el of lassoed) {
-      if (readUserData(el) !== null) continue; // skip icon, mask, already-tagged parts
-      if (typeof el.numInPage === 'number' && preservedSet.has(el.numInPage)) {
-        skippedPreserved++;
-        continue;
-      }
-      if (typeof el.numInPage === 'number') numSet.add(el.numInPage);
-      const data = await serializeElement(el);
-      if (data) newCollapsed.push({ numInPage: el.numInPage, data });
-    }
-    for (const el of lassoed) { try { el.recycle?.(); } catch { /* ignore */ } }
-    dlog(`${LOG} recollapse skippedPreserved=${skippedPreserved} of preservedNums=${preservedSet.size}`);
-    await PluginCommAPI.setLassoBoxState(2);
+  // Absorb NEW elements the user drew on top of the section while it was
+  // expanded, so they collapse with it and reappear on the next expand. A "new"
+  // element is UNTAGGED (not ours) and whose num is NOT in preservedNums (the
+  // untagged nums captured at expand) — i.e. drawn after expand. We compute
+  // geometry only for those few candidates (cheap — the preservedNums num-check
+  // skips all pre-existing content without draining), absorbing the ones whose
+  // bbox overlaps the section's current area. No lassoElements (which fed the
+  // desync). Pre-existing content and new strokes drawn elsewhere stay in place.
+  const preservedSet = new Set<number>(section.preservedNums ?? []);
+  const absorbRect: Rect = {
+    left: section.iconRect.left + section.relativeRect.left,
+    top: section.iconRect.top + section.relativeRect.top,
+    right: section.iconRect.left + section.relativeRect.left + section.relativeRect.width,
+    bottom: section.iconRect.top + section.relativeRect.top + section.relativeRect.height,
+  };
+  let absorbed = 0;
+  for (const el of all) {
+    if (readUserData(el) !== null) continue; // ours or another section's
+    if (typeof el.numInPage !== 'number' || preservedSet.has(el.numInPage)) continue; // pre-existing
+    if (!ABSORBABLE_TYPES.has(el.type)) continue; // stroke / text / geometry only
+    const data = await serializeElement(el);
+    if (!data) continue;
+    const bbox = contentBoundingBox([{ numInPage: el.numInPage, data }], pageSize);
+    if (!bbox || !rectsOverlap(bbox, absorbRect)) continue;
+    numSet.add(el.numInPage);
+    newCollapsed.push({ numInPage: el.numInPage, data });
+    absorbed++;
   }
+  if (absorbed > 0) dlog(`${LOG} recollapse absorbed=${absorbed} new element(s) into section ${section.id}`);
 
   for (const m of maskEls) {
     if (typeof m.numInPage === 'number') numSet.add(m.numInPage);

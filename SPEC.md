@@ -119,10 +119,11 @@ returns control to the user.
 - `collapsedElements`: serialised originals, ordered to preserve Z-order
   on restore.
 - `isExpanded`: boolean — current state machine bit.
-- `preservedNums?`: `numInPage` list of pre-existing user content that
-  was sitting inside the section's area when it was expanded. Set on
-  expand, cleared on recollapse. Used so recollapse can tell those
-  elements apart from content drawn during expansion.
+- `preservedNums?`: `numInPage` list of every untagged element on the page
+  at expand time (i.e. all pre-existing user content). Set on the real
+  expand (carried across live redraws), cleared on recollapse. Recollapse
+  uses it to tell new strokes drawn on the section (num not in the list)
+  apart from pre-existing content, so only the new ones are absorbed.
 
 The serialised section payload (prefix + JSON) must fit in
 `MAX_USERDATA_BYTES` (512 KB). If a collapse or recollapse would exceed

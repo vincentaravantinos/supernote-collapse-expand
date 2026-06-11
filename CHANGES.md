@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Feature: recollapse now **absorbs strokes (and text/shapes) drawn on top of an
+  expanded section**, so they collapse with it and reappear on the next expand
+  instead of being left orphaned on the page (fulfils the SPEC "Recollapse"
+  requirement that had been disabled). Pre-existing content under the section
+  stays put, and new strokes drawn outside the section are left alone. Done
+  without the lasso read that previously caused the sync issue.
+
 - Feature: while a section is expanded, dragging its `+` icon now **redraws the
   whole section live** (the moment you release) — white fill, outline, and the
   strokes — at the new stretched area, so you see the final result without a

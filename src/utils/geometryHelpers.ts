@@ -1,5 +1,11 @@
 import { Point, Rect } from 'sn-plugin-lib';
 
+// True if two rects overlap (share any area). Touching-only edges count as no
+// overlap (strict inequalities).
+export function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
 export function getRectPoints(rect: Rect): Point[] {
   return [
     { x: rect.left, y: rect.top },

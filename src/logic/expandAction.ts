@@ -1,7 +1,7 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, dlog, LOG } from '../constants';
 import { buildElement, contentBoundingBox } from '../utils/elementSerializer';
-import { getCurrentIconRect, writeSection } from '../utils/userDataManager';
+import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { noteSectionExpanded } from './expandedRegistry';
@@ -20,6 +20,7 @@ export async function expandOne(
   iconElement: any,
   filePath: string,
   page: number,
+  capturePreserved: boolean = false,
 ): Promise<void> {
   // SIZE PROBE: the round-tripped userData length read back from the icon. If
   // this is much smaller than what collapse wrote, the userData was truncated
@@ -27,9 +28,21 @@ export async function expandOne(
   dlog(`${LOG} SIZE expand icon userData=${iconElement?.userData?.length ?? 0} bytes, collapsed=${section.collapsedElements?.length ?? 0} element(s)`);
 
   const tPrep = Date.now();
-  // Read the icon's CURRENT rect from the persisted element list, not from
-  // the lassoed element (which can report a stale rect after a move).
-  const iconRectNow = await getCurrentIconRect(filePath, page, section, iconElement);
+  // One getElements: the icon's CURRENT rect (not the lassoed element, which can
+  // report a stale rect after a move) AND — on a real expand (capturePreserved) —
+  // preservedNums = the nums of every UNTAGGED element on the page right now,
+  // before this section's content goes on. Those are the pre-existing strokes
+  // (incl. any sitting under the section); recollapse uses them to tell new
+  // strokes drawn on the section apart from pre-existing content. Just nums, no
+  // point-draining. On a live redraw (capturePreserved=false) we carry the
+  // section's existing preservedNums forward instead of re-capturing (which would
+  // misfile the new strokes as pre-existing).
+  const allAtExpandRes: any = await PluginFileAPI.getElements(page, filePath);
+  const allAtExpand: any[] = allAtExpandRes?.success && Array.isArray(allAtExpandRes.result) ? allAtExpandRes.result : [];
+  const iconRectNow = iconRectFromElements(allAtExpand, section, iconElement);
+  const preservedNums = capturePreserved
+    ? allAtExpand.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number').map((el) => el.numInPage)
+    : section.preservedNums;
   const contentRect: Rect = {
     left: iconRectNow.left + section.relativeRect.left,
     top: iconRectNow.top + section.relativeRect.top,
@@ -131,6 +144,7 @@ export async function expandOne(
     isExpanded: true,
     iconRect: iconRectNow,
     collapsedElements: insertOk ? [] : section.collapsedElements,
+    preservedNums,
   };
 
   const tWrite = Date.now();
@@ -163,7 +177,7 @@ export async function expandSections(
   await PluginCommAPI.setLassoBoxState(2);
 
   for (const t of targets) {
-    await expandOne(t.section, t.icon, filePath, page);
+    await expandOne(t.section, t.icon, filePath, page, true); // real expand: capture preservedNums
   }
 
   // Surface every section's inserts with a single refresh.
