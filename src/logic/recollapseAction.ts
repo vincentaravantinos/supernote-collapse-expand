@@ -9,7 +9,7 @@ import {
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { stretchZoneToIcon } from '../utils/geometryHelpers';
 import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
-import { forgetSection } from './iconMoveRedraw';
+import { forgetSection } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 // EXPERIMENT (reproducibility probe): recollapse used to open a SECOND

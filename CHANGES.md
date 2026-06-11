@@ -3,11 +3,12 @@
 ## Unreleased
 
 - Feature: while a section is expanded, dragging its `+` icon now **redraws the
-  boundary outline live** (the moment you release) so you see the new area
-  without a recollapse → expand round-trip. Driven by the SDK motion listener.
-  The white fill isn't redrawn live (that would require rebuilding the section's
-  strokes each drag, to keep them above the fill); it reshapes at the next
-  recollapse — so the stretched arm isn't whited-out until then.
+  whole section live** (the moment you release) — white fill, outline, and the
+  strokes — at the new stretched area, so you see the final result without a
+  recollapse → expand round-trip. Driven by the SDK motion listener. Because it
+  rebuilds the strokes each drag (needed to keep them above the fresh fill), it's
+  noticeably slower than a normal pan; it's meant for the occasional reposition,
+  not constant dragging.
 
 - Behavior: **moving the `+` icon while a section is expanded now reshapes the
   section's area** instead of dragging the whole section along. On the next

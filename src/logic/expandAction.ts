@@ -4,7 +4,7 @@ import { buildElement, contentBoundingBox } from '../utils/elementSerializer';
 import { getCurrentIconRect, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
-import { noteSectionExpanded } from './iconMoveRedraw';
+import { noteSectionExpanded } from './expandedRegistry';
 import { CollapseSection } from '../model/types';
 
 // Expand ONE section: insert its mask + restored content (stroke links rebuilt
@@ -15,7 +15,7 @@ import { CollapseSection } from '../model/types';
 // refresh. Reads only this section's own icon (resolved fresh by id), so it is
 // unaffected by sibling sections inserted earlier in the same batch but not yet
 // reloaded (their content carries a different CE_PART:<id> tag).
-async function expandOne(
+export async function expandOne(
   section: CollapseSection,
   iconElement: any,
   filePath: string,
