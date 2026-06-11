@@ -6,8 +6,9 @@ import {AppRegistry, Image} from 'react-native';
 import {name as appName} from './app.json';
 import App from './App';
 import {handleMainAction} from './src/index';
+import {onMotionDown, onMotionUp} from './src/logic/iconMoveRedraw';
 import {PluginManager} from 'sn-plugin-lib';
-import {LOG, PLUGIN_BUTTON_NAME, PLUGIN_MENU_ID} from './src/constants';
+import {BUILD_TAG, LOG, PLUGIN_BUTTON_NAME, PLUGIN_MENU_ID} from './src/constants';
 
 AppRegistry.registerComponent(appName, () => App);
 
@@ -49,3 +50,21 @@ PluginManager.registerButtonListener({
   },
 });
 console.log(`${LOG} registerButtonListener called`);
+
+// Live-redraw a section's box when its + icon is dragged. The motion listener
+// gives us the gesture: onMotionDown gates in-memory (did a drag start on an
+// expanded section's icon?), and onMotionUp redraws that section's box if the
+// icon moved. Logic + state live in src/logic/iconMoveRedraw.ts. We ignore
+// ACTION_MOVE (2) / CANCEL (3) — only DOWN (0) and UP (1) matter.
+try {
+  PluginManager.registerMotionListener(1, {
+    onMsg: m => {
+      const a = m?.action;
+      if (a === 0) onMotionDown(m?.x, m?.y);
+      else if (a === 1) onMotionUp();
+    },
+  });
+  console.log(`${LOG} registerMotionListener (live redraw) called build=${BUILD_TAG}`);
+} catch (e) {
+  console.log(`${LOG} registerMotionListener threw: ${e}`);
+}

@@ -7,7 +7,9 @@ import {
   ZONE_MARGIN,
 } from '../constants';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
+import { stretchZoneToIcon } from '../utils/geometryHelpers';
 import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
+import { forgetSection } from './iconMoveRedraw';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 // EXPERIMENT (reproducibility probe): recollapse used to open a SECOND
@@ -45,7 +47,7 @@ async function recollapseOne(
   for (const el of all) {
     const ud = readUserData(el);
     if (!ud) continue;
-    if (ud.kind === 'mask' && ud.id === section.id) maskEls.push(el);
+    if ((ud.kind === 'mask' || ud.kind === 'frame') && ud.id === section.id) maskEls.push(el);
     else if (ud.kind === 'part' && ud.id === section.id) partEls.push(el);
   }
 
@@ -115,18 +117,7 @@ async function recollapseOne(
   let iconRect = section.iconRect;
   let relativeRect = section.relativeRect;
   if (bbox) {
-    const r = {
-      left: bbox.left - ZONE_MARGIN,
-      top: bbox.top - ZONE_MARGIN,
-      right: bbox.right + ZONE_MARGIN,
-      bottom: bbox.bottom + ZONE_MARGIN,
-    };
-    const zone = {
-      left: iconNow.right <= r.left ? iconNow.right : r.left,
-      top: iconNow.bottom <= r.top ? iconNow.bottom : r.top,
-      right: iconNow.left >= r.right ? iconNow.left : r.right,
-      bottom: iconNow.top >= r.bottom ? iconNow.top : r.bottom,
-    };
+    const zone = stretchZoneToIcon(bbox, ZONE_MARGIN, iconNow);
     iconRect = {
       left: Math.round(iconNow.left),
       top: Math.round(iconNow.top),
@@ -216,6 +207,7 @@ export async function recollapseSections(
       continue;
     }
     await recollapseOne(ud.section, icon, all, filePath, page, pageSize);
+    forgetSection(id); // no longer expanded — stop live-redrawing its box
   }
 
   // Dismiss the user's lasso LAST, then surface every deletion/userData update

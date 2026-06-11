@@ -13,7 +13,7 @@ export function dlog(...args: any[]): void {
 // Build stamp — logged at every action BEGIN so the trace tells us which build
 // is actually live (force-stop doesn't always re-extract a new .snplg). BUMP
 // THIS every deploy while debugging the reload, then confirm it in logcat.
-export const BUILD_TAG = 'r39-stretch-zone-to-icon';
+export const BUILD_TAG = 'r46-live-redraw';
 
 export const ICON_SIZE = 50; // pixels
 // Uniform padding (px) added around a section's content bounding box to form its
@@ -28,6 +28,10 @@ export const SCHEMA_VERSION = 2;
 export const CE_PLUG_PREFIX = 'CE_PLUG:';
 export const CE_PART_PREFIX = 'CE_PART:';
 export const CE_MASK_PREFIX = 'CE_MASK:';
+// The boundary outline, tagged separately from the fill rings (CE_MASK) so the
+// live icon-move redraw can move just the outline without re-inserting the white
+// fill on top of the content. Created with the mask, deleted with it.
+export const CE_FRAME_PREFIX = 'CE_FRAME:';
 // Max serialized section payload stored in the icon's userData. The original
 // 48 KB was an arbitrary day-one value — measured (2026-06-09): the .note format
 // persists a 425 KB userData on a single element intact and a 223-stroke / 367 KB

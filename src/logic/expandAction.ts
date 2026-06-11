@@ -1,9 +1,10 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, dlog, LOG } from '../constants';
-import { buildElement } from '../utils/elementSerializer';
+import { buildElement, contentBoundingBox } from '../utils/elementSerializer';
 import { getCurrentIconRect, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
+import { noteSectionExpanded } from './iconMoveRedraw';
 import { CollapseSection } from '../model/types';
 
 // Expand ONE section: insert its mask + restored content (stroke links rebuilt
@@ -50,6 +51,20 @@ async function expandOne(
   const pageMaxX = PointUtils.getRealMaxX(pageSize);
   const pageMaxY = PointUtils.getRealMaxY(pageSize);
   dlog(`${LOG} PERF expand prep(iconrect+pagesize)=${Date.now() - tPrep}ms`);
+
+  // Register this section for live box redraw on icon drag. The content is laid
+  // out at its serialized bbox shifted by (dx, dy) (the same delta strokes are
+  // built with), giving its absolute on-page bounding box — stable while expanded
+  // (only the icon moving, which is what we redraw for, changes the zone).
+  const baseBBox = contentBoundingBox(section.collapsedElements, pageSize);
+  if (baseBBox) {
+    noteSectionExpanded(section.id, iconRectNow, {
+      left: baseBBox.left + dx,
+      top: baseBBox.top + dy,
+      right: baseBBox.right + dx,
+      bottom: baseBBox.bottom + dy,
+    });
+  }
 
   // Stroke links (category 1) are re-inserted out-of-band (their member strokes
   // get fresh page nums on re-insert), so EXCLUDE those members from the main

@@ -1,5 +1,6 @@
 import { PluginFileAPI } from 'sn-plugin-lib';
 import {
+  CE_FRAME_PREFIX,
   CE_MASK_PREFIX,
   CE_PART_PREFIX,
   CE_PLUG_PREFIX,
@@ -11,6 +12,7 @@ export type UserDataKind =
   | { kind: 'section'; section: CollapseSection }
   | { kind: 'part'; id: string }
   | { kind: 'mask'; id: string }
+  | { kind: 'frame'; id: string }
   | null;
 
 // Resolve the icon's CURRENT on-page rect, given an already-fetched element
@@ -67,6 +69,10 @@ export function readUserData(element: any): UserDataKind {
 
   if (udata.startsWith(CE_MASK_PREFIX)) {
     return { kind: 'mask', id: udata.substring(CE_MASK_PREFIX.length) };
+  }
+
+  if (udata.startsWith(CE_FRAME_PREFIX)) {
+    return { kind: 'frame', id: udata.substring(CE_FRAME_PREFIX.length) };
   }
 
   return null;

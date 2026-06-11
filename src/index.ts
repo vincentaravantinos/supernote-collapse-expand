@@ -5,12 +5,13 @@ import { summarizeElements } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
 import { expandSections } from './logic/expandAction';
 import { recollapseSections } from './logic/recollapseAction';
+import { acquireBusy, releaseBusy } from './logic/busy';
 
-// Re-entrancy guard: the button can be tapped again while a previous
-// invocation is still awaiting SDK calls. A concurrent second run would
-// interleave saveCurrentNote / lasso / insert state and corrupt the note
+// Re-entrancy guard (shared with the motion-driven live redraw via ./logic/busy):
+// the button can be tapped again while a previous invocation is still awaiting
+// SDK calls, and a drag-release can fire mid-action. A concurrent second run
+// would interleave saveCurrentNote / lasso / insert state and corrupt the note
 // (audit ②). Ignore re-entrant presses until the current one finishes.
-let isRunning = false;
 
 // DRIFT PROBE (temporary): a monotonic per-action counter so the logcat is
 // self-segmenting. Each action emits "[CE-PROBE] #N <TYPE> BEGIN/END" markers;
@@ -22,7 +23,7 @@ let actionSeq = 0;
 const PROBE = `${LOG} [CE-PROBE]`;
 
 export async function handleMainAction() {
-  if (isRunning) {
+  if (!acquireBusy()) {
     dlog(`${LOG} handleMainAction already running — ignoring re-entrant button press`);
     // Tell the user the rejection is intentional — otherwise a swallowed tap
     // looks like a broken button. This fires while a prior collapse/expand is
@@ -31,7 +32,6 @@ export async function handleMainAction() {
     alert('Collapse/Expand is still busy — please wait a moment.');
     return;
   }
-  isRunning = true;
   // Watchdog: if an SDK call truly hangs (the note enters a bad state and a
   // call never returns), the finally below never runs and the guard would
   // wedge the button permanently. Release it after a timeout so the plugin
@@ -43,7 +43,7 @@ export async function handleMainAction() {
   const WATCHDOG_MS = 60000;
   const watchdog = setTimeout(() => {
     console.error(`${LOG} handleMainAction watchdog fired (operation hung >${WATCHDOG_MS / 1000}s) — releasing re-entrancy guard`);
-    isRunning = false;
+    releaseBusy();
   }, WATCHDOG_MS);
   try {
     const filePathRes: any = await PluginCommAPI.getCurrentFilePath();
@@ -134,6 +134,6 @@ export async function handleMainAction() {
     alert('An error occurred during processing.');
   } finally {
     clearTimeout(watchdog);
-    isRunning = false;
+    releaseBusy();
   }
 }

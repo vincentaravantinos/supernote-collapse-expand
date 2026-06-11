@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Feature: while a section is expanded, dragging its `+` icon now **redraws the
+  boundary outline live** (the moment you release) so you see the new area
+  without a recollapse → expand round-trip. Driven by the SDK motion listener.
+  The white fill isn't redrawn live (that would require rebuilding the section's
+  strokes each drag, to keep them above the fill); it reshapes at the next
+  recollapse — so the stretched arm isn't whited-out until then.
+
 - Behavior: **moving the `+` icon while a section is expanded now reshapes the
   section's area** instead of dragging the whole section along. On the next
   expand the restored content stays where it is and the zone (mask + outline)

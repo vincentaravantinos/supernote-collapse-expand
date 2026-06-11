@@ -53,10 +53,22 @@ export function contentBoundingBox(
   for (const ce of collapsed) {
     const d = ce.data;
     if (d.kind === 'stroke') {
+      if (d.points.length === 0) continue;
+      // Cheap EMR bbox (min/max, no conversion), then convert only the 4 corners
+      // — the EMR→android map is affine, so a rectangle maps to a rectangle. This
+      // avoids a validated emrPoint2Android call per point (the hot-path cost).
       const sx = d.maxX && d.maxX > 0 ? pageMaxX / d.maxX : 1;
       const sy = d.maxY && d.maxY > 0 ? pageMaxY / d.maxY : 1;
+      let exMin = Infinity, eyMin = Infinity, exMax = -Infinity, eyMax = -Infinity;
       for (const p of d.points) {
-        const a = PointUtils.emrPoint2Android({ x: p.x * sx, y: p.y * sy }, pageSize);
+        const ex = p.x * sx, ey = p.y * sy;
+        if (ex < exMin) exMin = ex;
+        if (ex > exMax) exMax = ex;
+        if (ey < eyMin) eyMin = ey;
+        if (ey > eyMax) eyMax = ey;
+      }
+      for (const c of [[exMin, eyMin], [exMin, eyMax], [exMax, eyMin], [exMax, eyMax]]) {
+        const a = PointUtils.emrPoint2Android({ x: c[0], y: c[1] }, pageSize);
         ext(a.x, a.y);
       }
     } else if (d.kind === 'text') {

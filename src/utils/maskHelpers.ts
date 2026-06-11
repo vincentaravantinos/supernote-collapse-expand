@@ -1,5 +1,5 @@
 import { PluginCommAPI, Rect } from 'sn-plugin-lib';
-import { CE_MASK_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
+import { CE_FRAME_PREFIX, CE_MASK_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
 import { getRectPoints } from './geometryHelpers';
 
 // Fake "filled rectangle" used to hide content sitting under a section's
@@ -31,7 +31,9 @@ const BORDER_PEN_COLOR = 0x00;
 const BORDER_PEN_TYPE = 10; // fineliner (solid); penType 0 is rejected
 const BORDER_PEN_WIDTH = 400;
 
-async function createBorderRectangle(rect: Rect, page: number, sectionId: string): Promise<any | null> {
+// The section's boundary outline. Tagged CE_FRAME (not CE_MASK) so the live
+// icon-move redraw can move just this without disturbing the white fill rings.
+export async function createBorderRectangle(rect: Rect, page: number, sectionId: string): Promise<any | null> {
   const points = getRectPoints(rect);
   const res: any = await PluginCommAPI.createElement(ELEMENT_TYPES.GEO);
   if (!res?.success || !res.result) {
@@ -47,7 +49,7 @@ async function createBorderRectangle(rect: Rect, page: number, sectionId: string
     penWidth: BORDER_PEN_WIDTH,
   };
   el.pageNum = page;
-  el.userData = CE_MASK_PREFIX + sectionId;
+  el.userData = CE_FRAME_PREFIX + sectionId;
   return el;
 }
 

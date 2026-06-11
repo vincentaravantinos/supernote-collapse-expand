@@ -58,6 +58,12 @@ recollapses the expanded one(s) and ignores the collapse/expand that press.)
   instead reshapes the section's area: on the next expand the restored content
   stays where it is and the zone stretches so the icon sits just at the area's
   edge (move the icon far and the section becomes a large, mostly-empty area).
+  While expanded, the boundary **outline follows the icon live** (on each
+  drag-release) so the user sees the new area immediately. The white **fill is
+  not redrawn live** (re-filling would require rebuilding the content to keep
+  correct z-order — too costly per drag); it is reshaped at the next recollapse.
+  Consequence: during a live drag the stretched arm isn't yet whited-out, so
+  pre-existing strokes under it remain visible until recollapse.
 - Any **new** strokes the user drew on top of the expanded section are
   absorbed into the section's saved state (so they reappear on the next
   expand).
@@ -95,7 +101,8 @@ returns control to the user.
 |---|---|---|
 | `CE_PLUG:<json>` | The section's `+` icon. Carries the `CollapseSection` JSON. While **collapsed** it includes the full `collapsedElements`; while **expanded** that array is dropped (the content is live on the page as `CE_PART`, and recollapse rebuilds it from there) to avoid rewriting the whole payload on every expand. | Created on collapse, updated on expand/recollapse, deleted only if the section is destroyed. |
 | `CE_PART:<id>` | A piece of the section's original content currently shown on the page (one per restored stroke / text / link / geometry). | Inserted on expand, deleted on recollapse. |
-| `CE_MASK:<id>` | A polygon ring used to fake a filled rectangle that hides content behind the expanded section. | Inserted on expand, deleted on recollapse. |
+| `CE_MASK:<id>` | A polygon ring used to fake a filled (white) rectangle that hides content behind the expanded section. | Inserted on expand, deleted on recollapse. |
+| `CE_FRAME:<id>` | The thin rectangle outline marking the section boundary. Tagged separately from the fill so it can be moved on its own during a live icon drag. | Inserted on expand, moved on icon drag, deleted on recollapse. |
 | (null) | Not ours — leave alone. The plugin must not claim or modify these. | — |
 
 ### `CollapseSection` (stored as JSON inside `CE_PLUG:`)
