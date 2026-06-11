@@ -46,11 +46,13 @@ async function recollapseOne(
   let newCollapsed: CollapsedElement[] = [];
   const numSet = new Set<number>();
 
+  const tParts = Date.now();
   for (const el of partEls) {
     if (typeof el.numInPage === 'number') numSet.add(el.numInPage);
     const data = await serializeElement(el);
     if (data) newCollapsed.push({ numInPage: el.numInPage, data });
   }
+  dlog(`${LOG} PERF recollapse serializeParts=${Date.now() - tParts}ms parts=${partEls.length}`);
 
   // Absorb NEW elements drawn on top of the section while expanded (untagged and
   // num NOT in preservedNums = drawn after expand) whose bbox overlaps the
@@ -64,11 +66,14 @@ async function recollapseOne(
     bottom: section.iconRect.top + section.relativeRect.top + section.relativeRect.height,
   };
   let absorbed = 0;
+  let drained = 0;
+  const tAbsorb = Date.now();
   for (const el of all) {
     if (readUserData(el) !== null) continue; // ours or another section's
     if (typeof el.numInPage !== 'number' || preservedSet.has(el.numInPage)) continue; // pre-existing
     if (!ABSORBABLE_TYPES.has(el.type)) continue;
     const data = await serializeElement(el);
+    drained++;
     if (!data) continue;
     const bbox = contentBoundingBox([{ numInPage: el.numInPage, data }], pageSize);
     if (!bbox || !rectsOverlap(bbox, absorbRect)) continue;
@@ -76,7 +81,7 @@ async function recollapseOne(
     newCollapsed.push({ numInPage: el.numInPage, data });
     absorbed++;
   }
-  if (absorbed > 0) dlog(`${LOG} recollapse absorbed=${absorbed} new element(s) into section ${section.id}`);
+  dlog(`${LOG} PERF recollapse absorb=${Date.now() - tAbsorb}ms drained=${drained} absorbed=${absorbed} preserved=${preservedSet.size}`);
 
   for (const m of maskEls) {
     if (typeof m.numInPage === 'number') numSet.add(m.numInPage);
@@ -132,13 +137,19 @@ async function recollapseOne(
   // stale cached copy back over the deletion.
   const numsToDelete = Array.from(numSet);
   if (numsToDelete.length > 0) {
+    const tDel = Date.now();
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, numsToDelete);
+    dlog(`${LOG} PERF recollapse deleteElements=${Date.now() - tDel}ms n=${numsToDelete.length}`);
     if (!delRes?.success) {
       console.error(`${LOG} deleteElements failed res=${JSON.stringify(delRes)}`);
     }
   }
 
-  const ok = await writeSection(filePath, page, iconElement, updatedSection);
+  // iconElement comes from the page-wide getElements snapshot (fresh, and its num
+  // is stable across the delete above), so writeSection can skip re-reading.
+  const tWrite = Date.now();
+  const ok = await writeSection(filePath, page, iconElement, updatedSection, iconElement);
+  dlog(`${LOG} PERF recollapse writeSection=${Date.now() - tWrite}ms`);
   if (!ok) console.error(`${LOG} failed to update section userData after recollapse`);
   return true;
 }
@@ -155,10 +166,14 @@ export async function recollapseSections(
   if (sectionIds.length === 0) return;
 
   // Flush in-flight edits so the read sees strokes drawn while expanded.
+  const tSave = Date.now();
   await PluginNoteAPI.saveCurrentNote();
+  dlog(`${LOG} PERF recollapse saveCurrentNote=${Date.now() - tSave}ms`);
 
+  const tGE = Date.now();
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  dlog(`${LOG} PERF recollapse getElements=${Date.now() - tGE}ms total=${all.length} el`);
 
   const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
   const pageSize = sizeRes?.success && sizeRes.result
@@ -184,5 +199,7 @@ export async function recollapseSections(
 
   // Dismiss the lasso last, then surface every change with one reloadFile.
   await PluginCommAPI.setLassoBoxState(2);
+  const tReload = Date.now();
   await PluginCommAPI.reloadFile();
+  dlog(`${LOG} PERF recollapse reload=${Date.now() - tReload}ms`);
 }

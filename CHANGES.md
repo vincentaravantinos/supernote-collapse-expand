@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Performance: expand and recollapse are markedly faster on pages with many
+  strokes. Two redundant full-page reads were removed — one inside the section's
+  userData write (it re-read the whole page just to re-find the icon), and, for
+  expand, the main page read was replaced with a lightweight num-list lookup plus
+  a single fetch of the icon (the full read marshals every stroke across the
+  bridge, ~7x more costly). On a ~220-stroke page, expand dropped from ~16s to
+  ~8s. (Recollapse got the first improvement; a similar read optimization for it
+  is still to come.)
+
 - Docs: added a **user guide** (now the project `README.md`) covering the
   collapse / expand / recollapse actions, multi-section selections, resizing or
   relocating a section by dragging its `+` icon, adding content to an expanded

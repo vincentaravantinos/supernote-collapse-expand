@@ -1,7 +1,7 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, dlog, LOG } from '../constants';
 import { buildElement, contentBoundingBox } from '../utils/elementSerializer';
-import { iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
+import { getIconByNum, iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { noteSectionExpanded } from './expandedRegistry';
@@ -26,12 +26,40 @@ export async function expandOne(
   // every untagged element on the page now (pre-existing content). On a live
   // redraw we carry the existing preservedNums forward instead of re-capturing
   // (which would misfile the new strokes as pre-existing).
-  const allAtExpandRes: any = await PluginFileAPI.getElements(page, filePath);
-  const allAtExpand: any[] = allAtExpandRes?.success && Array.isArray(allAtExpandRes.result) ? allAtExpandRes.result : [];
-  const iconRectNow = iconRectFromElements(allAtExpand, section, iconElement);
-  const preservedNums = capturePreserved
-    ? allAtExpand.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number').map((el) => el.numInPage)
-    : section.preservedNums;
+  // Fast path: fetch only the icon (one element) + the page's num list, instead
+  // of marshalling every element (the full getElements is ~7x more expensive on
+  // a dense page). preservedNums needs only the num SET — the untagged filter is
+  // unnecessary because recollapse's own untagged-check excludes our elements, so
+  // the raw num list is equivalent. Fall back to a full getElements only if the
+  // icon num is stale/missing.
+  const tGE = Date.now();
+  let iconRectNow: any;
+  let freshIconEl: any;
+  let preservedNums: number[] | undefined;
+  const fastIcon = await getIconByNum(filePath, page, iconElement?.numInPage, section.id);
+  if (fastIcon) {
+    freshIconEl = fastIcon;
+    iconRectNow = fastIcon.textBox?.textRect ?? section.iconRect;
+    if (capturePreserved) {
+      const nlRes: any = await PluginFileAPI.getElementNumList(filePath, page);
+      preservedNums = nlRes?.success && Array.isArray(nlRes.result) ? nlRes.result : [];
+    } else {
+      preservedNums = section.preservedNums;
+    }
+    dlog(`${LOG} PERF expand read(fast getElement+numList)=${Date.now() - tGE}ms preserved=${preservedNums?.length ?? 0}`);
+  } else {
+    const allAtExpandRes: any = await PluginFileAPI.getElements(page, filePath);
+    const allAtExpand: any[] = allAtExpandRes?.success && Array.isArray(allAtExpandRes.result) ? allAtExpandRes.result : [];
+    iconRectNow = iconRectFromElements(allAtExpand, section, iconElement);
+    freshIconEl = allAtExpand.find((el) => {
+      const ud = readUserData(el);
+      return ud?.kind === 'section' && ud.section?.id === section.id;
+    }) ?? iconElement;
+    preservedNums = capturePreserved
+      ? allAtExpand.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number').map((el) => el.numInPage)
+      : section.preservedNums;
+    dlog(`${LOG} PERF expand read(fallback full getElements)=${Date.now() - tGE}ms total=${allAtExpand.length} el`);
+  }
   const contentRect: Rect = {
     left: iconRectNow.left + section.relativeRect.left,
     top: iconRectNow.top + section.relativeRect.top,
@@ -121,7 +149,7 @@ export async function expandOne(
   };
 
   const tWrite = Date.now();
-  const ok = await writeSection(filePath, page, iconElement, expandedState);
+  const ok = await writeSection(filePath, page, iconElement, expandedState, freshIconEl);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
   dlog(`${LOG} PERF expand writeSection=${Date.now() - tWrite}ms`);
 }

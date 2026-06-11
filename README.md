@@ -94,3 +94,7 @@ expanded it) is left exactly where it is and is **not** pulled into the section.
 - **Very large selections.** If a selection is too big to store, the plugin
   declines with a message rather than collapsing it partially — just collapse a
   smaller region.
+- **Slower on busy pages.** Collapse, expand and recollapse get slower the more
+  handwriting the page holds (not just what you selected) — on a very dense page
+  an operation can take several seconds. The "working" indicator shows while it
+  runs; just wait for it to finish.

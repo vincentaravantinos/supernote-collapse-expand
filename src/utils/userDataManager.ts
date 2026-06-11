@@ -46,6 +46,24 @@ export async function getCurrentIconRect(
   return iconRectFromElements(all, section, iconElement);
 }
 
+// Fetch a single element by num and confirm it's the section icon we expect.
+// Lets a caller avoid a full-page getElements when it already knows the icon's
+// num. Returns null if the num is missing/stale or the userData id doesn't match
+// (caller then falls back to a full scan).
+export async function getIconByNum(
+  filePath: string,
+  page: number,
+  num: number | undefined,
+  sectionId: string,
+): Promise<any | null> {
+  if (typeof num !== 'number') return null;
+  const res: any = await PluginFileAPI.getElement(filePath, page, num);
+  const el = res?.success ? res.result : null;
+  if (!el) return null;
+  const ud = readUserData(el);
+  return ud?.kind === 'section' && ud.section?.id === sectionId ? el : null;
+}
+
 export function readUserData(element: any): UserDataKind {
   const udata = element?.userData;
   if (typeof udata !== 'string') return null;
@@ -105,13 +123,15 @@ export async function writeSection(
   page: number,
   iconElement: any,
   section: CollapseSection,
+  freshIcon?: any,
 ): Promise<boolean> {
   try {
-    // Target the fresh icon from getElements, not the lassoed element: after a
-    // move the lassoed snapshot's numInPage is stale, so modifyElements would
-    // miss the real icon and the userData update (e.g. isExpanded) would never
-    // persist. Fall back to the lassoed element only if the lookup fails.
-    const target = (await resolveFreshIcon(filePath, page, section.id)) ?? iconElement;
+    // modifyElements must target the icon by its CURRENT num. A lassoed snapshot
+    // goes stale after a move, so we resolve the icon fresh from getElements —
+    // UNLESS the caller already holds one (expand/recollapse pass theirs from the
+    // getElements they just did; nums are stable across insert/delete). Skipping
+    // the re-fetch avoids a second full-page read (the dominant cost on big pages).
+    const target = freshIcon ?? (await resolveFreshIcon(filePath, page, section.id)) ?? iconElement;
     target.userData = CE_PLUG_PREFIX + JSON.stringify(section);
     target.pageNum = page;
     const res: any = await PluginFileAPI.modifyElements(filePath, page, [target]);
