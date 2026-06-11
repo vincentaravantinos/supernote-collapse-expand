@@ -17,6 +17,32 @@ Each entry should capture:
 
 ---
 
+## 2026-06-11 — Absorb new strokes on recollapse via getElements geometry (no lasso)
+
+**Decision.** Recollapse absorbs elements the user drew on top of an expanded
+section (so they collapse with it) using on-page geometry, not `lassoElements`.
+At the real expand, `preservedNums` = the nums of **all untagged elements** on
+the page (cheap — just numbers, no point-draining). At recollapse, an untagged
+element whose num is not in `preservedNums` is "new"; we serialize only those few
+candidates and absorb the ones whose bbox overlaps the section area
+(stroke/text/geometry). `preservedNums` is carried across live redraws and
+cleared on recollapse.
+
+**Alternatives considered.**
+- *The original `lassoElements(contentRect)` read.* Rejected: it fed the note-side
+  trail-cache desync (not fixed by `reloadFile`) — the reason absorb was disabled.
+- *`preservedNums` = only untagged elements inside the section area at expand.*
+  Rejected: needs geometry (and stroke-point draining) at expand. Storing all
+  untagged nums is just numbers, lets the recollapse num-check skip pre-existing
+  content without draining, and only the few genuinely-new candidates get a bbox.
+
+**Constraint.** No SDK spatial query exists (`getElements` family takes no rect;
+only the lasso selects by region). So region membership is computed by us — kept
+cheap by the `preservedNums` pre-filter. Relies on `numInPage` not being reused
+between expand and recollapse (monotonic in practice).
+
+---
+
 ## 2026-06-11 — Live box redraw on icon drag: motion listener + in-memory gate; full redraw (fill + strokes)
 
 **Decision.** While a section is expanded, dragging its icon redraws the **whole
@@ -24,12 +50,34 @@ section** live (on `ACTION_UP`) — white fill, outline, and strokes — at the 
 stretched area, via a `registerMotionListener`. A module-level registry of
 expanded sections (`expandedRegistry.ts`: `id → { iconRect, contentBBox }`,
 populated on expand, cleared on recollapse) gates the work: on `ACTION_DOWN` an
-in-memory point-in-rect test (icon rect padded ~60px for the selection box)
-decides if a drag grabbed an icon; only then, on `UP`, do we touch the SDK. The
-redraw re-serializes the on-page strokes, deletes the section's content + fill +
+in-memory point-in-rect test (icon rect + small touch-slop pad) decides if a
+gesture grabbed an icon; only then, on `UP`, do we engage. The redraw
+re-serializes the on-page strokes, deletes the section's content + fill +
 outline, and re-expands in place via `expandOne` (reusing the tested mask/content
 z-order and stroke-link handling) in a single `reloadFile`. A shared busy guard
 (`busy.ts`) keeps it from racing the button handler.
+
+**Distinguishing select from move (the hard part).** Selecting the icon is itself
+a drag (lasso) and can start on or near the icon, so neither the gate nor a
+finger-distance check can reliably tell a select from a move — both move the
+finger and can start on the icon. The only true signal is whether the icon
+*moved*, and a lifted drag-move is committed (made visible to `getElements`) by
+`setLassoBoxState(2)` — which also cancels the user's selection. Resolution, in
+order, each found by on-device pressure-testing:
+- **Tap vs drag:** finger movement < ~16px → tap, skip entirely (never touch the
+  selection).
+- **Read before dismiss:** `saveCurrentNote` → `getElements` → check `moved`
+  FIRST; only `setLassoBoxState(2)` if the icon actually moved. So a select
+  (moved=false) is never dismissed. (`saveCurrentNote` alone surfaces a real move
+  to `getElements` — verified; an earlier build dismissed-then-read and clobbered
+  selects.)
+- **Debounce ~600ms:** schedule the redraw and reset on any further touch, so the
+  slow redraw never runs mid-gesture (which had been clobbering the next
+  selection); a busy hit reschedules rather than drops.
+- **Small gate pad:** keep it to touch slop so a lasso-select starting clearly
+  outside the icon doesn't engage at all.
+Residual: a near-icon select still spends a `saveCurrentNote`+`getElements` to
+find `moved=false` (harmless), and rare misses are at device-noise level.
 
 **Full redraw, cost accepted.** Re-filling the white mask requires the strokes
 above it, and the SDK only inserts on top — so correct z-order means rebuilding
