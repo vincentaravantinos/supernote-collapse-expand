@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Feature: a **"working" indicator** now appears during slow operations
+  (collapse / expand / recollapse, and the live icon-move redraw), so the plugin
+  no longer looks frozen on a large note. It's a small card centered on the page
+  (the rest of the page stays visible) shown while the operation runs and removed
+  when it finishes.
+
+- Fix: **moving the `+` icon while expanded now reliably redraws the section.**
+  The redraw was driven by a timer that, it turned out, never fired while the
+  plugin was idle (the host doesn't pump the JS event loop at rest), so after the
+  pen lifted nothing happened — it only ever worked when stray touch events
+  happened to wake the loop, which is why it was intermittent. The redraw now
+  runs directly when you lift the icon. The icon's grab area was also widened so
+  edge-grabs register.
+
 - Feature: recollapse now **absorbs strokes (and text/shapes) drawn on top of an
   expanded section**, so they collapse with it and reappear on the next expand
   instead of being left orphaned on the page (fulfils the SPEC "Recollapse"

@@ -70,6 +70,16 @@ recollapses the expanded one(s) and ignores the collapse/expand that press.)
   happened to be inside the section's area must remain at its original
   position, untouched by recollapse.
 
+## Busy feedback
+
+Operations on a large note (collapse / expand / recollapse, and the live
+icon-move redraw) can take several seconds. While one is running the plugin
+must show a non-blocking "working" indicator so the canvas doesn't look
+frozen, and remove it when the operation finishes. The indicator must not
+block the operation it reports on (so it cannot be a modal dialog) and must
+leave the surrounding page visible (it is a small overlay, not a full-screen
+cover).
+
 ## Persistence requirements
 
 **Hard requirement.** Every operation must be robust against the user

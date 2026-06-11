@@ -1,4 +1,4 @@
-import { PluginCommAPI } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginManager } from 'sn-plugin-lib';
 import { BUILD_TAG, dlog, LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
 import { summarizeElements } from './utils/diagnostics';
@@ -45,6 +45,7 @@ export async function handleMainAction() {
     console.error(`${LOG} handleMainAction watchdog fired (operation hung >${WATCHDOG_MS / 1000}s) — releasing re-entrancy guard`);
     releaseBusy();
   }, WATCHDOG_MS);
+  let viewShown = false; // busy overlay shown for this action?
   try {
     const filePathRes: any = await PluginCommAPI.getCurrentFilePath();
     const pageRes: any = await PluginCommAPI.getCurrentPageNum();
@@ -64,6 +65,18 @@ export async function handleMainAction() {
     if (elements.length === 0) {
       alert('Please make a selection first.');
       return;
+    }
+
+    // Busy overlay: the SDK has no non-blocking busy primitive (every native
+    // dialog is a blocking modal), so we render the plugin's own React view (a
+    // small "working" card, see App.tsx) via showPluginView and hide it in the
+    // finally. Shown AFTER the selection is read, so showing the view can't eat
+    // the lasso the operation still depends on.
+    try {
+      await PluginManager.showPluginView();
+      viewShown = true;
+    } catch (e) {
+      dlog(`${LOG} showPluginView failed: ${e}`);
     }
 
     // Classify the selection. RECOLLAPSE is triggered by lassoing the icon OR
@@ -135,5 +148,12 @@ export async function handleMainAction() {
   } finally {
     clearTimeout(watchdog);
     releaseBusy();
+    if (viewShown) {
+      try {
+        await PluginManager.closePluginView();
+      } catch (e) {
+        dlog(`${LOG} closePluginView failed: ${e}`);
+      }
+    }
   }
 }

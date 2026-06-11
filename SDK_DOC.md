@@ -201,6 +201,35 @@ For reacting to user input outside the plugin button:
 
 ---
 
+## JS timers don't fire while the plugin is idle
+
+`setTimeout` / `setInterval` callbacks only run when the JS runtime is being
+ticked by something else — a native event (button press, motion event) or an
+in-flight `await` resolving. While the plugin sits idle (no user input, nothing
+awaiting), the event loop is **not pumped** and scheduled callbacks do **not**
+fire; they flush late, the next time the runtime is woken. Verified with a
+`setInterval` heartbeat: silent at rest, ticking only during an active operation.
+
+Consequence: do not rely on a deferred timer to do work after user input ends
+(e.g. a debounce that runs "300 ms after the last touch"). It will not fire until
+the next touch. Trigger such work directly from the input event instead, and
+coalesce with a guard/flag rather than a timer.
+
+## Non-blocking UI: the plugin's own view
+
+The native dialogs (`NativeUIUtils.showRattaDialog`, `showErrorTipDialog`, and
+`alert`) are **blocking modals** — they suspend the calling operation, so they
+can't show progress *during* one. The only non-blocking UI surface is the
+plugin's **own React view**, toggled with `PluginManager.showPluginView()` /
+`closePluginView()` (the component registered via `AppRegistry`). Showing it does
+not block JS execution, so an operation can `showPluginView()`, do its work, then
+`closePluginView()` in a `finally`. Notes: e-ink does not alpha-blend (a
+translucent backdrop renders solid, blanking the canvas — use a transparent
+backdrop with only the visible widgets drawn), and there is no separate toast or
+spinner primitive.
+
+---
+
 ## Beyond the JS bridge: native host API and background execution
 
 - **`HostCommonAPI`** (the Java host surface, in

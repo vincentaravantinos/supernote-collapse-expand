@@ -1,71 +1,52 @@
 /**
- * Simple Plugin
+ * Collapse / Expand — busy overlay
+ *
+ * Shown via PluginManager.showPluginView() while a slow operation runs, hidden
+ * with closePluginView() when it finishes. Static (no animated spinner — e-ink
+ * doesn't refresh smoothly enough for one to look good).
+ *
+ * The backdrop is transparent (e-ink doesn't alpha-blend, so any tint fills the
+ * whole surface solid white and blanks the canvas). Only the small card draws,
+ * centered, so the page stays visible around it.
  *
  * @format
  */
 
 import React from 'react';
-import {
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-  Pressable,
-} from 'react-native';
-import { PluginManager } from 'sn-plugin-lib';
+import {StyleSheet, Text, View} from 'react-native';
 
-/**
- * Plugin View
- * Displays Hello World text in the center of the screen
- */
 function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const handleClose = () => {
-    PluginManager.closePluginView();
-  };
-
   return (
-    <View style={styles.container}>
-      <Pressable style={styles.closeButton} onPress={handleClose}>
-        <Text style={[styles.closeText, {color: isDarkMode ? '#ffffff' : '#000000'}]}>✕</Text>
-      </Pressable>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={isDarkMode ? '#000000' : '#ffffff'}
-      />
-      <Text style={[styles.helloText, {color: isDarkMode ? '#ffffff' : '#000000'}]}>
-        Hello World
-      </Text>
+    <View style={styles.backdrop}>
+      <View style={styles.card}>
+        <Text style={styles.glyph}>⊕</Text>
+        <Text style={styles.title}>Collapse / Expand</Text>
+        <Text style={styles.sub}>Working…</Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  backdrop: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
     backgroundColor: '#ffffff',
   },
-  closeButton: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  closeText: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  helloText: {
-    fontSize: 24,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
+  glyph: {fontSize: 28, color: '#000000'},
+  title: {marginLeft: 12, fontSize: 18, fontWeight: '700', color: '#000000'},
+  sub: {marginLeft: 10, fontSize: 15, color: '#000000'},
 });
 
 export default App;

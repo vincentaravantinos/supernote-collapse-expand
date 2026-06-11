@@ -17,6 +17,44 @@ Each entry should capture:
 
 ---
 
+## 2026-06-11 — Busy indicator via the plugin's own view; live redraw must not use idle timers
+
+**Decision.** Show a "working" indicator during slow operations by rendering the
+plugin's **own React view** (`App.tsx`, a small centered card on a transparent
+backdrop) with `PluginManager.showPluginView()` / `closePluginView()` — shown
+after the selection is read, hidden in the `finally`. Wired into both the button
+action (`handleMainAction`) and the live icon-move redraw (`redrawSectionBox`).
+
+Separately, the live icon-move redraw now runs **directly on the motion UP
+event**, not via a debounced `setTimeout`. Rapid drags are coalesced with the
+shared busy guard plus a re-run flag.
+
+**Alternatives considered.**
+- *Native dialogs (`showRattaDialog`, `showErrorTipDialog`, `alert`).* Rejected:
+  all are **blocking modals** — they'd freeze the very operation we want to report
+  progress on. The SDK exposes no non-blocking busy/toast primitive. The plugin's
+  own view (the sn-shapes pattern) is the only non-blocking UI surface.
+- *Full-screen translucent backdrop.* Rejected: e-ink doesn't alpha-blend, so any
+  tint renders solid white and blanks the whole canvas. The backdrop is
+  transparent; only the small card draws.
+- *Keep the 600 ms `setTimeout` debounce for the redraw.* Rejected after a
+  heartbeat probe (a `setInterval` logging every 2 s) proved the JS event loop is
+  **not pumped while the plugin is idle** — the heartbeat fired only while an
+  operation's `await` chain was running, and was silent at rest. So a deferred
+  timer never fires after the pen lifts; the redraw must be kicked from the
+  (pumped) motion event itself.
+- *Tight icon-grab gate (8 px pad).* Rejected: the 50 px icon is a small target and
+  edge-grabs landed just outside, so the gate missed real moves. Widened to 30 px;
+  this is safe now because `redrawSectionBox` reads-before-dismiss (only commits
+  `setLassoBoxState(2)` when the icon actually moved), so a too-eager gate hit on a
+  lasso-select is harmless.
+
+**Constraint.** The plugin host (a) offers no non-blocking native UI and (b) does
+not tick the JS event loop while idle — timer callbacks flush only when a native
+event or an in-flight `await` ticks the runtime. Both shape the design above.
+
+---
+
 ## 2026-06-11 — Absorb new strokes on recollapse via getElements geometry (no lasso)
 
 **Decision.** Recollapse absorbs elements the user drew on top of an expanded
