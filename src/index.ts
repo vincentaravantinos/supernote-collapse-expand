@@ -7,39 +7,24 @@ import { expandSections } from './logic/expandAction';
 import { recollapseSections } from './logic/recollapseAction';
 import { acquireBusy, releaseBusy } from './logic/busy';
 
-// Re-entrancy guard (shared with the motion-driven live redraw via ./logic/busy):
-// the button can be tapped again while a previous invocation is still awaiting
-// SDK calls, and a drag-release can fire mid-action. A concurrent second run
-// would interleave saveCurrentNote / lasso / insert state and corrupt the note
-// (audit ②). Ignore re-entrant presses until the current one finishes.
-
-// DRIFT PROBE (temporary): a monotonic per-action counter so the logcat is
-// self-segmenting. Each action emits "[CE-PROBE] #N <TYPE> BEGIN/END" markers;
-// the note app's own "exist Trails:" (leaking plugin trail cache) and
-// "mTrailNumber" (live render model) lines fall between them, so drift_watch.sh
-// can render one drift row per action and Ratta can read the raw log directly.
-// Resets to 0 only when the pluginhost process restarts. Strip once reported.
+// Per-action counter + tag bracketing each action's logs with BEGIN/END markers
+// that carry the build stamp (so the trace confirms which build is live).
 let actionSeq = 0;
 const PROBE = `${LOG} [CE-PROBE]`;
 
 export async function handleMainAction() {
   if (!acquireBusy()) {
+    // The button shares a single-flight guard with the live redraw, so a tap
+    // while a prior op is still in flight is rejected. Tell the user, so a
+    // swallowed tap doesn't look like a broken button.
     dlog(`${LOG} handleMainAction already running — ignoring re-entrant button press`);
-    // Tell the user the rejection is intentional — otherwise a swallowed tap
-    // looks like a broken button. This fires while a prior collapse/expand is
-    // still in flight (operations can take several seconds, longer as the note
-    // grows). Critical feedback, so it justifies an alert() despite audit ⑧.
     alert('Collapse/Expand is still busy — please wait a moment.');
     return;
   }
-  // Watchdog: if an SDK call truly hangs (the note enters a bad state and a
-  // call never returns), the finally below never runs and the guard would
-  // wedge the button permanently. Release it after a timeout so the plugin
-  // self-recovers. This is ONLY for genuine hangs — it must be longer than any
-  // legitimately-slow operation, because firing it while an op is still
-  // progressing re-opens the re-entrancy window. Large selections on big notes
-  // (serialize many strokes + insert + reloadFile re-render + the note app's
-  // own backup) can legitimately run tens of seconds, so 60s, not 20s.
+  // Watchdog: if an SDK call truly hangs, the finally never runs and the guard
+  // would wedge the button forever. Release it after a timeout. Must exceed any
+  // legitimately-slow op (large selections can run tens of seconds), else firing
+  // it mid-op re-opens the re-entrancy window.
   const WATCHDOG_MS = 60000;
   const watchdog = setTimeout(() => {
     console.error(`${LOG} handleMainAction watchdog fired (operation hung >${WATCHDOG_MS / 1000}s) — releasing re-entrancy guard`);
@@ -79,14 +64,10 @@ export async function handleMainAction() {
       dlog(`${LOG} showPluginView failed: ${e}`);
     }
 
-    // Classify the selection. RECOLLAPSE is triggered by lassoing the icon OR
-    // any element that belongs to an expanded section (its CE_PART content or
-    // CE_MASK), and recollapses every expanded section the lasso spans. EXPAND
-    // and COLLAPSE are only reachable when no expanded section is referenced —
-    // parts/masks exist only while a section is expanded, so their presence
-    // unambiguously means "recollapse". Recollapse takes priority: a lasso that
-    // mixes an expanded section with a collapsed icon recollapses the expanded
-    // one(s) and ignores the collapse/expand this press.
+    // Classify the selection. An expanded section referenced by the lasso (its
+    // icon, or its CE_PART / CE_MASK) → recollapse; a collapsed icon → expand;
+    // otherwise → collapse. Recollapse takes priority over expand/collapse when a
+    // selection mixes them.
     const expandedIds = new Set<string>();
     const collapsedTargets: { section: any; icon: any }[] = [];
     const seenCollapsed = new Set<string>();
@@ -106,9 +87,6 @@ export async function handleMainAction() {
 
     try {
       if (expandedIds.size > 0) {
-        // Recollapse every expanded section the lasso spans, batched into a
-        // single refresh. recollapseSections resolves each icon by id and works
-        // by section id, so anything else in the lasso is irrelevant to it.
         const ids = Array.from(expandedIds);
         actionSeq++;
         dlog(`${PROBE} #${actionSeq} RECOLLAPSE BEGIN page=${page} build=${BUILD_TAG} sections=${ids.length}`);
@@ -118,8 +96,6 @@ export async function handleMainAction() {
           dlog(`${PROBE} #${actionSeq} RECOLLAPSE END`);
         }
       } else if (collapsedTargets.length > 0) {
-        // Expand every collapsed section in the lasso, batched into a single
-        // refresh; loose strokes in the selection are left in place.
         actionSeq++;
         dlog(`${PROBE} #${actionSeq} EXPAND BEGIN page=${page} build=${BUILD_TAG} sections=${collapsedTargets.length}`);
         try {

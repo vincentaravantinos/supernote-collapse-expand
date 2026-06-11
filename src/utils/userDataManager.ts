@@ -15,12 +15,10 @@ export type UserDataKind =
   | { kind: 'frame'; id: string }
   | null;
 
-// Resolve the icon's CURRENT on-page rect, given an already-fetched element
-// list. The icon is a TEXT element, so its rect is textBox.textRect. The
-// element from getLassoElements can report a stale rect after a move, while
-// the persisted getElements list reflects it; prefer the getElements match
-// (by section id), then fall back to the lassoed element, then the
-// last-known saved rect.
+// The icon's CURRENT rect (textBox.textRect) from an already-fetched element
+// list. A getLassoElements element reports a stale rect after a move, so prefer
+// the getElements match by section id, then the lassoed element, then the saved
+// rect.
 export function iconRectFromElements(
   all: any[],
   section: CollapseSection,
@@ -35,9 +33,8 @@ export function iconRectFromElements(
   return iconElement?.textBox?.textRect ?? section.iconRect;
 }
 
-// Convenience wrapper that fetches the element list itself. Callers must
-// have flushed pending edits (saveCurrentNote) first so getElements sees the
-// moved icon.
+// As iconRectFromElements, but fetches the list itself. Callers must have
+// flushed pending edits (saveCurrentNote) first so getElements sees a moved icon.
 export async function getCurrentIconRect(
   filePath: string,
   page: number,
@@ -78,9 +75,9 @@ export function readUserData(element: any): UserDataKind {
   return null;
 }
 
-// Map every section's id -> its icon element, resolved FRESH from getElements
-// (one read), rather than trusting lassoed snapshots. Used to find the icon(s)
-// for a recollapse triggered by lassoing section content rather than the icon.
+// Map every section id -> its icon element, fresh from getElements (not a
+// lassoed snapshot). Used to resolve icons for a recollapse triggered by
+// lassoing section content rather than the icon itself.
 export async function findSectionIcons(
   filePath: string,
   page: number,
@@ -95,8 +92,6 @@ export async function findSectionIcons(
   return byId;
 }
 
-// Resolve a single section's icon element FRESH from getElements (by section
-// id), rather than trusting a lassoed snapshot. Returns null if not found.
 async function resolveFreshIcon(
   filePath: string,
   page: number,
@@ -112,14 +107,10 @@ export async function writeSection(
   section: CollapseSection,
 ): Promise<boolean> {
   try {
-    // Target the FRESH icon from getElements, not the passed (lassoed) element.
-    // After the user moves the icon, the lassoed snapshot's identity
-    // (numInPage) is stale, so modifyElements on it misses the real icon and
-    // the userData update (e.g. isExpanded=true on expand) never persists —
-    // which made a subsequent recollapse get misread as an expand and
-    // double-insert. This is the write-side twin of the stale picture.rect bug
-    // (already worked around for reads via iconRectFromElements/getCurrentIconRect).
-    // Fall back to the lassoed element only if the fresh lookup fails.
+    // Target the fresh icon from getElements, not the lassoed element: after a
+    // move the lassoed snapshot's numInPage is stale, so modifyElements would
+    // miss the real icon and the userData update (e.g. isExpanded) would never
+    // persist. Fall back to the lassoed element only if the lookup fails.
     const target = (await resolveFreshIcon(filePath, page, section.id)) ?? iconElement;
     target.userData = CE_PLUG_PREFIX + JSON.stringify(section);
     target.pageNum = page;

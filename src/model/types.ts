@@ -15,8 +15,8 @@ export interface SerializedStroke {
   points: Point[];
   pressures: number[];
   layerNum?: number;
-  // Coordinate space the points live in. Restoring without these makes the
-  // native side default to the page's maxX/maxY, which scales the stroke.
+  // EMR coordinate space of the points. Without these, restore defaults to the
+  // page's maxX/maxY and the stroke is rescaled.
   maxX?: number;
   maxY?: number;
 }
@@ -48,13 +48,12 @@ export interface SerializedLink {
   showText: string;
   italic: number;
   // --- stroke links (category 1) only ---
-  // Persisted: indexes into the section's `collapsedElements` of the strokes
-  // that form this link. On expand the link is rebuilt pointing at those
-  // strokes' NEW page nums. Resolved by `resolveLinkMemberIndices`.
+  // Persisted indexes into the section's `collapsedElements` of the member
+  // strokes. Page nums don't survive the round-trip, so on expand the link is
+  // rebuilt against the strokes' NEW nums. Resolved by resolveLinkMemberIndices.
   memberIndices?: number[];
-  // Transient: the raw on-page `controlTrailNums` captured at serialize time.
-  // Converted to `memberIndices` (and deleted) by `resolveLinkMemberIndices`;
-  // never persisted in the icon userData.
+  // Transient raw on-page controlTrailNums captured at serialize time; converted
+  // to memberIndices (and deleted) by resolveLinkMemberIndices, never persisted.
   srcControlNums?: number[];
 }
 
@@ -85,9 +84,9 @@ export interface CollapseSection {
   relativeRect: RelativeRect;
   collapsedElements: CollapsedElement[];
   isExpanded: boolean;
-  // numInPage of pre-existing untagged elements that were sitting under the
-  // section when it was expanded. Recollapse uses this to skip them in the
-  // "absorb untagged strokes from contentRect" step. Set on expand, cleared
-  // on recollapse.
+  // numInPage of every untagged element on the page at expand time (pre-existing
+  // content). Recollapse uses it to tell new strokes drawn on the section (num
+  // not listed) from pre-existing content, absorbing only the new. Set on
+  // expand, cleared on recollapse.
   preservedNums?: number[];
 }

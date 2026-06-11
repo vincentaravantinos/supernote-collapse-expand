@@ -13,10 +13,8 @@ export interface StrokeLinkExpandCtx {
   pageMaxY: number;
   dx: number;
   dy: number;
-  // Pre-built elements the caller would otherwise insert itself. In the
-  // stroke-link path this function owns the whole insert sequence so it can
-  // recover the members' new page nums with one reload PER LINK and no extra
-  // baseline reload (see header comment on rebuildStrokeLinks).
+  // Pre-built mask + content the caller would otherwise insert itself; in this
+  // path rebuildStrokeLinks owns the whole insert sequence (see its header).
   maskElements: any[];
   otherElements: any[];
 }
@@ -26,9 +24,9 @@ function isStrokeLink(ce: CollapsedElement): boolean {
   return d.kind === 'link' && d.category === 1 && !!d.memberIndices;
 }
 
-// Indexes into `collapsed` of the strokes that belong to a stroke link
-// (category 1). These members are re-inserted in their own batch by
-// `rebuildStrokeLinks`, so the main expand batch must EXCLUDE them.
+// Indexes into `collapsed` of strokes belonging to a stroke link. They're
+// re-inserted in their own batch by rebuildStrokeLinks, so the main expand
+// batch must exclude them.
 export function strokeLinkMemberIndices(collapsed: CollapsedElement[]): Set<number> {
   const set = new Set<number>();
   for (const ce of collapsed) {
@@ -49,29 +47,23 @@ async function insertBatch(filePath: string, page: number, batch: any[]): Promis
 
 // Rebuild stroke links (category 1) and insert the whole expand payload.
 //
-// A stroke link references its member strokes by page num, and re-inserting
-// those strokes gives them NEW nums — so we must learn the new nums after
-// re-insert. getElementNumList/getElements read the CACHED copy, which lags
-// insertElements until a reloadFile (SDK_DOC: real↔cached split). The trick:
-// insert a link's members (no other strokes) then reloadFile + getElements; the
-// new stroke elements tagged for this section are exactly that link's members,
-// and their nums are the link's controlTrailNums (order doesn't matter — it's a
-// set). The link's own rect is just a non-empty placeholder; the device
-// recomputes a stroke link's area from controlTrailNums (see SDK_DOC).
+// A stroke link references its members by page num, and re-inserting them gives
+// NEW nums. getElementNumList/getElements read the CACHED copy, which lags
+// insertElements until a reloadFile (real↔cached split). So per link: insert its
+// members alone, reloadFile + getElements, and the section's new stroke elements
+// are exactly that link's members — their nums become its controlTrailNums.
 //
-// To keep the screen refreshes minimal we (a) take the baseline WITHOUT a reload
-// (the cached copy still shows the pre-expand page — the caller hasn't inserted
-// anything yet in this path), (b) bundle the masks with the FIRST link's members
-// (masks first, so they stay underneath), and (c) defer all other content + the
-// link elements to one final batch that the caller's end-of-expand reload
-// surfaces. Net cost: one reload per stroke link (vs. the old baseline + per-link
-// + content reloads). Returns true iff every insert succeeded.
+// To minimize refreshes: take the baseline WITHOUT a reload (cached == pre-expand
+// page, since the caller deferred its inserts here), bundle masks with the first
+// link's members (masks first → underneath), and defer all other content + the
+// links to one final batch the caller's end-of-expand reload surfaces. One reload
+// per stroke link. Returns true iff every insert succeeded.
 export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<boolean> {
   const { filePath, page, collapsedElements, sectionId, emrDelta, pageMaxX, pageMaxY, dx, dy, maskElements, otherElements } = ctx;
   const tag = CE_PART_PREFIX + sectionId;
   const links = collapsedElements.filter(isStrokeLink);
 
-  // Degenerate guard: no resolvable stroke links — just insert mask + content.
+  // No resolvable stroke links — just insert mask + content.
   if (links.length === 0) {
     return insertBatch(filePath, page, [...maskElements, ...otherElements]);
   }
@@ -83,8 +75,7 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
     return r?.success && Array.isArray(r.result) ? r.result : [];
   };
 
-  // Baseline: the page BEFORE we insert anything, read without a reload (cached
-  // copy == pre-expand page, since the caller deferred its inserts to us).
+  // Baseline before any insert, read without a reload (cached == pre-expand).
   let knownNums = new Set<number>(await numListNow());
 
   const pending: { data: SerializedLink; memberNums: number[]; rect: Rect }[] = [];
@@ -105,9 +96,9 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
     const batch = i === 0 ? [...maskElements, ...memberEls] : memberEls;
     ok = (await insertBatch(filePath, page, batch)) && ok;
 
-    // Reload (cached:=real) then read back; the section's NEW stroke elements
-    // are this link's members (masks are geometry; other content/strokes aren't
-    // inserted until the final batch; previous links' members are in knownNums).
+    // Reload then read back: the section's new stroke elements are this link's
+    // members (masks are geometry; other strokes wait for the final batch;
+    // earlier links' members are already in knownNums).
     await PluginCommAPI.reloadFile();
     const chk: any = await PluginFileAPI.getElements(page, filePath);
     const els: any[] = chk?.success && Array.isArray(chk.result) ? chk.result : [];
@@ -120,9 +111,8 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
     knownNums = new Set(els.map((e) => e?.numInPage));
   }
 
-  // Build the links (now that we know their members' nums) and insert them with
-  // all the remaining content in one final batch. No reload here — the caller's
-  // end-of-expand reloadFile surfaces it.
+  // Build the links (members' nums now known) and insert them with the remaining
+  // content in one final batch; the caller's end-of-expand reload surfaces it.
   const linkEls: any[] = [];
   for (const p of pending) {
     const el = await buildStrokeLink(p.data, page, tag, p.memberNums, p.rect);

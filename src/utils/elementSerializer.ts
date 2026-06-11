@@ -31,12 +31,10 @@ function roundRect(rect: Rect): Rect {
   };
 }
 
-// Bounding box, in android page coords, of a set of serialized elements — i.e.
-// the area the content actually occupies on the page. Strokes are stored in EMR
-// space (with their own maxX/maxY), so convert each point to android the same
-// way buildStroke positions it; text/link/geometry rects/points are already
-// android. Used to define a section's zone (mask + outline) from its content
-// rather than from the user's lasso. Returns null if there's no content.
+// Bounding box (android page coords) of serialized elements. Strokes are stored
+// in EMR space, so convert to android the same way buildStroke positions them;
+// text/link/geometry are already android. Used to define a section's zone from
+// its content. Returns null if empty.
 export function contentBoundingBox(
   collapsed: CollapsedElement[],
   pageSize: { width: number; height: number },
@@ -54,9 +52,8 @@ export function contentBoundingBox(
     const d = ce.data;
     if (d.kind === 'stroke') {
       if (d.points.length === 0) continue;
-      // Cheap EMR bbox (min/max, no conversion), then convert only the 4 corners
-      // — the EMR→android map is affine, so a rectangle maps to a rectangle. This
-      // avoids a validated emrPoint2Android call per point (the hot-path cost).
+      // EMR→android is affine, so take the EMR bbox and convert only its 4
+      // corners instead of every point (avoids a per-point conversion call).
       const sx = d.maxX && d.maxX > 0 ? pageMaxX / d.maxX : 1;
       const sy = d.maxY && d.maxY > 0 ? pageMaxY / d.maxY : 1;
       let exMin = Infinity, eyMin = Infinity, exMax = -Infinity, eyMax = -Infinity;
@@ -162,11 +159,9 @@ export async function serializeElement(el: any): Promise<SerializedElement | nul
       showText: lk.showText ?? '',
       italic: lk.italic ?? 0,
     };
-    // Stroke links (category 1) are made of strokes referenced by
-    // controlTrailNums (a plain number[] of page nums). Capture them raw;
-    // resolveLinkMemberIndices then converts them to stable indexes into
-    // collapsedElements (the page nums don't survive the round-trip), and
-    // expandAction rebuilds the link pointing at the strokes' new nums.
+    // Stroke links reference their strokes by controlTrailNums (page nums).
+    // Capture raw; resolveLinkMemberIndices converts them to stable indexes
+    // (page nums don't survive the round-trip).
     if ((lk.category ?? 0) === 1) {
       const ctn = (lk as any).controlTrailNums;
       data.srcControlNums = Array.isArray(ctn) ? [...ctn] : [];
@@ -229,7 +224,7 @@ async function buildStroke(
   element.stroke.penType = data.penType;
 
   // Native side forces new strokes into the page's (maxX, maxY) space, so
-  // rescale captured points if they were drawn in a different space.
+  // rescale points captured in a different space.
   const sx = data.maxX && data.maxX > 0 ? pageMaxX / data.maxX : 1;
   const sy = data.maxY && data.maxY > 0 ? pageMaxY / data.maxY : 1;
   const points = data.points.map(p => ({
@@ -280,11 +275,9 @@ async function buildLink(
   dx: number,
   dy: number,
 ): Promise<any | null> {
-  // Stroke links (category 1) are NOT built here: their controlTrailNums must
-  // point at the strokes' NEW page nums, which aren't known until after the
-  // member strokes are re-inserted. expandAction builds them via
-  // `buildStrokeLink` after that insert. So skip them in the normal build loop.
-  // (Building one with empty/invalid control nums throws error 510.)
+  // Stroke links are built later by buildStrokeLink, once their member strokes
+  // are re-inserted and their new page nums are known (building one with
+  // empty/invalid controlTrailNums throws error 510). Skip them here.
   if (data.category === 1) return null;
   const res: any = await PluginCommAPI.createElement(ELEMENT_TYPES.LINK);
   if (!res?.success || !res.result) return null;
@@ -297,9 +290,8 @@ async function buildLink(
     Y: rect.top,
     width: rect.right - rect.left,
     height: rect.bottom - rect.top,
-    // `page` is the page the link LIVES on (current page), not its jump
-    // target — that's `destPage`. The SDK `Link` model defaults both to 0;
-    // omitting them on a rebuilt link risks error 502 (audit ⑤).
+    // `page` = the page the link lives on (not the jump target, `destPage`);
+    // omitting it on a rebuilt link risks error 502.
     page,
     style: data.style,
     linkType: data.linkType,
@@ -309,25 +301,18 @@ async function buildLink(
     fullText: data.fullText,
     showText: data.showText,
     italic: data.italic,
-    // Stroke-link trail IDs. We don't carry them across collapse, and stale
-    // refs would throw 502, so reset to [] (correct for text links).
-    controlTrailNums: [],
+    controlTrailNums: [], // text links have none; stale refs throw 502
   };
   element.pageNum = page;
   if (userData !== null) element.userData = userData;
   return element;
 }
 
-// Build a stroke link (category 1). Unlike buildLink, this is called from
-// expandAction AFTER its member strokes are re-inserted, with `controlNums` set
-// to those strokes' NEW page nums.
-//
-// `rect` only has to be a valid, non-empty placeholder: the device rejects a
-// zero rect (error 509 "Invalid link area") but otherwise IGNORES the width/
-// height we pass — it recomputes a stroke link's area from `controlTrailNums` on
-// insert (confirmed on-device: we sent w=256, it stored w=190 = strokes bbox +
-// padding). So we can't reproduce the interactive icon allowance here; see
-// SDK_DOC / FEEDBACK. (Text links DO honor their rect — that's `buildLink`.)
+// Build a stroke link (category 1), called after its member strokes are
+// re-inserted with `controlNums` set to their new page nums. `rect` only has to
+// be a valid non-empty placeholder: the device rejects a zero rect (error 509)
+// but otherwise ignores the size we pass and recomputes the area from
+// controlTrailNums. (Text links DO honor their rect — that's buildLink.)
 export async function buildStrokeLink(
   data: SerializedLink,
   page: number,
@@ -362,11 +347,9 @@ export async function buildStrokeLink(
   return element;
 }
 
-// For each stroke link (category 1) in a freshly-serialized collapsed array,
-// convert its raw page-num controlTrailNums (srcControlNums) into stable indexes
-// into that array (memberIndices) so the reference survives a round-trip. If a
-// link's members aren't all in the array (shouldn't happen — lassoing a stroke
-// link selects its strokes), drop the link (its strokes stay) and alert.
+// Convert each stroke link's raw page-num srcControlNums into stable indexes
+// into `collapsed` (memberIndices), so the reference survives the round-trip.
+// A link whose members aren't all present is dropped (its strokes stay) + alert.
 export function resolveLinkMemberIndices(collapsed: CollapsedElement[]): CollapsedElement[] {
   let dropped = false;
   const presentNums = new Set(collapsed.map((ce) => ce.numInPage));

@@ -7,14 +7,10 @@ import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand'
 import { noteSectionExpanded } from './expandedRegistry';
 import { CollapseSection } from '../model/types';
 
-// Expand ONE section: insert its mask + restored content (stroke links rebuilt
-// via rebuildStrokeLinks) and flip the icon's userData to isExpanded.
-//
-// Deliberately does NOT saveCurrentNote / setLassoBoxState / reloadFile —
-// expandSections does those once around the loop so N sections cost a single
-// refresh. Reads only this section's own icon (resolved fresh by id), so it is
-// unaffected by sibling sections inserted earlier in the same batch but not yet
-// reloaded (their content carries a different CE_PART:<id> tag).
+// Expand ONE section: insert its mask + restored content (stroke links via
+// rebuildStrokeLinks) and flip the icon's userData to isExpanded. Does NOT
+// saveCurrentNote / setLassoBoxState / reloadFile — expandSections does those
+// once around the loop so N sections cost a single refresh.
 export async function expandOne(
   section: CollapseSection,
   iconElement: any,
@@ -22,21 +18,14 @@ export async function expandOne(
   page: number,
   capturePreserved: boolean = false,
 ): Promise<void> {
-  // SIZE PROBE: the round-tripped userData length read back from the icon. If
-  // this is much smaller than what collapse wrote, the userData was truncated
-  // (real ceiling); if it matches, big payloads survive the write/read.
   dlog(`${LOG} SIZE expand icon userData=${iconElement?.userData?.length ?? 0} bytes, collapsed=${section.collapsedElements?.length ?? 0} element(s)`);
 
   const tPrep = Date.now();
-  // One getElements: the icon's CURRENT rect (not the lassoed element, which can
-  // report a stale rect after a move) AND — on a real expand (capturePreserved) —
-  // preservedNums = the nums of every UNTAGGED element on the page right now,
-  // before this section's content goes on. Those are the pre-existing strokes
-  // (incl. any sitting under the section); recollapse uses them to tell new
-  // strokes drawn on the section apart from pre-existing content. Just nums, no
-  // point-draining. On a live redraw (capturePreserved=false) we carry the
-  // section's existing preservedNums forward instead of re-capturing (which would
-  // misfile the new strokes as pre-existing).
+  // One getElements gives the icon's CURRENT rect (the lassoed element reports a
+  // stale rect after a move) and, on a real expand, preservedNums = the nums of
+  // every untagged element on the page now (pre-existing content). On a live
+  // redraw we carry the existing preservedNums forward instead of re-capturing
+  // (which would misfile the new strokes as pre-existing).
   const allAtExpandRes: any = await PluginFileAPI.getElements(page, filePath);
   const allAtExpand: any[] = allAtExpandRes?.success && Array.isArray(allAtExpandRes.result) ? allAtExpandRes.result : [];
   const iconRectNow = iconRectFromElements(allAtExpand, section, iconElement);
@@ -65,10 +54,8 @@ export async function expandOne(
   const pageMaxY = PointUtils.getRealMaxY(pageSize);
   dlog(`${LOG} PERF expand prep(iconrect+pagesize)=${Date.now() - tPrep}ms`);
 
-  // Register this section for live box redraw on icon drag. The content is laid
-  // out at its serialized bbox shifted by (dx, dy) (the same delta strokes are
-  // built with), giving its absolute on-page bounding box — stable while expanded
-  // (only the icon moving, which is what we redraw for, changes the zone).
+  // Register for live box redraw on icon drag. Content bbox shifted by (dx, dy)
+  // (the same delta strokes are built with) = its absolute on-page bbox.
   const baseBBox = contentBoundingBox(section.collapsedElements, pageSize);
   if (baseBBox) {
     noteSectionExpanded(section.id, iconRectNow, {
@@ -79,9 +66,8 @@ export async function expandOne(
     });
   }
 
-  // Stroke links (category 1) are re-inserted out-of-band (their member strokes
-  // get fresh page nums on re-insert), so EXCLUDE those members from the main
-  // content here. Build masks and the non-member content separately.
+  // Stroke-link members are re-inserted out-of-band by rebuildStrokeLinks, so
+  // exclude them from the main content batch here.
   const memberIndexSet = strokeLinkMemberIndices(section.collapsedElements);
   const hasStrokeLinks = section.collapsedElements.some((ce) => ce.data.kind === 'link' && ce.data.category === 1);
 
@@ -91,9 +77,7 @@ export async function expandOne(
 
   const otherElements: any[] = [];
   for (let i = 0; i < section.collapsedElements.length; i++) {
-    // Stroke-link members are inserted by rebuildStrokeLinks; the category-1
-    // links themselves are skipped here (buildElement returns null for them).
-    if (memberIndexSet.has(i)) continue;
+    if (memberIndexSet.has(i)) continue; // inserted by rebuildStrokeLinks
     const ce = section.collapsedElements[i];
     const el = await buildElement(ce.data, page, CE_PART_PREFIX + section.id, emrDelta, pageMaxX, pageMaxY, dx, dy);
     if (el) otherElements.push(el);
@@ -104,8 +88,6 @@ export async function expandOne(
   let insertOk = true;
   const tIns = Date.now();
   if (!hasStrokeLinks) {
-    // Simple path: masks + content in one batch; the end-of-expand reload (in
-    // expandSections) is the only refresh.
     const batch = [...maskElements, ...otherElements];
     if (batch.length > 0) {
       const ins: any = await PluginFileAPI.insertElements(filePath, page, batch);
@@ -114,10 +96,8 @@ export async function expandOne(
       for (const el of batch) { try { el.recycle?.(); } catch { /* ignore */ } }
     }
   } else {
-    // Stroke-link path: rebuildStrokeLinks owns the entire insert sequence so it
-    // can recover the members' fresh nums with one reload per link. It inserts
-    // masks + members, then content + the rebuilt links; the end-of-expand
-    // reload surfaces the links.
+    // rebuildStrokeLinks owns the whole insert sequence (it needs a reload per
+    // link to recover the members' fresh nums).
     insertOk = await rebuildStrokeLinks({
       filePath, page, collapsedElements: section.collapsedElements,
       sectionId: section.id, emrDelta, pageMaxX, pageMaxY, dx, dy,
@@ -126,19 +106,12 @@ export async function expandOne(
   }
   dlog(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
 
-  // Deliberately NO saveCurrentNote here. insertElements wrote the content to
-  // the REAL note file; saveCurrentNote would push the (often still-stale)
-  // CACHED/displayed copy back over the real file and clobber the inserts. The
-  // end-of-batch reloadFile (in expandSections) reloads the displayed copy FROM
-  // the real file, which deterministically surfaces the inserts. See SDK_DOC.md.
-  // While expanded, the collapsed content is live on the page as CE_PART
-  // elements, and recollapse rebuilds the payload by re-serializing those — so
-  // the icon's userData does NOT need to carry `collapsedElements` while
-  // expanded. Drop them so we don't rewrite the whole payload just to flip
-  // `isExpanded`. Only drop when the insert SUCCEEDED, preserving the invariant
-  // of exactly one durable copy of the content: in userData while collapsed, on
-  // the page (CE_PART) while expanded. If the insert failed, keep the full
-  // payload in userData as the fallback so nothing is lost.
+  // No saveCurrentNote (would clobber the inserts with the stale cached copy);
+  // the end-of-batch reloadFile in expandSections surfaces them. While expanded
+  // the content lives on the page as CE_PART and recollapse rebuilds the payload
+  // from it, so drop collapsedElements from userData — but only if the insert
+  // succeeded, keeping exactly one durable copy (userData while collapsed, page
+  // while expanded).
   const expandedState: CollapseSection = {
     ...section,
     isExpanded: true,
@@ -153,13 +126,10 @@ export async function expandOne(
   dlog(`${LOG} PERF expand writeSection=${Date.now() - tWrite}ms`);
 }
 
-// Expand one or more sections. The user can lasso several collapsed section
-// icons (optionally together with loose strokes) and expand them all in one
-// press. Flush once, dismiss the lasso once, expand each section, then reloadFile
-// ONCE — so N sections cost a SINGLE on-screen refresh (a section containing a
-// stroke link still adds its own internal reloads; see rebuildStrokeLinks). Any
-// loose strokes in the selection are left untouched (expand only inserts; the
-// lasso dismissal commits them back to the page unchanged).
+// Expand one or more sections in a single screen refresh: flush + dismiss the
+// lasso once, expand each, then one reloadFile. (A stroke-link section adds its
+// own internal reloads; see rebuildStrokeLinks.) Loose strokes in the selection
+// are left untouched.
 export async function expandSections(
   targets: { section: CollapseSection; icon: any }[],
   filePath: string,
@@ -167,20 +137,16 @@ export async function expandSections(
 ): Promise<void> {
   if (targets.length === 0) return;
 
-  // Flush in-flight strokes (e.g. the icon moved while collapsed) once, so the
-  // per-section icon-rect reads below see the current state.
+  // Flush in-flight edits so the per-section icon-rect reads see current state.
   await PluginNoteAPI.saveCurrentNote();
-
-  // Dismiss the user's lasso once, before any file-level insert, so we never
-  // mutate with a lifted selection. (Committing the lasso also returns any loose
-  // selected strokes to the page unchanged.)
+  // Dismiss the lasso before any insert, so we never mutate with a lifted
+  // selection (this also returns loose selected strokes to the page unchanged).
   await PluginCommAPI.setLassoBoxState(2);
 
   for (const t of targets) {
-    await expandOne(t.section, t.icon, filePath, page, true); // real expand: capture preservedNums
+    await expandOne(t.section, t.icon, filePath, page, true); // capture preservedNums
   }
 
-  // Surface every section's inserts with a single refresh.
   const tReload = Date.now();
   await PluginCommAPI.reloadFile();
   dlog(`${LOG} PERF expand reload=${Date.now() - tReload}ms`);

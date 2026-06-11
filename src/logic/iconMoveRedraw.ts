@@ -12,15 +12,11 @@ function rectContains(r: Rect, x: number, y: number): boolean {
   return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
-// A drag that GRABS the icon (DOWN on it) moves it; we gate on whether the DOWN
-// landed on (near) the icon. The 50px icon is a small target and grabs routinely
-// land a couple dozen pixels off its edge, so the pad is generous. A wide pad
-// also catches lasso-selects that start near the icon — but that is now HARMLESS:
-// redrawSectionBox reads before dismissing and only setLassoBoxState(2)s when the
-// icon actually moved, so a false-positive gate hit on a select just does a
-// cheap getElements and returns without disturbing the selection. (The pad used
-// to be tiny precisely to avoid catching selects; read-before-dismiss made that
-// caution redundant.)
+// We gate icon-move on whether the DOWN landed near the icon. The 50px icon is a
+// small target and grabs land a couple dozen px off its edge, so the pad is
+// generous. A wide pad also catches lasso-selects starting near the icon, but
+// that's harmless: redrawSectionBox reads-before-dismiss and only acts on a real
+// move, so a false hit just does a cheap getElements and returns.
 const GATE_PAD = 30;
 
 function padded(r: Rect, pad: number): Rect {
@@ -37,16 +33,11 @@ let downY = 0;
 // must NOT trigger the redraw (which would dismiss the user's selection).
 const TAP_MAX_PX = 16;
 
-// IMPORTANT: the plugin host does NOT pump the JS event loop while idle — a
-// setTimeout/setInterval callback only fires when a native event or an in-flight
-// `await` ticks the runtime (verified with a heartbeat probe that stayed silent
-// at rest and ticked only during an active operation). So we must NOT defer the
-// redraw through a timer: after the pen lifts and the user stops touching,
-// nothing would ever fire it. Instead we run the redraw directly from the UP
-// event (which IS pumped), and coalesce rapid drags with the shared busy guard
-// plus a re-run flag — no timer involved. The "don't dismiss the user's
-// selection" guarantee is provided by redrawSectionBox's read-before-dismiss
-// (it only setLassoBoxState(2)s when the icon actually moved), not by debouncing.
+// The plugin host does NOT pump the JS event loop while idle — timers only fire
+// when a native event or an in-flight await ticks the runtime. So we can't defer
+// the redraw through a setTimeout debounce (it would never fire after the pen
+// lifts); we run it directly from the UP event and coalesce rapid drags with the
+// busy guard + a re-run flag instead.
 let rerunId: string | null = null;
 
 async function kickRedraw(id: string): Promise<void> {
@@ -73,8 +64,8 @@ async function kickRedraw(id: string): Promise<void> {
   }
 }
 
-// Motion ACTION_DOWN: pure in-memory gate — did this touch start on (near) one of
-// our expanded sections' icons? No SDK call. If not, the UP handler no-ops.
+// ACTION_DOWN: in-memory gate (no SDK call) — did this touch start near one of
+// our expanded sections' icons? If not, the UP handler no-ops.
 export function onMotionDown(x: number, y: number): void {
   dragCandidateId = null;
   downX = x;
@@ -88,25 +79,20 @@ export function onMotionDown(x: number, y: number): void {
   }
 }
 
-// Motion ACTION_UP: if the gesture grabbed an expanded section's icon, redraw
-// that section if the icon moved. Only here do we touch the SDK.
+// ACTION_UP: if the gesture grabbed an expanded section's icon and the finger
+// actually moved (not a tap/select), redraw that section.
 export function onMotionUp(x: number, y: number): void {
   const id = dragCandidateId;
   dragCandidateId = null;
   if (!id) return;
-  // Tap / select (finger barely moved): do nothing — touching the SDK here would
-  // dismiss the user's selection. Only an actual drag runs a redraw.
-  if (Math.abs(x - downX) < TAP_MAX_PX && Math.abs(y - downY) < TAP_MAX_PX) return;
+  if (Math.abs(x - downX) < TAP_MAX_PX && Math.abs(y - downY) < TAP_MAX_PX) return; // tap/select
   if (!getExpandedEntry(id)) return;
   void kickRedraw(id);
 }
 
-// Full live redraw: re-fill the white mask AND re-place the strokes at the
-// stretched zone, not just the outline. Costs a re-serialize of the on-page
-// strokes per drag (accepted: rare op). Reuses expandOne so mask/content z-order
-// and stroke links are handled the same way as a normal expand; one reloadFile
-// (no collapsed flash). A busy overlay covers the rebuild (see PluginManager
-// calls below).
+// Full live redraw: re-fill the mask AND re-place the strokes at the stretched
+// zone. Re-serializes the on-page strokes per drag (rare op). Reuses expandOne so
+// z-order and stroke links match a normal expand; one reloadFile, no flash.
 async function redrawSectionBox(id: string): Promise<void> {
   const entry = getExpandedEntry(id);
   if (!entry) return;
@@ -118,13 +104,11 @@ async function redrawSectionBox(id: string): Promise<void> {
   const filePath = fpRes.result as string;
   const page = pgRes.result as number;
 
-  // Flush, then READ before dismissing — only dismiss (setLassoBoxState, which
-  // would cancel the user's selection) if the icon ACTUALLY moved. saveCurrentNote
-  // surfaces a real drag to getElements (verified on-device), so a genuine move
-  // reads moved=true; a select gesture (even one that started on the icon) leaves
-  // the icon put → moved=false → we return without ever touching the selection.
-  // This is what lets selecting and moving coexist (the gate alone can't tell
-  // them apart — both can start on the icon).
+  // Flush, then READ before dismissing: only setLassoBoxState (which cancels the
+  // selection) if the icon actually moved. saveCurrentNote surfaces a real drag
+  // to getElements, so a move reads moved=true while a select leaves the icon put
+  // (moved=false → return untouched). This is what lets selecting and moving
+  // coexist — the gate alone can't tell them apart.
   await PluginNoteAPI.saveCurrentNote();
 
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
@@ -161,10 +145,9 @@ async function redrawSectionBox(id: string): Promise<void> {
   // Confirmed move — NOW dismiss the selection (commit) before mutating.
   await PluginCommAPI.setLassoBoxState(2);
 
-  // The rebuild below is the same heavy path as a normal expand (re-serialize +
-  // re-insert + reloadFile), so show the busy overlay for it too. Only here —
-  // past the moved check — so a tap/select that didn't move the icon never flashes
-  // it. Closed in the finally regardless of which early return fires.
+  // Show the busy overlay for the rebuild (same heavy path as a normal expand).
+  // Only past the moved check, so a tap/select never flashes it; closed in the
+  // finally regardless of which early return fires.
   let viewShown = false;
   try {
     await PluginManager.showPluginView();
@@ -173,8 +156,8 @@ async function redrawSectionBox(id: string): Promise<void> {
     dlog(`${LOG} live redraw showPluginView failed: ${e}`);
   }
   try {
-    // Re-serialize the current on-page content (this is the drain cost), so we can
-    // rebuild it above a fresh fill. resolveLinkMemberIndices keeps stroke links.
+    // Re-serialize the current on-page content so we can rebuild it above a fresh
+    // fill. resolveLinkMemberIndices keeps stroke links.
     let fresh: CollapsedElement[] = [];
     for (const el of partEls) {
       const data = await serializeElement(el);
@@ -191,11 +174,9 @@ async function redrawSectionBox(id: string): Promise<void> {
     if (!bbox) { return; }
     const zone = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);
 
-    // Delete the section's content + fill + outline, then re-expand in place. The
-    // temp section is anchored to the CURRENT icon (emrDelta=0 ⇒ content rebuilds
-    // where it is); relativeRect places the mask at the stretched zone. expandOne
-    // re-inserts mask-then-content (correct z-order), handles stroke links,
-    // writeSection, and re-registers in the expanded registry. One reloadFile.
+    // Delete the content + fill + outline, then re-expand in place. The temp
+    // section is anchored to the CURRENT icon (emrDelta=0 ⇒ content rebuilds where
+    // it is); relativeRect places the mask at the stretched zone.
     if (removeNums.length > 0) {
       const del: any = await PluginFileAPI.deleteElements(filePath, page, removeNums);
       if (!del?.success) console.error(`${LOG} live redraw deleteElements failed res=${JSON.stringify(del)}`);
@@ -221,12 +202,12 @@ async function redrawSectionBox(id: string): Promise<void> {
       },
       collapsedElements: fresh,
       isExpanded: true,
-      // Carry preservedNums forward (don't recapture — these strokes are already on
-      // the page, so a recapture would misfile new strokes as pre-existing).
+      // Carry preservedNums forward; recapturing would misfile these (already
+      // on-page) strokes as pre-existing.
       preservedNums: base?.preservedNums,
     };
 
-    await expandOne(temp, iconEl, filePath, page); // live redraw: capturePreserved defaults false
+    await expandOne(temp, iconEl, filePath, page); // capturePreserved defaults false
     await PluginCommAPI.reloadFile();
     dlog(`${LOG} live full redraw section=${id} icon=[${iconR.left},${iconR.top}] zone=[${Math.round(zone.left)},${Math.round(zone.top)},${Math.round(zone.right)},${Math.round(zone.bottom)}]`);
   } finally {

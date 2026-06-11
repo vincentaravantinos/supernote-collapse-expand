@@ -13,8 +13,7 @@ import { iconRectFromElements, readUserData, writeSection } from '../utils/userD
 import { forgetSection } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
-// Element types we absorb (strokes / text / geometry) — same set collapse
-// serializes, minus pictures and titles (and links, which aren't free-drawn).
+// Types we absorb when drawn on an expanded section (strokes / text / geometry).
 const ABSORBABLE_TYPES = new Set<number>([
   ELEMENT_TYPES.STROKE,
   ELEMENT_TYPES.TEXT,
@@ -23,12 +22,10 @@ const ABSORBABLE_TYPES = new Set<number>([
   ELEMENT_TYPES.GEO,
 ]);
 
-// Recollapse ONE section using a pre-fetched element list `all`. Re-serializes
-// the section's on-page parts back into the icon's userData and deletes the
-// parts/masks. Deliberately does NOT saveCurrentNote / reloadFile / dismiss the
-// lasso — `recollapseSections` batches those so N sections cost a single
-// refresh. Returns false if the section was skipped (payload over the size
-// cap), true otherwise.
+// Recollapse ONE section from a pre-fetched element list `all`: re-serialize its
+// on-page parts back into the icon's userData and delete the parts/masks. Does
+// NOT saveCurrentNote / reloadFile / dismiss the lasso — recollapseSections
+// batches those. Returns false if skipped (payload over the size cap).
 async function recollapseOne(
   section: CollapseSection,
   iconElement: any,
@@ -55,14 +52,10 @@ async function recollapseOne(
     if (data) newCollapsed.push({ numInPage: el.numInPage, data });
   }
 
-  // Absorb NEW elements the user drew on top of the section while it was
-  // expanded, so they collapse with it and reappear on the next expand. A "new"
-  // element is UNTAGGED (not ours) and whose num is NOT in preservedNums (the
-  // untagged nums captured at expand) — i.e. drawn after expand. We compute
-  // geometry only for those few candidates (cheap — the preservedNums num-check
-  // skips all pre-existing content without draining), absorbing the ones whose
-  // bbox overlaps the section's current area. No lassoElements (which fed the
-  // desync). Pre-existing content and new strokes drawn elsewhere stay in place.
+  // Absorb NEW elements drawn on top of the section while expanded (untagged and
+  // num NOT in preservedNums = drawn after expand) whose bbox overlaps the
+  // section area. The num-check skips pre-existing content cheaply, so only the
+  // few real candidates get a bbox. Content elsewhere stays in place.
   const preservedSet = new Set<number>(section.preservedNums ?? []);
   const absorbRect: Rect = {
     left: section.iconRect.left + section.relativeRect.left,
@@ -74,7 +67,7 @@ async function recollapseOne(
   for (const el of all) {
     if (readUserData(el) !== null) continue; // ours or another section's
     if (typeof el.numInPage !== 'number' || preservedSet.has(el.numInPage)) continue; // pre-existing
-    if (!ABSORBABLE_TYPES.has(el.type)) continue; // stroke / text / geometry only
+    if (!ABSORBABLE_TYPES.has(el.type)) continue;
     const data = await serializeElement(el);
     if (!data) continue;
     const bbox = contentBoundingBox([{ numInPage: el.numInPage, data }], pageSize);
@@ -89,21 +82,14 @@ async function recollapseOne(
     if (typeof m.numInPage === 'number') numSet.add(m.numInPage);
   }
 
-  // Re-resolve stroke links' member references (raw page nums of the re-created
-  // link -> stable indexes into `newCollapsed`), symmetric with collapse, so
-  // the link round-trips across repeated expand/recollapse cycles.
   newCollapsed = resolveLinkMemberIndices(newCollapsed);
 
-  // Re-anchor the section to the icon's CURRENT physical position and recompute
-  // the zone (mask fill + boundary outline) from the content's bounding box +
-  // margin, STRETCHED to touch the icon. So if the icon was moved while expanded,
-  // the content stays put and the zone reaches out to wherever the icon now is
-  // (icon dragged bottom-right ⇒ icon at the area's bottom-right; dragged far ⇒
-  // big mostly-empty zone). Anchoring iconRect and relativeRect to the same
-  // current icon keeps strokes and mask aligned on re-expand (no drift). Move-
-  // icon-while-collapsed still relocates the whole section via expand's emrDelta.
-  // The zone only reaches the icon's NEAR edge — the expand-time mask renders
-  // over the older icon element, so the icon must stay just outside the zone.
+  // Re-anchor to the icon's CURRENT position and recompute the zone from the
+  // content bbox + margin, stretched to touch the icon. So an icon moved while
+  // expanded leaves content in place and the zone reaches out to the icon (the
+  // icon ends up at the area's edge; far ⇒ big mostly-empty zone). Anchoring
+  // iconRect and relativeRect to the same icon keeps strokes and mask aligned on
+  // re-expand.
   const iconNow = iconRectFromElements(all, section, iconElement);
   const bbox = contentBoundingBox(newCollapsed, pageSize);
   let iconRect = section.iconRect;
@@ -124,7 +110,7 @@ async function recollapseOne(
     };
   }
 
-  // Update section state. Drop preservedNums — only meaningful while expanded.
+  // Drop preservedNums — only meaningful while expanded.
   const updatedSection: CollapseSection = {
     ...section,
     collapsedElements: newCollapsed,
@@ -141,9 +127,9 @@ async function recollapseOne(
     return false;
   }
 
-  // Delete tagged + new content + mask rings (writes the REAL file; surfaced by
-  // the single reloadFile in recollapseSections). No saveCurrentNote here — it
-  // would push the still-stale cached copy back over the deletion.
+  // Delete parts + absorbed + mask rings (REAL file; surfaced by the single
+  // reloadFile in recollapseSections). No saveCurrentNote — it would push the
+  // stale cached copy back over the deletion.
   const numsToDelete = Array.from(numSet);
   if (numsToDelete.length > 0) {
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, numsToDelete);
@@ -157,15 +143,10 @@ async function recollapseOne(
   return true;
 }
 
-// Recollapse one or more sections. The user can trigger recollapse by lassoing
-// any of a section's content/mask (not just the icon), and a single selection
-// can span several expanded sections — all of them are recollapsed here.
-//
-// Flush once, read the page once, mutate every section, then dismiss the lasso
-// and reloadFile ONCE — so N sections cost a SINGLE on-screen refresh. Each
-// section's parts/masks are read from the same pre-mutation snapshot; sections
-// don't overlap, and deleting one section's elements doesn't affect another's
-// page nums, so the shared snapshot stays valid across the loop.
+// Recollapse one or more sections in a single screen refresh: flush, read the
+// page once, mutate every section, then dismiss the lasso and reloadFile once.
+// Each section's parts/masks come from the same pre-mutation snapshot; deleting
+// one section's elements doesn't shift another's page nums, so it stays valid.
 export async function recollapseSections(
   sectionIds: string[],
   filePath: string,
@@ -173,8 +154,7 @@ export async function recollapseSections(
 ): Promise<void> {
   if (sectionIds.length === 0) return;
 
-  // Flush the user's in-flight edits so the read below sees strokes drawn while
-  // expanded. Done once, before any mutation.
+  // Flush in-flight edits so the read sees strokes drawn while expanded.
   await PluginNoteAPI.saveCurrentNote();
 
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
@@ -202,9 +182,7 @@ export async function recollapseSections(
     forgetSection(id); // no longer expanded — stop live-redrawing its box
   }
 
-  // Dismiss the user's lasso LAST, then surface every deletion/userData update
-  // with a single reloadFile (writes hit the REAL file; reloadFile syncs
-  // cached:=real). One refresh regardless of how many sections recollapsed.
+  // Dismiss the lasso last, then surface every change with one reloadFile.
   await PluginCommAPI.setLassoBoxState(2);
   await PluginCommAPI.reloadFile();
 }

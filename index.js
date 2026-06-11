@@ -15,16 +15,14 @@ AppRegistry.registerComponent(appName, () => App);
 PluginManager.init();
 console.log(`${LOG} PluginManager.init() called`);
 
-// Position 2 = Lasso Menu
+// type 2 = lasso menu.
 PluginManager.registerButton(2, ['NOTE'], {
   id: PLUGIN_MENU_ID,
   name: PLUGIN_BUTTON_NAME,
   icon: Image.resolveAssetSource(require('./assets/icon_plus.png')).uri,
-  // editDataTypes specifies which selection element types enable this button in
-  // the lasso menu. Values (per prelude-rs/sn-align-plugin): 0=stroke, 1=title,
-  // 2=image, 3=text-box, 4=link, 5=geometry. Include 5 so a geometry-only
-  // selection can collapse too — omitting it greyed the button out for pure
-  // shapes (confirmed on-device, 2026-06), even though we serialize geometry.
+  // Selection element types that enable the button: 0=stroke, 1=title, 2=image,
+  // 3=text-box, 4=link, 5=geometry. 5 is needed or a geometry-only selection
+  // greys the button out, even though we serialize geometry.
   editDataTypes: [0, 1, 2, 3, 4, 5],
   showType: 0,
 }).then(
@@ -32,9 +30,6 @@ PluginManager.registerButton(2, ['NOTE'], {
   err => console.log(`${LOG} registerButton rejected:`, err),
 );
 
-/**
- * Listen for native button press events.
- */
 PluginManager.registerButtonListener({
   onButtonPress: event => {
     console.log(
@@ -51,11 +46,8 @@ PluginManager.registerButtonListener({
 });
 console.log(`${LOG} registerButtonListener called`);
 
-// Live-redraw a section's box when its + icon is dragged. The motion listener
-// gives us the gesture: onMotionDown gates in-memory (did a drag start on an
-// expanded section's icon?), and onMotionUp redraws that section's box if the
-// icon moved. Logic + state live in src/logic/iconMoveRedraw.ts. We ignore
-// ACTION_MOVE (2) / CANCEL (3) — only DOWN (0) and UP (1) matter.
+// Live-redraw a section when its + icon is dragged (logic in iconMoveRedraw).
+// Only DOWN (0) and UP (1) matter; ignore MOVE (2) / CANCEL (3).
 try {
   PluginManager.registerMotionListener(1, {
     onMsg: m => {

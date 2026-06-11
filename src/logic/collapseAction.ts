@@ -32,8 +32,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   for (const el of elements) {
     if (el.type === ELEMENT_TYPES.PICTURE) continue;
     if (el.type === ELEMENT_TYPES.TITLE) continue;
-    // Skip our own section icons.
-    if (readUserData(el)?.kind === 'section') continue;
+    if (readUserData(el)?.kind === 'section') continue; // our own icons
     const data = await serializeElement(el);
     if (data) {
       collapsed.push({ numInPage: el.numInPage, data });
@@ -42,9 +41,6 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   dlog(`${LOG} PERF collapse serialize=${Date.now() - tSer}ms for ${collapsed.length} element(s)`);
 
-  // Resolve stroke links' member references: raw page nums -> stable indexes
-  // into `collapsed`. Drops any stroke link whose member strokes weren't all
-  // collapsed (alerts the user).
   collapsed = resolveLinkMemberIndices(collapsed);
 
   if (collapsed.length === 0) {
@@ -52,9 +48,8 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  // Zone = the section content's bounding box + a margin (NOT the user's lasso
-  // rect), so the mask fill and boundary outline hug the actual strokes. Fall
-  // back to the lasso rect only if the bbox can't be computed.
+  // Zone = content bbox + margin (not the lasso rect), so the mask and outline
+  // hug the actual strokes. Fall back to the lasso rect if the bbox is empty.
   const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
   const pageSize = sizeRes?.success && sizeRes.result
     ? { width: sizeRes.result.width, height: sizeRes.result.height }
@@ -64,11 +59,9 @@ export async function collapseAction(filePath: string, page: number, elements: a
     ? { left: bbox.left - ZONE_MARGIN, top: bbox.top - ZONE_MARGIN, right: bbox.right + ZONE_MARGIN, bottom: bbox.bottom + ZONE_MARGIN }
     : { left: Math.round(lasso.left), top: Math.round(lasso.top), right: Math.round(lasso.right), bottom: Math.round(lasso.bottom) };
 
-  // Place the icon up and to the left of the zone so it clears the restored
-  // content + mask + boundary outline and stays easy to select. Offset = half an
-  // icon (which alone centers the icon on the zone's top-left corner) plus a
-  // third for clearance. relativeRect compensates so the content restores at its
-  // place. Clamp at the page edge so the icon never goes off-page.
+  // Place the icon above-left of the zone so it clears the mask/outline and
+  // stays selectable. Offset = half an icon (centers it on the zone corner) plus
+  // a third for clearance; relativeRect compensates. Clamp at the page edge.
   const ICON_OFFSET = Math.round(ICON_SIZE / 2 + ICON_SIZE / 3);
   const zoneLeft = zone.left;
   const zoneTop = zone.top;
@@ -86,8 +79,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
     id: generateSectionId(),
     iconRect,
     relativeRect: {
-      // Offset from the icon's top-left to the zone's top-left, so contentRect
-      // lands on the zone (content bbox + margin).
+      // Offset from the icon's top-left to the zone's top-left.
       left: zoneLeft - iconLeft,
       top: zoneTop - iconTop,
       width: zone.right - zone.left,
@@ -118,11 +110,8 @@ export async function collapseAction(filePath: string, page: number, elements: a
   dlog(`${LOG} PERF collapse saveCurrentNote=${Date.now() - tSave}ms`);
   const tIns = Date.now();
 
-  // VALIDATION STEP: create the icon as a TEXT element (⊕) instead of a
-  // picture, to dodge the entire class of picture-element SDK bugs (phantom
-  // picturePath/1211, shrink-on-move) and test whether text inserts also
-  // dodge the insert-desync blocker. Explicit styling keeps the glyph from
-  // adopting the user's ambient pen/text style.
+  // Icon is a TEXT element (⊕); see ICON_GLYPH. Explicit styling keeps the glyph
+  // from adopting the user's ambient pen/text style.
   const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.TEXT);
   if (!createRes?.success || !createRes.result) {
     console.error(`${LOG} createElement failed res=${JSON.stringify(createRes)}`);
@@ -154,20 +143,13 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   dlog(`${LOG} PERF collapse create+insert=${Date.now() - tIns}ms`);
 
-  // Deliberately NO saveCurrentNote after the insert. insertElements wrote the
-  // icon to the REAL note file; saving the (possibly stale) CACHED/displayed
-  // copy back over it could clobber the icon. reloadFile below reloads the
-  // displayed copy FROM the real file so the icon reliably appears (the SDK's
-  // async real→cached sync is unreliable). See SDK_DOC.md.
+  // No saveCurrentNote: insertElements wrote the icon to the REAL file, and
+  // saving would push the stale cached copy back over it. reloadFile (below)
+  // syncs cached:=real so the icon appears. See SDK_DOC.md.
 
-  // Dismiss the selection box left by the user's lasso + deleteLassoElements
-  // (audit ①). state 2 = "Completely remove" — the standard cleanup after a
-  // lasso-mutating op (cf. guibor/supernote-shape-snap, which calls
-  // setLassoBoxState(2) after deleteLassoElements + insert).
+  // Dismiss the user's lasso (state 2 = remove) before reloading.
   const tReload = Date.now();
   await PluginCommAPI.setLassoBoxState(2);
-
-  // Reload the displayed copy from the real file so the inserted icon appears.
   await PluginCommAPI.reloadFile();
   dlog(`${LOG} PERF collapse close+reload=${Date.now() - tReload}ms`);
 }
