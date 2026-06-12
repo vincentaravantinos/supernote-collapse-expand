@@ -17,6 +17,42 @@ Each entry should capture:
 
 ---
 
+## 2026-06-12 — Durability invariant: write-before-delete ordering (crash safety)
+
+**Decision.** Every operation that moves a section's content between its two
+durable forms — icon `userData` (collapsed) and on-page `CE_PART`/mask elements
+(expanded) — must create and confirm the new copy *before* removing the old one.
+Concretely: collapse inserts the icon (carrying the serialized content) before
+deleting the originals; recollapse writes the icon's `userData` before deleting
+the on-page parts/masks; the live icon-move redraw stashes freshly-serialized
+content into `userData` before deleting the old parts to rebuild them. On a
+write/insert failure, the delete is skipped entirely and the old copy is left in
+place. This guarantees that at every instant, content exists in at least one
+durable place — never only in JS memory with both durable copies gone — closing
+the crash windows that could previously lose a section.
+
+**Alternatives considered.**
+- *A journal/transaction log recording in-flight operations, replayed on next
+  launch to detect and recover an interrupted op.* Rejected: would need a
+  sidecar file, which conflicts with keeping the plugin's state fully
+  self-contained in the `.note` (userData only); and replay/recovery logic is
+  far more complex than just reordering existing calls so no recovery is ever
+  needed.
+- *Some form of multi-call transaction/batch API.* Not available — the SDK's
+  `insertElements`/`deleteElements`/`modifyElements` are independent host-side
+  writes with no atomicity across calls, so ordering is the only lever we have.
+- *Leave the busy-guard reliant solely on the existing `setTimeout` watchdog.*
+  Rejected: JS timers don't fire while the host is idle/dead, so a guard left
+  `busy` by a crash would wedge the action button until the plugin process
+  restarts. The guard now tracks an acquisition timestamp and self-heals after a
+  stale threshold (~90s), independent of any timer.
+
+**Constraint.** `insertElements`, `deleteElements`, and `modifyElements` are
+independent, non-transactional host writes, and the host process itself can be
+killed between any two of them (observed: native `std::out_of_range` abort on a
+corrupted page). The write-before-delete ordering is the only mechanism available
+to guarantee no-loss across such a crash.
+
 ## 2026-06-11 — Read the section's own elements, not the whole page (perf)
 
 **Decision.** Expand and recollapse no longer call the full `getElements` on a
