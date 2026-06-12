@@ -1,11 +1,13 @@
 # Changes
 
-## Unreleased
+## 1.0.1
 
 - Feature: a single **finger** tap directly on a section's "+" icon now
   toggles it — collapsed expands, expanded recollapses — without needing to
   lasso it and press the plugin button. Pen taps are unaffected (they draw
   ink as normal).
+
+## 1.0.0
 
 - Crash-safety: collapse, recollapse, and the live icon-move redraw now always
   create the new durable copy of a section's content (icon `userData` or
