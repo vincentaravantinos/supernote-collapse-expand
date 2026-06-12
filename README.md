@@ -2,7 +2,7 @@
 
 ## Demo
 
-<video src="assets/demo.mp4" controls muted playsinline width="720"></video>
+![Demo](assets/demo.gif)
 
 Collapse / Expand lets you hide a region of your handwriting behind a small `+`
 icon, bring it back when you need it, and tuck it away again when you're done.
