@@ -146,6 +146,7 @@ async function recollapseOne(
     // userData not updated — leave the on-page parts in place, they're still the
     // only durable copy.
     console.error(`${LOG} failed to update section userData after recollapse — leaving on-page parts in place`);
+    alert("Supernote couldn't complete the recollapse — please try again.");
     return false;
   }
 
@@ -159,6 +160,7 @@ async function recollapseOne(
     dlog(`${LOG} PERF recollapse deleteElements=${Date.now() - tDel}ms n=${numsToDelete.length}`);
     if (!delRes?.success) {
       console.error(`${LOG} recollapse deleteElements failed res=${JSON.stringify(delRes)}`);
+      alert('Recollapsed, but some leftover elements could not be removed — please retry.');
     }
   }
   return true;

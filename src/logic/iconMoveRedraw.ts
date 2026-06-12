@@ -2,7 +2,7 @@ import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, Rect } from
 import { LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
 import { stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
-import { readUserData } from '../utils/userDataManager';
+import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 import { expandedCount, expandedEntries, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
 import { expandOne } from './expandAction';
@@ -174,14 +174,6 @@ async function redrawSectionBox(id: string): Promise<void> {
     if (!bbox) { return; }
     const zone = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);
 
-    // Delete the content + fill + outline, then re-expand in place. The temp
-    // section is anchored to the CURRENT icon (emrDelta=0 ⇒ content rebuilds where
-    // it is); relativeRect places the mask at the stretched zone.
-    if (removeNums.length > 0) {
-      const del: any = await PluginFileAPI.deleteElements(filePath, page, removeNums);
-      if (!del?.success) console.error(`${LOG} live redraw deleteElements failed res=${JSON.stringify(del)}`);
-    }
-
     const existing = readUserData(iconEl);
     const base = existing?.kind === 'section' ? existing.section : null;
     const iconR: Rect = {
@@ -206,6 +198,24 @@ async function redrawSectionBox(id: string): Promise<void> {
       // on-page) strokes as pre-existing.
       preservedNums: base?.preservedNums,
     };
+
+    // CRASH-SAFETY: stash `fresh` into the icon's userData (isExpanded stays
+    // true) BEFORE deleting the old parts/masks/frame. While expanded, those
+    // on-page elements were the only durable copy; this snapshot means a crash
+    // between the stash and the rebuild below still leaves the content durable.
+    const stashOk = await writeSection(filePath, page, iconEl, temp, iconEl);
+    if (!stashOk) {
+      console.error(`${LOG} live redraw failed to stash content before delete — aborting, parts left in place`);
+      return;
+    }
+
+    // Delete the old content + fill + outline, then re-expand in place. The temp
+    // section is anchored to the CURRENT icon (emrDelta=0 ⇒ content rebuilds where
+    // it is); relativeRect places the mask at the stretched zone.
+    if (removeNums.length > 0) {
+      const del: any = await PluginFileAPI.deleteElements(filePath, page, removeNums);
+      if (!del?.success) console.error(`${LOG} live redraw deleteElements failed res=${JSON.stringify(del)}`);
+    }
 
     await expandOne(temp, iconEl, filePath, page); // capturePreserved defaults false
     await PluginCommAPI.reloadFile();

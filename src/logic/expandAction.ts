@@ -4,7 +4,7 @@ import { buildElement, contentBoundingBox } from '../utils/elementSerializer';
 import { getIconByNum, iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
-import { noteSectionExpanded } from './expandedRegistry';
+import { forgetSection, noteSectionExpanded } from './expandedRegistry';
 import { CollapseSection } from '../model/types';
 
 // Expand ONE section: insert its mask + restored content (stroke links via
@@ -152,6 +152,15 @@ export async function expandOne(
   const ok = await writeSection(filePath, page, iconElement, expandedState, freshIconEl);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
   dlog(`${LOG} PERF expand writeSection=${Date.now() - tWrite}ms`);
+
+  // On a partial failure, content remains durable in userData (collapsedElements
+  // was kept above), but the page doesn't reflect "expanded" and the registry
+  // shouldn't either — forget it so live-redraw doesn't act on a phantom entry,
+  // and tell the user so a swallowed failure doesn't look like a no-op.
+  if (!insertOk || !ok) {
+    forgetSection(section.id);
+    alert("Supernote couldn't complete the expand — please try again; if it persists, reopen the note.");
+  }
 }
 
 // Expand one or more sections in a single screen refresh: flush + dismiss the

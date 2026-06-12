@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Crash-safety: collapse, recollapse, and the live icon-move redraw now always
+  create the new durable copy of a section's content (icon `userData` or
+  on-page elements) and confirm it succeeded *before* deleting the old one, so a
+  crash mid-operation can no longer lose content. Collapse also no longer deletes
+  pictures/titles in the selection — they're left on the page, per spec. The
+  busy guard now self-heals (after ~90s) if a crash leaves it stuck, instead of
+  relying on a timer that may never fire. A failed expand or recollapse now shows
+  a clear alert instead of failing silently.
+
 - Known limitation (documented): a typed **text box** in a collapsed selection is
   preserved but, once expanded, is hidden behind the section's white area. This is
   a Supernote rendering behaviour — the device always draws text boxes beneath
