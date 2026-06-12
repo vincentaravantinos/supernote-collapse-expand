@@ -132,25 +132,35 @@ async function recollapseOne(
     return false;
   }
 
-  // Delete parts + absorbed + mask rings (REAL file; surfaced by the single
-  // reloadFile in recollapseSections). No saveCurrentNote — it would push the
-  // stale cached copy back over the deletion.
+  // CRASH-SAFETY: write the updated section (parts + absorbed strokes,
+  // re-anchored) into the icon's userData BEFORE deleting the on-page parts.
+  // While expanded, those on-page parts are the only durable copy; writing the
+  // icon first means a crash between write and delete leaves both copies present
+  // (recoverable), never neither. iconElement comes from the page-wide
+  // getElements snapshot (fresh, and its num is stable across the delete below),
+  // so writeSection can skip re-reading.
+  const tWrite = Date.now();
+  const ok = await writeSection(filePath, page, iconElement, updatedSection, iconElement);
+  dlog(`${LOG} PERF recollapse writeSection=${Date.now() - tWrite}ms`);
+  if (!ok) {
+    // userData not updated — leave the on-page parts in place, they're still the
+    // only durable copy.
+    console.error(`${LOG} failed to update section userData after recollapse — leaving on-page parts in place`);
+    return false;
+  }
+
+  // Content now durable in the icon. Delete parts + absorbed + mask rings (REAL
+  // file; surfaced by the single reloadFile in recollapseSections). No
+  // saveCurrentNote — it would push the stale cached copy back over the deletion.
   const numsToDelete = Array.from(numSet);
   if (numsToDelete.length > 0) {
     const tDel = Date.now();
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, numsToDelete);
     dlog(`${LOG} PERF recollapse deleteElements=${Date.now() - tDel}ms n=${numsToDelete.length}`);
     if (!delRes?.success) {
-      console.error(`${LOG} deleteElements failed res=${JSON.stringify(delRes)}`);
+      console.error(`${LOG} recollapse deleteElements failed res=${JSON.stringify(delRes)}`);
     }
   }
-
-  // iconElement comes from the page-wide getElements snapshot (fresh, and its num
-  // is stable across the delete above), so writeSection can skip re-reading.
-  const tWrite = Date.now();
-  const ok = await writeSection(filePath, page, iconElement, updatedSection, iconElement);
-  dlog(`${LOG} PERF recollapse writeSection=${Date.now() - tWrite}ms`);
-  if (!ok) console.error(`${LOG} failed to update section userData after recollapse`);
   return true;
 }
 
