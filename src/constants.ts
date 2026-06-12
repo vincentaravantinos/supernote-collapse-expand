@@ -9,9 +9,14 @@ export function dlog(...args: any[]): void {
 
 // Logged at each action start to confirm which build is actually live: pushing a
 // new .snplg doesn't always replace the running one. Bump per deploy.
-export const BUILD_TAG = 'r61-crash-safety';
+export const BUILD_TAG = 'r63-tap-icon-toggle';
 
 export const ICON_SIZE = 50; // px
+// A gesture whose finger moved less than this is a tap/select, not a drag.
+export const TAP_MAX_PX = 16;
+// Hit-test pad around an icon's rect: the 50px icon is a small target and
+// grabs/taps land a couple dozen px off its edge, so the pad is generous.
+export const ICON_HIT_PAD = 30;
 // Padding around a section's content bbox to form its zone (mask + outline).
 export const ZONE_MARGIN = 20;
 // The icon is a TEXT glyph, not a picture: picture inserts triggered an SDK

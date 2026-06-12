@@ -6,6 +6,7 @@ import { collapseAction } from './logic/collapseAction';
 import { expandSections } from './logic/expandAction';
 import { recollapseSections } from './logic/recollapseAction';
 import { acquireBusy, releaseBusy } from './logic/busy';
+import { invalidateIconCache } from './logic/iconPageCache';
 
 // Per-action counter + tag bracketing each action's logs with BEGIN/END markers
 // that carry the build stamp (so the trace confirms which build is live).
@@ -113,6 +114,7 @@ export async function handleMainAction() {
           dlog(`${PROBE} #${actionSeq} COLLAPSE END`);
         }
       }
+      invalidateIconCache(); // collapse/expand/recollapse can move/add/remove icons on this page
     } finally {
       for (const el of elements) {
         try { el.recycle?.(); } catch { /* ignore */ }

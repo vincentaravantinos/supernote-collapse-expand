@@ -7,6 +7,7 @@ import {name as appName} from './app.json';
 import App from './App';
 import {handleMainAction} from './src/index';
 import {onMotionDown, onMotionUp} from './src/logic/iconMoveRedraw';
+import {onTapDown, onTapUp} from './src/logic/iconTapToggle';
 import {PluginManager} from 'sn-plugin-lib';
 import {BUILD_TAG, LOG, PLUGIN_BUTTON_NAME, PLUGIN_MENU_ID} from './src/constants';
 
@@ -46,17 +47,23 @@ PluginManager.registerButtonListener({
 });
 console.log(`${LOG} registerButtonListener called`);
 
-// Live-redraw a section when its + icon is dragged (logic in iconMoveRedraw).
-// Only DOWN (0) and UP (1) matter; ignore MOVE (2) / CANCEL (3).
+// Live-redraw a section when its + icon is dragged (iconMoveRedraw), and toggle
+// a section when its + icon is tapped (iconTapToggle). Only DOWN (0) and UP (1)
+// matter; ignore MOVE (2) / CANCEL (3).
 try {
   PluginManager.registerMotionListener(1, {
     onMsg: m => {
       const a = m?.action;
-      if (a === 0) onMotionDown(m?.x, m?.y);
-      else if (a === 1) onMotionUp(m?.x, m?.y);
+      if (a === 0) {
+        onMotionDown(m?.x, m?.y);
+        onTapDown(m?.x, m?.y, m?.toolType, m?.pointerCount);
+      } else if (a === 1) {
+        onMotionUp(m?.x, m?.y);
+        onTapUp(m?.x, m?.y, m?.toolType, m?.pointerCount);
+      }
     },
   });
-  console.log(`${LOG} registerMotionListener (live redraw) called build=${BUILD_TAG}`);
+  console.log(`${LOG} registerMotionListener (live redraw + tap toggle) called build=${BUILD_TAG}`);
 } catch (e) {
   console.log(`${LOG} registerMotionListener threw: ${e}`);
 }

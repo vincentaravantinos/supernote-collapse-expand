@@ -28,7 +28,9 @@ button.
 
 ### Expand
 **Trigger**: user lassoes the "+" icon of one or more collapsed sections
-(optionally together with other content) and presses the plugin button.
+(optionally together with other content) and presses the plugin button. As a
+shortcut, a single **finger** tap directly on a collapsed section's icon also
+expands it (a pen tap draws ink as normal and is ignored).
 
 **Outcome**:
 - The original content reappears at its location (translated if the icon
@@ -47,7 +49,9 @@ button.
 expanded section and presses the plugin button. If the selection spans multiple
 expanded sections, all of them are recollapsed in one press. (Recollapse takes
 priority: a selection that mixes an expanded section with a collapsed icon
-recollapses the expanded one(s) and ignores the collapse/expand that press.)
+recollapses the expanded one(s) and ignores the collapse/expand that press.) As
+a shortcut, a single **finger** tap directly on an expanded section's icon also
+recollapses it.
 
 **Outcome**:
 - The "+" icon stays where it is.

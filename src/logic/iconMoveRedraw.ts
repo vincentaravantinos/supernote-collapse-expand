@@ -1,37 +1,19 @@
 import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, Rect } from 'sn-plugin-lib';
-import { LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
-import { stretchZoneToIcon } from '../utils/geometryHelpers';
+import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, TAP_MAX_PX, ZONE_MARGIN, dlog } from '../constants';
+import { padded, rectContains, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 import { expandedCount, expandedEntries, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
 import { expandOne } from './expandAction';
 import { acquireBusy, releaseBusy } from './busy';
-
-function rectContains(r: Rect, x: number, y: number): boolean {
-  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-}
-
-// We gate icon-move on whether the DOWN landed near the icon. The 50px icon is a
-// small target and grabs land a couple dozen px off its edge, so the pad is
-// generous. A wide pad also catches lasso-selects starting near the icon, but
-// that's harmless: redrawSectionBox reads-before-dismiss and only acts on a real
-// move, so a false hit just does a cheap getElements and returns.
-const GATE_PAD = 30;
-
-function padded(r: Rect, pad: number): Rect {
-  return { left: r.left - pad, top: r.top - pad, right: r.right + pad, bottom: r.bottom + pad };
-}
+import { invalidateIconCache } from './iconPageCache';
 
 // Section whose icon the current gesture grabbed (set on DOWN, consumed on UP),
 // and the DOWN point (to tell a tap/select from a drag on UP).
 let dragCandidateId: string | null = null;
 let downX = 0;
 let downY = 0;
-
-// A gesture whose finger moved less than this is a tap/select, not a drag — it
-// must NOT trigger the redraw (which would dismiss the user's selection).
-const TAP_MAX_PX = 16;
 
 // The plugin host does NOT pump the JS event loop while idle — timers only fire
 // when a native event or an in-flight await ticks the runtime. So we can't defer
@@ -72,7 +54,7 @@ export function onMotionDown(x: number, y: number): void {
   downY = y;
   if (expandedCount() === 0) return;
   for (const [id, e] of expandedEntries()) {
-    if (rectContains(padded(e.iconRect, GATE_PAD), x, y)) {
+    if (rectContains(padded(e.iconRect, ICON_HIT_PAD), x, y)) {
       dragCandidateId = id;
       return;
     }
@@ -219,6 +201,7 @@ async function redrawSectionBox(id: string): Promise<void> {
 
     await expandOne(temp, iconEl, filePath, page); // capturePreserved defaults false
     await PluginCommAPI.reloadFile();
+    invalidateIconCache(); // the icon moved — the tap-hit cache for this page is stale
     dlog(`${LOG} live full redraw section=${id} icon=[${iconR.left},${iconR.top}] zone=[${Math.round(zone.left)},${Math.round(zone.top)},${Math.round(zone.right)},${Math.round(zone.bottom)}]`);
   } finally {
     if (viewShown) {

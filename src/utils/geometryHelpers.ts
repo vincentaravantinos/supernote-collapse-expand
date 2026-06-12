@@ -5,6 +5,14 @@ export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
+export function rectContains(r: Rect, x: number, y: number): boolean {
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+export function padded(r: Rect, pad: number): Rect {
+  return { left: r.left - pad, top: r.top - pad, right: r.right + pad, bottom: r.bottom + pad };
+}
+
 export function getRectPoints(rect: Rect): Point[] {
   return [
     { x: rect.left, y: rect.top },
