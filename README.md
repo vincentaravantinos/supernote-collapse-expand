@@ -1,5 +1,9 @@
 # Collapse / Expand — User Guide
 
+## Demo
+
+<video src="assets/demo.mp4" controls muted playsinline width="720"></video>
+
 Collapse / Expand lets you hide a region of your handwriting behind a small `+`
 icon, bring it back when you need it, and tuck it away again when you're done.
 The rest of the page stays fully usable the whole time — you can keep writing,
