@@ -17,6 +17,37 @@ Each entry should capture:
 
 ---
 
+## 2026-06-12 — Tap-to-toggle: per-page icon cache instead of a read on every tap
+
+**Decision.** A single finger tap on a "+" icon toggles its section
+(expand/recollapse). To hit-test a tap's coordinates against icon rects
+without an SDK call on every touch, the plugin keeps an in-memory cache of all
+section icons on the *current* page (`iconPageCache`), built with one
+`getElements` on the first qualifying tap and reused for free afterwards. The
+cache is invalidated after any of the plugin's own mutations (button-driven
+collapse/expand/recollapse, and the icon-drag live redraw), since those can
+move/add/remove icons on the page.
+
+**Alternatives considered.**
+- *Call `getCurrentPageNum()` + `getElements()` on every qualifying tap.*
+  Rejected: would add a full-page read to every single-finger tap, including
+  ones nowhere near an icon — unacceptably slow on dense pages (see BACKLOG #5
+  perf floor).
+- *Maintain the cache proactively, refreshed on a page-change event.* Not
+  available: no page-navigation/focus event exists in the SDK (confirmed via
+  `.d.ts` + SDK_DOC.md), so the cache can only be validated reactively (compare
+  `getCurrentPageNum()` against the cached page on each tap) and rebuilt
+  lazily.
+- *Gate tap-to-toggle on `toolType` only, reacting to pen taps too.* Rejected
+  after an on-device probe: a pen tap draws an ink dot (expected SDK
+  behaviour), so reacting to it would fight the user's drawing. Finger taps
+  (`toolType === 1`) have no host-level side effect, so only those toggle.
+
+**Constraint.** No SDK event fires on page navigation or on a plain tap/selection
+(only `PEN_UP` for drawing and the raw `MOTION_EVENT` stream) — this and the
+per-write file-rewrite cost (BACKLOG #5) jointly rule out any "always know all
+icon rects" design that doesn't lazily rebuild per page.
+
 ## 2026-06-12 — Durability invariant: write-before-delete ordering (crash safety)
 
 **Decision.** Every operation that moves a section's content between its two
