@@ -96,20 +96,23 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
 
-  const tDel = Date.now();
-  const delRes: any = await PluginCommAPI.deleteLassoElements();
-  if (!delRes?.success) {
-    console.error(`${LOG} deleteLassoElements failed`);
-    alert('Failed to remove selected content.');
-    return;
-  }
-  dlog(`${LOG} PERF collapse deleteLasso=${Date.now() - tDel}ms`);
+  // Page nums of exactly the elements we serialized — what we'll remove from the
+  // page. Pictures/titles were skipped above, so they're NOT here and stay put.
+  const originalNums = collapsed
+    .map((ce) => ce.numInPage)
+    .filter((n): n is number => typeof n === 'number');
 
+  // Flush in-flight edits before mutating.
   const tSave = Date.now();
   await PluginNoteAPI.saveCurrentNote();
   dlog(`${LOG} PERF collapse saveCurrentNote=${Date.now() - tSave}ms`);
-  const tIns = Date.now();
 
+  // CRASH-SAFETY: insert the icon — which carries the full serialized content in
+  // its userData — BEFORE deleting the originals. Until the icon is durably on the
+  // page, the content exists only in JS memory, so deleting first would lose it on
+  // a crash. With this order, a crash between insert and delete leaves icon + the
+  // originals both present (recoverable), never nothing.
+  const tIns = Date.now();
   // Icon is a TEXT element (⊕); see ICON_GLYPH. Explicit styling keeps the glyph
   // from adopting the user's ambient pen/text style.
   const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.TEXT);
@@ -135,19 +138,29 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   const insertRes: any = await PluginFileAPI.insertElements(filePath, page, [iconEl]);
   if (!insertRes?.success) {
+    // Nothing deleted yet — the page is exactly as it was, no data lost.
     console.error(`${LOG} insertElements failed res=${JSON.stringify(insertRes)}`);
-    alert('Failed to insert icon.');
+    alert("Supernote couldn't complete the collapse — please try again.");
     try { iconEl.recycle?.(); } catch { /* ignore */ }
     return;
   }
-
   dlog(`${LOG} PERF collapse create+insert=${Date.now() - tIns}ms`);
 
-  // No saveCurrentNote: insertElements wrote the icon to the REAL file, and
-  // saving would push the stale cached copy back over it. reloadFile (below)
-  // syncs cached:=real so the icon appears. See SDK_DOC.md.
+  // Content is now durable in the icon. Remove the originals by num — NOT
+  // deleteLassoElements, which would also delete the pictures/titles we
+  // deliberately leave in place.
+  const tDel = Date.now();
+  if (originalNums.length > 0) {
+    const delRes: any = await PluginFileAPI.deleteElements(filePath, page, originalNums);
+    if (!delRes?.success) {
+      console.error(`${LOG} collapse deleteElements failed res=${JSON.stringify(delRes)}`);
+      alert("Collapsed, but the original content couldn't be removed — please retry.");
+    }
+  }
+  dlog(`${LOG} PERF collapse delete=${Date.now() - tDel}ms`);
 
-  // Dismiss the user's lasso (state 2 = remove) before reloading.
+  // No saveCurrentNote after the writes (it would push the stale cached copy back
+  // over them). Dismiss the lasso, then reloadFile syncs cached:=real. See SDK_DOC.
   const tReload = Date.now();
   await PluginCommAPI.setLassoBoxState(2);
   await PluginCommAPI.reloadFile();
