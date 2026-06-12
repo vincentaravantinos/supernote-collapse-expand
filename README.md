@@ -1,5 +1,12 @@
 # Collapse / Expand — User Guide
 
+## Get the plugin
+
+**[⬇ Download collapse_expand.snplg](https://github.com/vincentaravantinos/supernote-collapse-expand/releases/latest/download/collapse_expand.snplg)**
+— click the link, then on your Supernote device go to **Settings → Plugins →
+Install plugin → pick file**, choose the downloaded `collapse_expand.snplg`,
+and tap **Install**.
+
 ## Demo
 
 ![Demo](assets/demo.gif)
