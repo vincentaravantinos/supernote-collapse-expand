@@ -19,6 +19,10 @@ panning, and selecting around a collapsed region.
 All actions use the **Collapse / Expand** button in the lasso menu: make a
 selection with the lasso, then tap the button.
 
+**Shortcut**: a single tap of your **finger** directly on a `+` icon expands or
+recollapses it on the spot — no lasso or button needed. (A pen tap just draws,
+as usual.)
+
 ---
 
 ## The three actions
