@@ -385,6 +385,19 @@ Extending the cached-copy behavior above:
 
 ---
 
+## `NativePluginManager.getOrientation()`: device orientation
+
+`(NativePluginManager as any).getOrientation()` returns a numeric orientation
+code: **0 or 2** = portrait, **1 or 3** = landscape (90° / 270°). Not
+documented in the official SDK; cast to `any` to call it.
+
+In landscape mode the Supernote renders a split half-page view. The lasso
+pipeline (`lassoElements` / `getLassoElements`) can hang indefinitely in this
+mode, so plugins that use the lasso should check orientation first and bail out
+if landscape rather than risk freezing.
+
+---
+
 ## PEN_UP element identity
 
 The `PEN_UP` payload's element carries a `numInPage`, but it is a
