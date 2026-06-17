@@ -2,6 +2,7 @@ import { PluginCommAPI, PluginManager } from 'sn-plugin-lib';
 import { ICON_HIT_PAD, LOG, TAP_MAX_PX, dlog } from '../constants';
 import { padded, rectContains } from '../utils/geometryHelpers';
 import { acquireBusy, releaseBusy } from './busy';
+import { isLandscape } from '../utils/orientation';
 import { expandSections } from './expandAction';
 import { recollapseSections } from './recollapseAction';
 import { buildIconCache, getCachedIcons, invalidateIconCache } from './iconPageCache';
@@ -35,6 +36,7 @@ export function onTapUp(x: number, y: number, toolType: number | undefined, poin
 }
 
 async function handleTap(x: number, y: number): Promise<void> {
+  if (await isLandscape()) return;
   const pgRes: any = await PluginCommAPI.getCurrentPageNum();
   if (!pgRes?.success || typeof pgRes.result !== 'number') return;
   const page = pgRes.result as number;

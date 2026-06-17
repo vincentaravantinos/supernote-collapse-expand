@@ -7,6 +7,7 @@ import { expandSections } from './logic/expandAction';
 import { recollapseSections } from './logic/recollapseAction';
 import { acquireBusy, releaseBusy } from './logic/busy';
 import { invalidateIconCache } from './logic/iconPageCache';
+import { isLandscape } from './utils/orientation';
 
 // Per-action counter + tag bracketing each action's logs with BEGIN/END markers
 // that carry the build stamp (so the trace confirms which build is live).
@@ -14,6 +15,10 @@ let actionSeq = 0;
 const PROBE = `${LOG} [CE-PROBE]`;
 
 export async function handleMainAction() {
+  if (await isLandscape()) {
+    alert('Collapse / Expand doesn\'t work in landscape mode — please switch to portrait.');
+    return;
+  }
   if (!acquireBusy()) {
     // The button shares a single-flight guard with the live redraw, so a tap
     // while a prior op is still in flight is rejected. Tell the user, so a

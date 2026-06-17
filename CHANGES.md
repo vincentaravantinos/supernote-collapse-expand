@@ -1,5 +1,12 @@
 # Changes
 
+## Unreleased
+
+- Safety: collapse / expand / recollapse and the finger-tap shortcut now detect
+  landscape mode and show a brief notice instead of running. In landscape the
+  Supernote renders a split half-page where the lasso pipeline can hang
+  indefinitely, so the plugin bails out early rather than risk freezing.
+
 ## 1.0.1
 
 - Feature: a single **finger** tap directly on a section's "+" icon now
