@@ -1,0 +1,1 @@
+../supernote-plugin-template/CORNER_CASES.md
