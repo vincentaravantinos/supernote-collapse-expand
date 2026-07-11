@@ -34,14 +34,13 @@ PluginManager.registerButton(2, ['NOTE'], {
 PluginManager.registerButtonListener({
   onButtonPress: event => {
     console.log(
-      `${LOG} onButtonPress fired. event=${JSON.stringify(event)} ` +
-        `expected id=${PLUGIN_MENU_ID} name=${PLUGIN_BUTTON_NAME}`,
+      `${LOG} onButtonPress fired. event=${JSON.stringify(event)}`,
     );
     if (event?.id === PLUGIN_MENU_ID && event?.name === PLUGIN_BUTTON_NAME) {
       console.log(`${LOG} match -> calling handleMainAction`);
       handleMainAction();
     } else {
-      console.log(`${LOG} event did not match expected id/name, ignoring`);
+      console.log(`${LOG} event did not match any handler, ignoring`);
     }
   },
 });

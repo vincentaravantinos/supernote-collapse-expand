@@ -1,13 +1,9 @@
 /**
- * Collapse / Expand — busy overlay
+ * Collapse / Expand — plugin view
  *
- * Shown via PluginManager.showPluginView() while a slow operation runs, hidden
- * with closePluginView() when it finishes. Static (no animated spinner — e-ink
- * doesn't refresh smoothly enough for one to look good).
- *
- * The backdrop is transparent (e-ink doesn't alpha-blend, so any tint fills the
- * whole surface solid white and blanks the canvas). Only the small card draws,
- * centered, so the page stays visible around it.
+ * Shown while a slow operation runs (showPluginView called by an action).
+ * Static "Working…" card — no spinner (e-ink). The backdrop is transparent
+ * so the page stays visible around the card.
  *
  * @format
  */
@@ -35,18 +31,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 14,
+    paddingVertical: 18,
     borderRadius: 14,
     borderWidth: 2,
     borderColor: '#000000',
     backgroundColor: '#ffffff',
+    minWidth: 300,
   },
   glyph: {fontSize: 28, color: '#000000'},
-  title: {marginLeft: 12, fontSize: 18, fontWeight: '700', color: '#000000'},
-  sub: {marginLeft: 10, fontSize: 15, color: '#000000'},
+  title: {fontSize: 18, fontWeight: '700', color: '#000000', marginBottom: 12},
+  sub: {fontSize: 15, color: '#000000'},
 });
 
 export default App;
