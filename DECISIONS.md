@@ -17,6 +17,26 @@ Each entry should capture:
 
 ---
 
+## 2026-07-12 — No plugin-drawn visual marker for a section's name
+
+**Decision.** The plugin does not draw anything to distinguish a section's
+name from ordinary nearby handwriting. If a user wants their name
+underlined, they write it that way themselves — it's just more ink in the
+same lasso, tagged `CE_NAME` like every other stroke, no different code path.
+
+**Alternatives considered.**
+- *A plugin-drawn underline, computed and regenerated on every name move.*
+  Fully implemented (`Geometry.type: 'straightLine'`, first use of that
+  primitive in this codebase, tagged `CE_UNDERLINE:<sectionId>`) and then
+  reverted after it coincided with the icon becoming unlassoable on-device
+  (unconfirmed root cause — abandoned before diagnosing, since the
+  underlying feature turned out to be unnecessary regardless of whether that
+  bug was fixable). Even setting the bug aside, the feature solved a problem
+  the user doesn't have: nothing stops the user from underlining their own
+  handwriting as part of writing the name in the first place.
+
+**Constraint.** None — this is a scope cut, not an SDK limitation.
+
 ## 2026-06-12 — Tap-to-toggle: per-page icon cache instead of a read on every tap
 
 **Decision.** A single finger tap on a "+" icon toggles its section
