@@ -48,6 +48,41 @@ move/add/remove icons on the page.
 per-write file-rewrite cost (BACKLOG #5) jointly rule out any "always know all
 icon rects" design that doesn't lazily rebuild per page.
 
+## 2026-07-12 — Naming a section: stateless icon+ink trigger, not a pending offer
+
+**Decision.** A section is named/renamed by lassoing its collapsed icon
+**together with** freshly-written, untagged ink and pressing the plugin
+button — the same "infer the action from what's selected" pattern already
+used for Collapse/Expand/Recollapse. A blocking confirm dialog
+(`NativeUIUtils.showRattaDialog`) gates the mutation; declining falls through
+to a normal Expand with the ink left untouched. This makes naming fully
+stateless: available any time a section is collapsed, not just right after
+its own Collapse.
+
+**Alternatives considered.**
+- *Two-phase "pending offer" flow* (Collapse now, then a following press
+  supplies bare ink as the name for whichever section was just collapsed,
+  optionally with a timeout). Rejected: the identical gesture (lasso bare
+  ink, press) would be ambiguous between "name the section I just collapsed"
+  and "collapse this new, unrelated content" — disambiguated only by
+  invisible in-memory state the user has no way to see. A sloppy or
+  back-to-back workflow (collapse A, immediately try to collapse B) would
+  silently misfire.
+- *No confirm dialog, just fire on icon+ink.* Rejected: Expand's existing
+  trigger already permits "icon lassoed together with other content" (that
+  content is simply left in place). Silently reinterpreting that same
+  combination as a destructive rename risked consuming unrelated handwriting
+  that only happened to share a sloppy lasso with a collapsed icon. The
+  confirm dialog makes the destructive step opt-in regardless of how the
+  selection happened, and doubles as the safety net for overwriting an
+  existing name.
+
+**Constraint.** The SDK's toolbar button is singular and its action is only
+ever inferred from the current selection (no per-operation buttons, no
+selection-changed event to relabel it — see BACKLOG #2) — any new operation
+has to fit into that same "what's in the lasso" dispatch, not a separate UI
+surface.
+
 ## 2026-06-12 — Durability invariant: write-before-delete ordering (crash safety)
 
 **Decision.** Every operation that moves a section's content between its two

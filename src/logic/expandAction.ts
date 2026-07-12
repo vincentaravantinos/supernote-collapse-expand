@@ -1,11 +1,12 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, dlog, LOG } from '../constants';
-import { buildElement, contentBoundingBox } from '../utils/elementSerializer';
+import { buildElement, contentBoundingBox, serializeElement } from '../utils/elementSerializer';
 import { getIconByNum, iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { forgetSection, noteSectionExpanded } from './expandedRegistry';
-import { CollapseSection } from '../model/types';
+import { findNameElements, rebuildNameElements } from './nameAction';
+import { CollapsedElement, CollapseSection } from '../model/types';
 
 // Expand ONE section: insert its mask + restored content (stroke links via
 // rebuildStrokeLinks) and flip the icon's userData to isExpanded. Does NOT
@@ -81,6 +82,38 @@ export async function expandOne(
   const pageMaxX = PointUtils.getRealMaxX(pageSize);
   const pageMaxY = PointUtils.getRealMaxY(pageSize);
   dlog(`${LOG} PERF expand prep(iconrect+pagesize)=${Date.now() - tPrep}ms`);
+
+  // Reconcile the section's name (if any) with the icon's movement since it
+  // was last saved — the only point a *collapsed*-icon move can be
+  // reconciled (the SDK gives no move event for a collapsed drag; a live
+  // drag while expanded is instead handled by iconMoveRedraw.ts). No-op in
+  // the common case where the icon hasn't moved. Reuses emrDelta/pageMaxX/
+  // pageMaxY already computed above for content — same translation applies.
+  if (dx !== 0 || dy !== 0) {
+    const tName = Date.now();
+    const nameAllRes: any = await PluginFileAPI.getElements(page, filePath);
+    const nameAll: any[] = nameAllRes?.success && Array.isArray(nameAllRes.result) ? nameAllRes.result : [];
+    const nameEls = findNameElements(nameAll, section.id);
+    if (nameEls.length > 0) {
+      const serializedName: CollapsedElement[] = [];
+      for (const el of nameEls) {
+        const data = await serializeElement(el);
+        if (data) serializedName.push({ numInPage: el.numInPage, data });
+      }
+      const rebuiltName = await rebuildNameElements(serializedName, section.id, page, dx, dy, emrDelta, pageMaxX, pageMaxY);
+      if (rebuiltName.length > 0) {
+        const insName: any = await PluginFileAPI.insertElements(filePath, page, rebuiltName);
+        if (insName?.success) {
+          const oldNums = nameEls.map((el) => el.numInPage).filter((n: any): n is number => typeof n === 'number');
+          if (oldNums.length > 0) await PluginFileAPI.deleteElements(filePath, page, oldNums);
+        } else {
+          console.error(`${LOG} expand: failed to relocate section name res=${JSON.stringify(insName)}`);
+        }
+        for (const el of rebuiltName) { try { el.recycle?.(); } catch { /* ignore */ } }
+      }
+    }
+    dlog(`${LOG} PERF expand nameRelocate=${Date.now() - tName}ms moved=${nameEls.length}`);
+  }
 
   // Register for live box redraw on icon drag. Content bbox shifted by (dx, dy)
   // (the same delta strokes are built with) = its absolute on-page bbox.

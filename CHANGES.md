@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Feature: a collapsed section can now be given a handwritten **name**. Write
+  the name on the page, lasso it together with the section's "+" icon, and
+  press the plugin button — you'll be asked to confirm before it's set (or
+  replaced, if the section already has one). The name stays visible next to
+  the icon whether the section is collapsed or expanded.
+
 - Safety: collapse / expand / recollapse and the finger-tap shortcut now detect
   landscape mode and show a brief notice instead of running. In landscape the
   Supernote renders a split half-page where the lasso pipeline can hang

@@ -1,4 +1,4 @@
-import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, Rect } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, TAP_MAX_PX, ZONE_MARGIN, dlog } from '../constants';
 import { padded, rectContains, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
@@ -6,6 +6,7 @@ import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 import { expandedCount, expandedEntries, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
 import { expandOne } from './expandAction';
+import { findNameElements, rebuildNameElements } from './nameAction';
 import { acquireBusy, releaseBusy } from './busy';
 import { invalidateIconCache } from './iconPageCache';
 
@@ -113,6 +114,7 @@ async function redrawSectionBox(id: string): Promise<void> {
       removeNums.push(el.numInPage);
     }
   }
+  const nameEls = findNameElements(all, id);
   if (!iconEl || !iconRect) return; // icon gone (recollapsed elsewhere)
 
   // Did the icon actually move since we last drew the box? (sub-pixel = no)
@@ -152,6 +154,42 @@ async function redrawSectionBox(id: string): Promise<void> {
     const pageSize = sizeRes?.success && sizeRes.result
       ? { width: sizeRes.result.width, height: sizeRes.result.height }
       : { width: 1404, height: 1872 };
+
+    // The name (if any) has no anchored position of its own to stay fixed at
+    // (unlike content, which is rebuilt at its current position above, with
+    // the mask/frame stretching to reach the icon instead) — it must rigidly
+    // follow the icon's own movement since the last redraw.
+    if (nameEls.length > 0) {
+      const nameDx = iconRect.left - entry.iconRect.left;
+      const nameDy = iconRect.top - entry.iconRect.top;
+      // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
+      // (current) icon points independently, then subtract. See
+      // rebuildNameElements's doc comment / BUGS/B-001.md for why converting
+      // (nameDx, nameDy) directly would be wrong.
+      const nameEmrFrom = PointUtils.androidPoint2Emr({ x: entry.iconRect.left, y: entry.iconRect.top }, pageSize);
+      const nameEmrTo = PointUtils.androidPoint2Emr({ x: iconRect.left, y: iconRect.top }, pageSize);
+      const nameEmrDelta = { x: nameEmrTo.x - nameEmrFrom.x, y: nameEmrTo.y - nameEmrFrom.y };
+      const namePageMaxX = PointUtils.getRealMaxX(pageSize);
+      const namePageMaxY = PointUtils.getRealMaxY(pageSize);
+      const serializedName: CollapsedElement[] = [];
+      for (const el of nameEls) {
+        const data = await serializeElement(el);
+        if (data) serializedName.push({ numInPage: el.numInPage, data });
+      }
+      const rebuiltName = await rebuildNameElements(serializedName, id, page, nameDx, nameDy, nameEmrDelta, namePageMaxX, namePageMaxY);
+      if (rebuiltName.length > 0) {
+        const insName: any = await PluginFileAPI.insertElements(filePath, page, rebuiltName);
+        if (insName?.success) {
+          for (const el of nameEls) {
+            if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
+          }
+        } else {
+          console.error(`${LOG} live redraw: failed to relocate section name res=${JSON.stringify(insName)}`);
+        }
+        for (const el of rebuiltName) { try { el.recycle?.(); } catch { /* ignore */ } }
+      }
+    }
+
     const bbox = contentBoundingBox(fresh, pageSize);
     if (!bbox) { return; }
     const zone = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);

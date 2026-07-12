@@ -2,6 +2,7 @@ import { PluginFileAPI } from 'sn-plugin-lib';
 import {
   CE_FRAME_PREFIX,
   CE_MASK_PREFIX,
+  CE_NAME_PREFIX,
   CE_PART_PREFIX,
   CE_PLUG_PREFIX,
   LOG,
@@ -13,6 +14,7 @@ export type UserDataKind =
   | { kind: 'part'; id: string }
   | { kind: 'mask'; id: string }
   | { kind: 'frame'; id: string }
+  | { kind: 'name'; id: string }
   | null;
 
 // The icon's CURRENT rect (textBox.textRect) from an already-fetched element
@@ -88,6 +90,10 @@ export function readUserData(element: any): UserDataKind {
 
   if (udata.startsWith(CE_FRAME_PREFIX)) {
     return { kind: 'frame', id: udata.substring(CE_FRAME_PREFIX.length) };
+  }
+
+  if (udata.startsWith(CE_NAME_PREFIX)) {
+    return { kind: 'name', id: udata.substring(CE_NAME_PREFIX.length) };
   }
 
   return null;

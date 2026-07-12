@@ -1,10 +1,11 @@
 import { PluginCommAPI, PluginManager } from 'sn-plugin-lib';
-import { BUILD_TAG, dlog, LOG } from './constants';
+import { BUILD_TAG, dlog, ELEMENT_TYPES, LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
 import { summarizeElements } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
 import { expandSections } from './logic/expandAction';
 import { recollapseSections } from './logic/recollapseAction';
+import { handleNameAction } from './logic/nameAction';
 import { acquireBusy, releaseBusy } from './logic/busy';
 import { invalidateIconCache } from './logic/iconPageCache';
 import { isLandscape } from './utils/orientation';
@@ -71,15 +72,20 @@ export async function handleMainAction() {
     }
 
     // Classify the selection. An expanded section referenced by the lasso (its
-    // icon, or its CE_PART / CE_MASK) → recollapse; a collapsed icon → expand;
-    // otherwise → collapse. Recollapse takes priority over expand/collapse when a
-    // selection mixes them.
+    // icon, or its CE_PART / CE_MASK) → recollapse; a collapsed icon plus bare
+    // untagged ink → name/rename; a collapsed icon alone (or with 2+ icons
+    // present) → expand; otherwise → collapse. Recollapse takes priority over
+    // everything else when a selection mixes them.
     const expandedIds = new Set<string>();
     const collapsedTargets: { section: any; icon: any }[] = [];
     const seenCollapsed = new Set<string>();
+    const nameCandidates: any[] = [];
     for (const el of elements) {
       const ud = readUserData(el);
-      if (!ud) continue;
+      if (!ud) {
+        if (el.type === ELEMENT_TYPES.STROKE) nameCandidates.push(el);
+        continue;
+      }
       if (ud.kind === 'part' || ud.kind === 'mask') {
         expandedIds.add(ud.id);
       } else if (ud.kind === 'section') {
@@ -100,6 +106,31 @@ export async function handleMainAction() {
           await recollapseSections(ids, filePath, page);
         } finally {
           dlog(`${PROBE} #${actionSeq} RECOLLAPSE END`);
+        }
+      } else if (collapsedTargets.length === 1 && nameCandidates.length > 0) {
+        actionSeq++;
+        dlog(`${PROBE} #${actionSeq} NAME BEGIN page=${page} build=${BUILD_TAG}`);
+        try {
+          // showRattaDialog is a blocking native modal — same suppression risk
+          // as alert() while showPluginView is active, so close the view
+          // around it and reopen before any further mutation (expand fallback
+          // included).
+          if (viewShown) {
+            try { await PluginManager.closePluginView(); } catch (e) { dlog(`${LOG} closePluginView (pre-dialog) failed: ${e}`); }
+            viewShown = false;
+          }
+          const fallBackToExpand = await handleNameAction(collapsedTargets[0], nameCandidates, filePath, page);
+          try {
+            await PluginManager.showPluginView();
+            viewShown = true;
+          } catch (e) {
+            dlog(`${LOG} showPluginView (post-dialog) failed: ${e}`);
+          }
+          if (fallBackToExpand) {
+            await expandSections([collapsedTargets[0]], filePath, page);
+          }
+        } finally {
+          dlog(`${PROBE} #${actionSeq} NAME END`);
         }
       } else if (collapsedTargets.length > 0) {
         actionSeq++;

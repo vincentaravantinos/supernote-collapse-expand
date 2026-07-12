@@ -32,7 +32,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   for (const el of elements) {
     if (el.type === ELEMENT_TYPES.PICTURE) continue;
     if (el.type === ELEMENT_TYPES.TITLE) continue;
-    if (readUserData(el)?.kind === 'section') continue; // our own icons
+    if (readUserData(el)) continue; // any of our own tagged elements (icon, name, ...)
     const data = await serializeElement(el);
     if (data) {
       collapsed.push({ numInPage: el.numInPage, data });

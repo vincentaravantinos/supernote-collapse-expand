@@ -13,6 +13,11 @@ keeps full control of the surrounding canvas while a region is collapsed.
 
 ## Core operations
 
+The plugin exposes a **single button** ("Collapse / Expand") on the lasso
+menu. Every operation below is triggered by pressing that same button; which
+one happens is inferred entirely from what's currently lassoed. There is no
+per-operation button.
+
 ### Collapse
 **Trigger**: user lassoes some content on the page and presses the plugin
 button.
@@ -25,6 +30,46 @@ button.
 - The icon carries enough state to reproduce the original content
   (positions, ink properties, layer, …) on a later expand.
 - Pictures and titles in the lasso are left in place (not collapsable).
+
+### Name / Rename (optional)
+**Trigger**: user writes a name somewhere on the page in their own
+handwriting, lassoes it **together with exactly one collapsed section's
+icon** (no other icons, no restored/expanded content), and presses the
+plugin button.
+
+**Outcome**:
+- A blocking confirmation dialog asks the user to confirm: "Set this
+  section's name to the selected handwriting?" (or "Replace..." if the
+  section already has a name).
+  - **Confirmed**: the lassoed name strokes are moved from wherever they
+    were written to a fixed position anchored to the icon (up-right of it,
+    mirroring the icon's own placement relative to its content), and stay
+    permanently visible next to the icon regardless of whether the section
+    is collapsed or expanded. If a name already existed, its old strokes
+    are deleted first.
+  - **Declined**: nothing about the name changes; the press falls through
+    to a normal Expand instead, with the name-candidate ink left in place
+    untouched — i.e. exactly today's behaviour when unrelated content
+    happens to share a lasso with a collapsed icon.
+- Available any time a section is collapsed — not limited to right after
+  its own Collapse. Naming an already-expanded section is out of scope for
+  v1 (lasso the icon while it's still collapsed).
+- If the lasso contains untagged ink alongside **more than one** collapsed
+  icon, the target is ambiguous: no naming/confirmation is offered, and the
+  press is treated as a normal multi-section Expand instead (ink left in
+  place).
+- The name strokes move together with the icon whenever the icon is
+  repositioned — rigidly, by the icon's own movement delta. This is unlike
+  restored *content*, which stays physically fixed while expanded (only the
+  mask/outline stretch to reach a moved icon): the name has no anchored
+  position of its own to stay fixed at, so it always follows the icon
+  exactly, the same way the icon follows the user's drag.
+  - **While expanded**, it's translated live on each drag-release.
+  - **While collapsed**, there is no live tracking (the SDK gives no move
+    event for a collapsed icon) — the name catches up at the section's
+    **next Expand**, translated by the delta the icon moved since the
+    section was last saved. Until then, the name stroke stays at its old
+    position, visually detached from the icon.
 
 ### Expand
 **Trigger**: user lassoes the "+" icon of one or more collapsed sections
@@ -116,6 +161,7 @@ returns control to the user.
 | `CE_PART:<id>` | A piece of the section's original content currently shown on the page (one per restored stroke / text / link / geometry). | Inserted on expand, deleted on recollapse. |
 | `CE_MASK:<id>` | A polygon ring used to fake a filled (white) rectangle that hides content behind the expanded section. | Inserted on expand, deleted on recollapse. |
 | `CE_FRAME:<id>` | The thin rectangle outline marking the section boundary. Tagged separately from the fill (kept distinct for clarity / future outline-only operations). | Inserted on expand, rebuilt on a live icon-drag redraw, deleted on recollapse. |
+| `CE_NAME:<sectionId>` | One handwritten stroke of a section's optional name. Always visible next to the icon, independent of collapsed/expanded state — unlike `CE_PART`, never hidden. Anchored up-right of the icon on a best-effort basis, clamped at the page edge the same way the icon's own placement already is — not guaranteed collision-free for a long or multi-line name. | Inserted when the user confirms a Name/Rename. Deleted and replaced wholesale on a confirmed rename. Translated whenever the icon moves (collapsed or expanded). Deleted only if the section is destroyed. |
 | (null) | Not ours — leave alone. The plugin must not claim or modify these. | — |
 
 ### `CollapseSection` (stored as JSON inside `CE_PLUG:`)
@@ -174,6 +220,21 @@ there if rendering changes.
   contains another section's icon, behaviour is undefined.
 - The plugin operates only on the current page; sections do not span
   pages.
+- A section can only be named/renamed while collapsed. Naming an expanded
+  section is out of scope for v1.
+- Removing a name needs no dedicated action: `CollapseSection` never records
+  whether a name exists — it's derived purely from whether `CE_NAME` strokes
+  are present for that section id. So erasing the name's ink with the
+  device's normal eraser (same as erasing any other handwriting) already
+  and fully removes it; the section is indistinguishable from one that was
+  never named. Erasing only *some* of the name's strokes leaves it
+  incomplete rather than gone (the remaining strokes are still tagged), the
+  same way partially erasing an expanded section's restored content already
+  leaves Recollapse to save only what's left.
+- `CE_NAME` strokes are never treated as ordinary page content by any
+  operation: never absorbed on recollapse, never swept up as "other
+  content" by an unrelated Collapse/Expand, never hidden/restored by
+  Expand. They only move when their icon moves.
 - Other plugins' `userData` is invisible to this plugin (SDK isolation),
   so we never need to defend against it.
 
