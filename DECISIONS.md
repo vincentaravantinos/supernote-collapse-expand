@@ -83,6 +83,33 @@ selection-changed event to relabel it — see BACKLOG #2) — any new operation
 has to fit into that same "what's in the lasso" dispatch, not a separate UI
 surface.
 
+## 2026-07-12 — A section's name keeps tracking an expanded-icon move live
+
+**Decision.** Keep the name's existing live-drag behavior: while a section is
+expanded, dragging its icon translates the name in the same per-drag-release
+pass that already redraws the mask/frame (`iconMoveRedraw.ts`), preserving
+the name's original offset to the icon exactly.
+
+**Alternatives considered.**
+- *Defer the name's catch-up to the section's next Recollapse instead of
+  live* (matching how a *collapsed* icon move is only reconciled at the next
+  Expand, since that case has no live event to hook at all). Fully
+  implemented and then reverted: it required a second persisted anchor field
+  (`nameAnchorRect`, separate from `iconRect`, since `iconRect` itself is
+  kept continuously live-synced during an expanded drag for the mask/frame
+  — reusing it as the name's "last reconciled" reference always read as "no
+  movement"). Once built, it turned out to solve a problem that didn't need
+  solving: unlike the collapsed case, an expanded-icon move already *has* a
+  live listener doing the equivalent work for the mask/frame, and the
+  original live-tracking implementation (from when Name/Rename first
+  shipped) was already correct. Deferring added a schema field and a new
+  reconciliation path in `recollapseAction.ts` for no behavioral benefit
+  over what already worked.
+
+**Constraint.** None — this reverses a decision made without checking
+whether the "not live, too hard" premise still held once the icon actually
+had a live listener already in place for the expanded case.
+
 ## 2026-06-12 — Durability invariant: write-before-delete ordering (crash safety)
 
 **Decision.** Every operation that moves a section's content between its two
