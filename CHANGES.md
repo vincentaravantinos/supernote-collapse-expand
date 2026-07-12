@@ -20,6 +20,10 @@
   moving it (alone, or together with the icon, collapsed or expanded) is
   always respected.
 
+- Fix: renaming a section by writing new ink in among the existing name (e.g.
+  "Name" -> "Name 2") and re-lassoing both used to keep only the new ink,
+  silently dropping the old. The old ink is now kept as part of the new name.
+
 - Safety: collapse / expand / recollapse and the finger-tap shortcut now detect
   landscape mode and show a brief notice instead of running. In landscape the
   Supernote renders a split half-page where the lasso pipeline can hang

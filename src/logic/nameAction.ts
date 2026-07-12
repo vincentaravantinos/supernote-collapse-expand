@@ -69,19 +69,33 @@ export function nameFollowDelta(
 }
 
 // Confirm + set/replace a section's name from `nameCandidates` (untagged
-// STROKE elements from the lasso). Returns true if the caller should fall
-// through to a normal Expand instead (user declined, or nothing usable was
-// selected) — the busy plugin view must be closed by the caller before this
-// runs (showRattaDialog is a blocking native modal, same suppression risk as
-// alert() while showPluginView is active) and reopened after it returns.
+// STROKE elements from the lasso) plus any of this section's own existing
+// name strokes re-selected in the same lasso (`nameTaggedInLasso` — lets
+// writing new ink in among an existing name, e.g. "Name" -> "Name 2", keep
+// the old ink instead of dropping it; see BUGS/B-005.md). Returns true if
+// the caller should fall through to a normal Expand instead (user declined,
+// or nothing usable was selected) — the busy plugin view must be closed by
+// the caller before this runs (showRattaDialog is a blocking native modal,
+// same suppression risk as alert() while showPluginView is active) and
+// reopened after it returns.
 export async function handleNameAction(
   target: { section: CollapseSection; icon: any },
   nameCandidates: any[],
+  nameTaggedInLasso: any[],
   filePath: string,
   page: number,
 ): Promise<boolean> {
   const strokeCandidates = nameCandidates.filter((el) => el.type === ELEMENT_TYPES.STROKE);
   if (strokeCandidates.length === 0) return true;
+
+  // Old name strokes belonging to *this* section, re-selected in the same
+  // lasso — keep their content instead of silently dropping it. Strokes
+  // tagged for a different section (swept in by a sloppy lasso) are ignored.
+  const keptOldNameEls = nameTaggedInLasso.filter((el) => {
+    const ud = readUserData(el);
+    return ud?.kind === 'name' && ud.id === target.section.id;
+  });
+  const allNameCandidates = [...strokeCandidates, ...keptOldNameEls];
 
   // Flush pending interactive edits (a draw or an erase lives only in the
   // cached copy until saved) before reading state or mutating — otherwise
@@ -101,7 +115,7 @@ export async function handleNameAction(
   if (!confirmRes) return true;
 
   const serialized: CollapsedElement[] = [];
-  for (const el of strokeCandidates) {
+  for (const el of allNameCandidates) {
     const data = await serializeElement(el);
     if (data) serialized.push({ numInPage: el.numInPage, data });
   }

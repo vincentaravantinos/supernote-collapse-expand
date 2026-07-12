@@ -12,5 +12,4 @@ an item once the user confirms it's done.
 | ID | Symptom |
 |---|---|
 | B-004 (parked) | Naming a section then Expanding (no icon move) makes the name jump for no reason; a subsequent Recollapse then leaves the frame and some strokes behind. Not reliably reproducible. See `BUGS/B-004.md`. |
-| B-005 | Renaming with old + new ink in the same lasso drops the old ink instead of merging it into the new name. See `BUGS/B-005.md`. |
 

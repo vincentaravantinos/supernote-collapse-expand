@@ -80,13 +80,16 @@ export async function handleMainAction() {
     const collapsedTargets: { section: any; icon: any }[] = [];
     const seenCollapsed = new Set<string>();
     const nameCandidates: any[] = [];
+    const nameTaggedInLasso: any[] = [];
     for (const el of elements) {
       const ud = readUserData(el);
       if (!ud) {
         if (el.type === ELEMENT_TYPES.STROKE) nameCandidates.push(el);
         continue;
       }
-      if (ud.kind === 'part' || ud.kind === 'mask') {
+      if (ud.kind === 'name') {
+        nameTaggedInLasso.push(el);
+      } else if (ud.kind === 'part' || ud.kind === 'mask') {
         expandedIds.add(ud.id);
       } else if (ud.kind === 'section') {
         if (ud.section.isExpanded) expandedIds.add(ud.section.id);
@@ -119,7 +122,7 @@ export async function handleMainAction() {
             try { await PluginManager.closePluginView(); } catch (e) { dlog(`${LOG} closePluginView (pre-dialog) failed: ${e}`); }
             viewShown = false;
           }
-          const fallBackToExpand = await handleNameAction(collapsedTargets[0], nameCandidates, filePath, page);
+          const fallBackToExpand = await handleNameAction(collapsedTargets[0], nameCandidates, nameTaggedInLasso, filePath, page);
           try {
             await PluginManager.showPluginView();
             viewShown = true;
