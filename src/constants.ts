@@ -9,7 +9,7 @@ export function dlog(...args: any[]): void {
 
 // Logged at each action start to confirm which build is actually live: pushing a
 // new .snplg doesn't always replace the running one. Bump per deploy.
-export const BUILD_TAG = 'r86-name-fix';
+export const BUILD_TAG = 'r87-name-no-move';
 
 export const ICON_SIZE = 50; // px
 // A gesture whose finger moved less than this is a tap/select, not a drag.
@@ -33,9 +33,6 @@ export const CE_FRAME_PREFIX = 'CE_FRAME:';
 // A section's optional handwritten name. Always visible next to the icon,
 // independent of collapsed/expanded state.
 export const CE_NAME_PREFIX = 'CE_NAME:';
-// Gap between the icon's right edge and the name's anchored left edge (same
-// margin convention as ZONE_MARGIN / the icon's own placement offset).
-export const NAME_GAP = Math.round(ICON_SIZE / 3);
 // Max serialized section payload in the icon's userData. Measured safe: the
 // .note format persists a 425 KB single-element userData intact, well under the
 // ~1 MB binder transaction limit for insertElements.

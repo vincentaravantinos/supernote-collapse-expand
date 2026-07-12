@@ -41,12 +41,10 @@ plugin button.
 - A blocking confirmation dialog asks the user to confirm: "Set this
   section's name to the selected handwriting?" (or "Replace..." if the
   section already has a name).
-  - **Confirmed**: the lassoed name strokes are moved from wherever they
-    were written to a fixed position anchored to the icon (up-right of it,
-    mirroring the icon's own placement relative to its content), and stay
-    permanently visible next to the icon regardless of whether the section
-    is collapsed or expanded. If a name already existed, its old strokes
-    are deleted first.
+  - **Confirmed**: the lassoed name strokes stay exactly where the user
+    wrote them (no repositioning), tagged as the section's name, and remain
+    permanently visible regardless of whether the section is collapsed or
+    expanded. If a name already existed, its old strokes are deleted first.
   - **Declined**: nothing about the name changes; the press falls through
     to a normal Expand instead, with the name-candidate ink left in place
     untouched — i.e. exactly today's behaviour when unrelated content
@@ -161,7 +159,7 @@ returns control to the user.
 | `CE_PART:<id>` | A piece of the section's original content currently shown on the page (one per restored stroke / text / link / geometry). | Inserted on expand, deleted on recollapse. |
 | `CE_MASK:<id>` | A polygon ring used to fake a filled (white) rectangle that hides content behind the expanded section. | Inserted on expand, deleted on recollapse. |
 | `CE_FRAME:<id>` | The thin rectangle outline marking the section boundary. Tagged separately from the fill (kept distinct for clarity / future outline-only operations). | Inserted on expand, rebuilt on a live icon-drag redraw, deleted on recollapse. |
-| `CE_NAME:<sectionId>` | One handwritten stroke of a section's optional name. Always visible next to the icon, independent of collapsed/expanded state — unlike `CE_PART`, never hidden. Anchored up-right of the icon on a best-effort basis, clamped at the page edge the same way the icon's own placement already is — not guaranteed collision-free for a long or multi-line name. | Inserted when the user confirms a Name/Rename. Deleted and replaced wholesale on a confirmed rename. Translated whenever the icon moves (collapsed or expanded). Deleted only if the section is destroyed. |
+| `CE_NAME:<sectionId>` | One handwritten stroke of a section's optional name. Stays exactly where the user wrote it — never repositioned on creation. Always visible, independent of collapsed/expanded state — unlike `CE_PART`, never hidden. | Inserted when the user confirms a Name/Rename. Deleted and replaced wholesale on a confirmed rename. Translated whenever the icon moves (collapsed or expanded). Deleted only if the section is destroyed. |
 | (null) | Not ours — leave alone. The plugin must not claim or modify these. | — |
 
 ### `CollapseSection` (stored as JSON inside `CE_PLUG:`)

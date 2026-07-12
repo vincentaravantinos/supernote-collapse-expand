@@ -1,7 +1,7 @@
 import { NativeUIUtils, PluginCommAPI, PluginFileAPI, Point, PointUtils } from 'sn-plugin-lib';
-import { CE_NAME_PREFIX, ELEMENT_TYPES, LOG, NAME_GAP } from '../constants';
-import { buildElement, contentBoundingBox, serializeElement } from '../utils/elementSerializer';
-import { iconRectFromElements, readUserData } from '../utils/userDataManager';
+import { CE_NAME_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
+import { buildElement, serializeElement } from '../utils/elementSerializer';
+import { readUserData } from '../utils/userDataManager';
 import { CollapsedElement, CollapseSection } from '../model/types';
 
 // Elements tagged as a given section's name (there is no per-element id — every
@@ -63,7 +63,6 @@ export async function handleNameAction(
 
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
-  const iconRectNow = iconRectFromElements(all, target.section, target.icon);
   const existingNameEls = findNameElements(all, target.section.id);
 
   const message = existingNameEls.length > 0
@@ -87,29 +86,13 @@ export async function handleNameAction(
     ? { width: sizeRes.result.width, height: sizeRes.result.height }
     : { width: 1404, height: 1872 };
 
-  const bbox = contentBoundingBox(serialized, pageSize);
-  if (!bbox) {
-    alert('Nothing nameable in selection.');
-    return false;
-  }
-  const width = bbox.right - bbox.left;
-  const height = bbox.bottom - bbox.top;
-  // Anchor up-right of the icon; clamped into the page like the icon's own
-  // placement — best-effort, not guaranteed collision-free for a large name.
-  const anchorLeft = Math.max(0, Math.min(iconRectNow.right + NAME_GAP, pageSize.width - width));
-  const anchorTop = Math.max(0, Math.min(iconRectNow.top, pageSize.height - height));
-  const dxPx = anchorLeft - bbox.left;
-  const dyPx = anchorTop - bbox.top;
-
-  // Safe two-point EMR delta (see rebuildNameElements doc) — convert the
-  // "from" and "to" android points independently, then subtract.
-  const emrFrom = PointUtils.androidPoint2Emr({ x: bbox.left, y: bbox.top }, pageSize);
-  const emrTo = PointUtils.androidPoint2Emr({ x: anchorLeft, y: anchorTop }, pageSize);
-  const emrDelta = { x: emrTo.x - emrFrom.x, y: emrTo.y - emrFrom.y };
+  // No translation — the name stays exactly where the user wrote it.
+  // pageMaxX/pageMaxY are still needed to rescale a stroke's own EMR space
+  // to the page's (see rebuildNameElements's doc), independent of position.
   const pageMaxX = PointUtils.getRealMaxX(pageSize);
   const pageMaxY = PointUtils.getRealMaxY(pageSize);
 
-  const newNameEls = await rebuildNameElements(serialized, target.section.id, page, dxPx, dyPx, emrDelta, pageMaxX, pageMaxY);
+  const newNameEls = await rebuildNameElements(serialized, target.section.id, page, 0, 0, { x: 0, y: 0 }, pageMaxX, pageMaxY);
   if (newNameEls.length === 0) {
     alert('Failed to set the section name — please try again.');
     return false;
