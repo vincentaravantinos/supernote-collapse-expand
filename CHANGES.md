@@ -11,6 +11,9 @@
 - Fix: renaming a section right after erasing its old name no longer brings
   the erased name back.
 
+- Feature: the single-**finger**-tap shortcut (collapse/expand without the
+  menu) now also works when tapping a section's **name**, not just its icon.
+
 - Safety: collapse / expand / recollapse and the finger-tap shortcut now detect
   landscape mode and show a brief notice instead of running. In landscape the
   Supernote renders a split half-page where the lasso pipeline can hang

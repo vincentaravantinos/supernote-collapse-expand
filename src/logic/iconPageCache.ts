@@ -1,15 +1,19 @@
 import { PluginFileAPI, Rect } from 'sn-plugin-lib';
 import { readUserData } from '../utils/userDataManager';
-import { CollapseSection } from '../model/types';
+import { contentBoundingBox, serializeElement } from '../utils/elementSerializer';
+import { findNameElements } from './nameAction';
+import { CollapsedElement, CollapseSection } from '../model/types';
 
 // Every CE_PLUG icon (collapsed or expanded) on one page, for cheap tap
 // hit-testing (see iconTapToggle). `iconEl` is the raw element, ready to pass
-// as the `icon` of an expandSections target.
+// as the `icon` of an expandSections target. `nameRect` (if the section has a
+// name) lets a tap on the name also count, same as tapping the icon.
 export interface PageIconEntry {
   id: string;
   section: CollapseSection;
   iconEl: any;
   rect: Rect;
+  nameRect?: Rect;
 }
 
 // No page-change event exists, so this cache is keyed by page number and
@@ -36,6 +40,24 @@ export async function buildIconCache(filePath: string, page: number): Promise<Pa
     const ud = readUserData(el);
     if (ud?.kind === 'section' && ud.section?.id && el?.textBox?.textRect) {
       icons.push({ id: ud.section.id, section: ud.section, iconEl: el, rect: el.textBox.textRect });
+    }
+  }
+
+  if (icons.length > 0) {
+    const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
+    const pageSize = sizeRes?.success && sizeRes.result
+      ? { width: sizeRes.result.width, height: sizeRes.result.height }
+      : { width: 1404, height: 1872 };
+    for (const icon of icons) {
+      const nameEls = findNameElements(all, icon.id);
+      if (nameEls.length === 0) continue;
+      const serialized: CollapsedElement[] = [];
+      for (const el of nameEls) {
+        const data = await serializeElement(el);
+        if (data) serialized.push({ numInPage: el.numInPage, data });
+      }
+      const bbox = contentBoundingBox(serialized, pageSize);
+      if (bbox) icon.nameRect = bbox;
     }
   }
 

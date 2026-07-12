@@ -48,7 +48,10 @@ async function handleTap(x: number, y: number): Promise<void> {
     icons = await buildIconCache(fpRes.result as string, page);
   }
 
-  const hit = icons.find((icon) => rectContains(padded(icon.rect, ICON_HIT_PAD), x, y));
+  const hit = icons.find((icon) =>
+    rectContains(padded(icon.rect, ICON_HIT_PAD), x, y) ||
+    (icon.nameRect && rectContains(padded(icon.nameRect, ICON_HIT_PAD), x, y)),
+  );
   if (!hit) return;
 
   // Another op (button press or live redraw) is in flight — drop this tap
