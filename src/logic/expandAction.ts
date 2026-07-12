@@ -5,7 +5,7 @@ import { getIconByNum, iconRectFromElements, readUserData, writeSection } from '
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { forgetSection, noteSectionExpanded } from './expandedRegistry';
-import { findNameElements, rebuildNameElements } from './nameAction';
+import { findNameElements, nameFollowDelta, rebuildNameElements } from './nameAction';
 import { CollapsedElement, CollapseSection } from '../model/types';
 
 // Expand ONE section: insert its mask + restored content (stroke links via
@@ -89,6 +89,9 @@ export async function expandOne(
   // drag while expanded is instead handled by iconMoveRedraw.ts). No-op in
   // the common case where the icon hasn't moved. Reuses emrDelta/pageMaxX/
   // pageMaxY already computed above for content — same translation applies.
+  // Only actually moves the name if it hasn't already moved on its own
+  // (e.g. dragged together with the icon) — see nameFollowDelta / BUGS/B-003.md.
+  let newNameSyncedRect: Rect | undefined = section.nameSyncedRect;
   if (dx !== 0 || dy !== 0) {
     const tName = Date.now();
     const nameAllRes: any = await PluginFileAPI.getElements(page, filePath);
@@ -100,16 +103,28 @@ export async function expandOne(
         const data = await serializeElement(el);
         if (data) serializedName.push({ numInPage: el.numInPage, data });
       }
-      const rebuiltName = await rebuildNameElements(serializedName, section.id, page, dx, dy, emrDelta, pageMaxX, pageMaxY);
-      if (rebuiltName.length > 0) {
-        const insName: any = await PluginFileAPI.insertElements(filePath, page, rebuiltName);
-        if (insName?.success) {
-          const oldNums = nameEls.map((el) => el.numInPage).filter((n: any): n is number => typeof n === 'number');
-          if (oldNums.length > 0) await PluginFileAPI.deleteElements(filePath, page, oldNums);
-        } else {
-          console.error(`${LOG} expand: failed to relocate section name res=${JSON.stringify(insName)}`);
+      const currentNameBBox = contentBoundingBox(serializedName, pageSize);
+      const follow = currentNameBBox ? nameFollowDelta(currentNameBBox, section.nameSyncedRect, dx, dy) : { dx: 0, dy: 0 };
+      if ((follow.dx !== 0 || follow.dy !== 0) && currentNameBBox) {
+        const rebuiltName = await rebuildNameElements(serializedName, section.id, page, follow.dx, follow.dy, emrDelta, pageMaxX, pageMaxY);
+        if (rebuiltName.length > 0) {
+          const insName: any = await PluginFileAPI.insertElements(filePath, page, rebuiltName);
+          if (insName?.success) {
+            const oldNums = nameEls.map((el) => el.numInPage).filter((n: any): n is number => typeof n === 'number');
+            if (oldNums.length > 0) await PluginFileAPI.deleteElements(filePath, page, oldNums);
+            newNameSyncedRect = {
+              left: currentNameBBox.left + follow.dx,
+              top: currentNameBBox.top + follow.dy,
+              right: currentNameBBox.right + follow.dx,
+              bottom: currentNameBBox.bottom + follow.dy,
+            };
+          } else {
+            console.error(`${LOG} expand: failed to relocate section name res=${JSON.stringify(insName)}`);
+          }
+          for (const el of rebuiltName) { try { el.recycle?.(); } catch { /* ignore */ } }
         }
-        for (const el of rebuiltName) { try { el.recycle?.(); } catch { /* ignore */ } }
+      } else if (currentNameBBox) {
+        newNameSyncedRect = currentNameBBox; // name moved on its own — resync to where it actually is
       }
     }
     dlog(`${LOG} PERF expand nameRelocate=${Date.now() - tName}ms moved=${nameEls.length}`);
@@ -179,6 +194,7 @@ export async function expandOne(
     iconRect: iconRectNow,
     collapsedElements: insertOk ? [] : section.collapsedElements,
     preservedNums,
+    nameSyncedRect: newNameSyncedRect,
   };
 
   const tWrite = Date.now();

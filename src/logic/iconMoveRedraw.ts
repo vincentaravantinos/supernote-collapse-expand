@@ -6,7 +6,7 @@ import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 import { expandedCount, expandedEntries, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
 import { expandOne } from './expandAction';
-import { findNameElements, rebuildNameElements } from './nameAction';
+import { findNameElements, nameFollowDelta, rebuildNameElements } from './nameAction';
 import { acquireBusy, releaseBusy } from './busy';
 import { invalidateIconCache } from './iconPageCache';
 
@@ -155,38 +155,57 @@ async function redrawSectionBox(id: string): Promise<void> {
       ? { width: sizeRes.result.width, height: sizeRes.result.height }
       : { width: 1404, height: 1872 };
 
+    const existing = readUserData(iconEl);
+    const base = existing?.kind === 'section' ? existing.section : null;
+
     // The name (if any) has no anchored position of its own to stay fixed at
     // (unlike content, which is rebuilt at its current position above, with
     // the mask/frame stretching to reach the icon instead) — it must rigidly
-    // follow the icon's own movement since the last redraw.
+    // follow the icon's own movement since the last redraw, UNLESS the user
+    // moved the name on its own (alone, or together with the icon), in which
+    // case its current position is trusted untouched. See nameFollowDelta /
+    // BUGS/B-003.md.
+    let newNameSyncedRect: Rect | undefined = base?.nameSyncedRect;
     if (nameEls.length > 0) {
       const nameDx = iconRect.left - entry.iconRect.left;
       const nameDy = iconRect.top - entry.iconRect.top;
-      // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
-      // (current) icon points independently, then subtract. See
-      // rebuildNameElements's doc comment / BUGS/B-001.md for why converting
-      // (nameDx, nameDy) directly would be wrong.
-      const nameEmrFrom = PointUtils.androidPoint2Emr({ x: entry.iconRect.left, y: entry.iconRect.top }, pageSize);
-      const nameEmrTo = PointUtils.androidPoint2Emr({ x: iconRect.left, y: iconRect.top }, pageSize);
-      const nameEmrDelta = { x: nameEmrTo.x - nameEmrFrom.x, y: nameEmrTo.y - nameEmrFrom.y };
-      const namePageMaxX = PointUtils.getRealMaxX(pageSize);
-      const namePageMaxY = PointUtils.getRealMaxY(pageSize);
       const serializedName: CollapsedElement[] = [];
       for (const el of nameEls) {
         const data = await serializeElement(el);
         if (data) serializedName.push({ numInPage: el.numInPage, data });
       }
-      const rebuiltName = await rebuildNameElements(serializedName, id, page, nameDx, nameDy, nameEmrDelta, namePageMaxX, namePageMaxY);
-      if (rebuiltName.length > 0) {
-        const insName: any = await PluginFileAPI.insertElements(filePath, page, rebuiltName);
-        if (insName?.success) {
-          for (const el of nameEls) {
-            if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
+      const currentNameBBox = contentBoundingBox(serializedName, pageSize);
+      const follow = currentNameBBox ? nameFollowDelta(currentNameBBox, base?.nameSyncedRect, nameDx, nameDy) : { dx: 0, dy: 0 };
+      if ((follow.dx !== 0 || follow.dy !== 0) && currentNameBBox) {
+        // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
+        // (current) icon points independently, then subtract. See
+        // rebuildNameElements's doc comment / BUGS/B-001.md for why converting
+        // a bare delta directly would be wrong.
+        const nameEmrFrom = PointUtils.androidPoint2Emr({ x: entry.iconRect.left, y: entry.iconRect.top }, pageSize);
+        const nameEmrTo = PointUtils.androidPoint2Emr({ x: iconRect.left, y: iconRect.top }, pageSize);
+        const nameEmrDelta = { x: nameEmrTo.x - nameEmrFrom.x, y: nameEmrTo.y - nameEmrFrom.y };
+        const namePageMaxX = PointUtils.getRealMaxX(pageSize);
+        const namePageMaxY = PointUtils.getRealMaxY(pageSize);
+        const rebuiltName = await rebuildNameElements(serializedName, id, page, follow.dx, follow.dy, nameEmrDelta, namePageMaxX, namePageMaxY);
+        if (rebuiltName.length > 0) {
+          const insName: any = await PluginFileAPI.insertElements(filePath, page, rebuiltName);
+          if (insName?.success) {
+            for (const el of nameEls) {
+              if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
+            }
+            newNameSyncedRect = {
+              left: currentNameBBox.left + follow.dx,
+              top: currentNameBBox.top + follow.dy,
+              right: currentNameBBox.right + follow.dx,
+              bottom: currentNameBBox.bottom + follow.dy,
+            };
+          } else {
+            console.error(`${LOG} live redraw: failed to relocate section name res=${JSON.stringify(insName)}`);
           }
-        } else {
-          console.error(`${LOG} live redraw: failed to relocate section name res=${JSON.stringify(insName)}`);
+          for (const el of rebuiltName) { try { el.recycle?.(); } catch { /* ignore */ } }
         }
-        for (const el of rebuiltName) { try { el.recycle?.(); } catch { /* ignore */ } }
+      } else if (currentNameBBox) {
+        newNameSyncedRect = currentNameBBox; // name moved on its own — resync to where it actually is
       }
     }
 
@@ -194,8 +213,6 @@ async function redrawSectionBox(id: string): Promise<void> {
     if (!bbox) { return; }
     const zone = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);
 
-    const existing = readUserData(iconEl);
-    const base = existing?.kind === 'section' ? existing.section : null;
     const iconR: Rect = {
       left: Math.round(iconRect.left),
       top: Math.round(iconRect.top),
@@ -217,6 +234,7 @@ async function redrawSectionBox(id: string): Promise<void> {
       // Carry preservedNums forward; recapturing would misfile these (already
       // on-page) strokes as pre-existing.
       preservedNums: base?.preservedNums,
+      nameSyncedRect: newNameSyncedRect,
     };
 
     // CRASH-SAFETY: stash `fresh` into the icon's userData (isExpanded stays

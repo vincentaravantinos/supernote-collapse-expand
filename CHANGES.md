@@ -14,6 +14,12 @@
 - Feature: the single-**finger**-tap shortcut (collapse/expand without the
   menu) now also works when tapping a section's **name**, not just its icon.
 
+- Fix: if you moved a section's icon and its name together in one drag while
+  collapsed, expanding it would overshoot the name to the wrong spot. The
+  name now only auto-follows the icon when it hasn't been moved on its own —
+  moving it (alone, or together with the icon, collapsed or expanded) is
+  always respected.
+
 - Safety: collapse / expand / recollapse and the finger-tap shortcut now detect
   landscape mode and show a brief notice instead of running. In landscape the
   Supernote renders a split half-page where the lasso pipeline can hang

@@ -1,7 +1,7 @@
-import { NativeUIUtils, PluginCommAPI, PluginFileAPI, PluginNoteAPI, Point, PointUtils } from 'sn-plugin-lib';
+import { NativeUIUtils, PluginCommAPI, PluginFileAPI, PluginNoteAPI, Point, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_NAME_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
-import { buildElement, serializeElement } from '../utils/elementSerializer';
-import { readUserData } from '../utils/userDataManager';
+import { buildElement, contentBoundingBox, serializeElement } from '../utils/elementSerializer';
+import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapsedElement, CollapseSection } from '../model/types';
 
 // Elements tagged as a given section's name (there is no per-element id — every
@@ -44,6 +44,28 @@ export async function rebuildNameElements(
     if (el) built.push(el);
   }
   return built;
+}
+
+// Sub-pixel tolerance for "did the name move on its own" — matches the
+// existing icon-moved check in iconMoveRedraw.ts.
+const NAME_MOVE_TOLERANCE = 1;
+
+// Decide whether the name should auto-follow the icon's own movement delta
+// (iconDx, iconDy) or be left exactly where it is. The name only follows if
+// it hasn't moved on its own since it was last synced — if the user moved it
+// (alone, or together with the icon, collapsed or expanded), its current
+// position is trusted untouched. See BUGS/B-003.md.
+export function nameFollowDelta(
+  currentNameBBox: Rect,
+  syncedNameRect: Rect | undefined,
+  iconDx: number,
+  iconDy: number,
+): { dx: number; dy: number } {
+  if (!syncedNameRect) return { dx: 0, dy: 0 };
+  const nameMoved =
+    Math.abs(currentNameBBox.left - syncedNameRect.left) > NAME_MOVE_TOLERANCE ||
+    Math.abs(currentNameBBox.top - syncedNameRect.top) > NAME_MOVE_TOLERANCE;
+  return nameMoved ? { dx: 0, dy: 0 } : { dx: iconDx, dy: iconDy };
 }
 
 // Confirm + set/replace a section's name from `nameCandidates` (untagged
@@ -126,6 +148,19 @@ export async function handleNameAction(
       console.error(`${LOG} name deleteElements failed res=${JSON.stringify(delRes)}`);
       alert('Named, but the old strokes could not be removed — please retry.');
     }
+  }
+
+  // Persist the name's position as the baseline for future icon-move
+  // reconciliation (nameFollowDelta) — there's no prior baseline before a
+  // name exists (or a rename resets it).
+  const bbox = contentBoundingBox(serialized, pageSize);
+  if (bbox) {
+    const freshIcon = all.find((el) => {
+      const ud = readUserData(el);
+      return ud?.kind === 'section' && ud.section?.id === target.section.id;
+    }) ?? target.icon;
+    const ok = await writeSection(filePath, page, target.icon, { ...target.section, nameSyncedRect: bbox }, freshIcon);
+    if (!ok) console.error(`${LOG} name: failed to sync nameSyncedRect`);
   }
 
   await PluginCommAPI.setLassoBoxState(2);
