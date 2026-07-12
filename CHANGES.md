@@ -8,6 +8,9 @@
   replaced, if the section already has one). The name stays visible next to
   the icon whether the section is collapsed or expanded.
 
+- Fix: renaming a section right after erasing its old name no longer brings
+  the erased name back.
+
 - Safety: collapse / expand / recollapse and the finger-tap shortcut now detect
   landscape mode and show a brief notice instead of running. In landscape the
   Supernote renders a split half-page where the lasso pipeline can hang

@@ -1,4 +1,4 @@
-import { NativeUIUtils, PluginCommAPI, PluginFileAPI, Point, PointUtils } from 'sn-plugin-lib';
+import { NativeUIUtils, PluginCommAPI, PluginFileAPI, PluginNoteAPI, Point, PointUtils } from 'sn-plugin-lib';
 import { CE_NAME_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
 import { buildElement, serializeElement } from '../utils/elementSerializer';
 import { readUserData } from '../utils/userDataManager';
@@ -60,6 +60,13 @@ export async function handleNameAction(
 ): Promise<boolean> {
   const strokeCandidates = nameCandidates.filter((el) => el.type === ELEMENT_TYPES.STROKE);
   if (strokeCandidates.length === 0) return true;
+
+  // Flush pending interactive edits (a draw or an erase lives only in the
+  // cached copy until saved) before reading state or mutating — otherwise
+  // the later reloadFile() reloads cache from a real file that never
+  // received e.g. an erase, reverting it. Same pattern as collapseAction.ts
+  // / expandSections / recollapseSections. See BUGS/B-002.md.
+  await PluginNoteAPI.saveCurrentNote();
 
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
