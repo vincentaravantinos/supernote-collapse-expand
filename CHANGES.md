@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- Performance: the finger-tap shortcut's **"working" indicator now appears
+  immediately** (was noticeably delayed). The icon lookup it depends on used
+  to be silently rebuilt on your *next* tap after any operation; it's now
+  rebuilt at the end of the operation itself, while its own indicator is
+  already showing, instead of delaying your following tap.
+
+- Fix/Safety: if an operation is interrupted mid-flight by something else
+  taking over the screen (e.g. tapping a native menu that happens to overlap
+  a section's icon), the plugin now fails **silently** instead of showing a
+  confusing alert. If the "working" indicator ever gets stuck as a result, a
+  **Cancel** button appears after it's been up for a few seconds, closing it
+  immediately — no device restart needed.
+
+- Fix: a section's **name** no longer moves unexpectedly. It now only ever
+  moves programmatically when you drag the section's icon while it's
+  expanded (rigidly following); Collapse, Recollapse, and Expand never touch
+  it, no matter what happened to the icon while collapsed.
+
+- Fix: dragging an expanded section's icon to reshape it now works again
+  right after a plugin or app restart — the tracking it depends on is
+  re-established for the current page at startup instead of staying empty
+  until the section is expanded again.
+
+- Feature: a section's icon now shows **"⊖" while expanded** (was always
+  "⊕") — flips back on Recollapse, so the icon itself indicates the
+  section's current state at a glance.
+
+- Feature: a section's name is now automatically **underlined**. The
+  underline redraws whenever the plugin itself rewrites the name (setting or
+  replacing it, or a live redraw when the icon is dragged while expanded);
+  it doesn't track a manual repositioning of the name alone.
+
 - Feature: a collapsed section can now be given a handwritten **name**. Write
   the name on the page, lasso it together with the section's "+" icon, and
   press the plugin button — you'll be asked to confirm before it's set (or

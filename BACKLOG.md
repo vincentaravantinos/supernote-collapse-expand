@@ -11,5 +11,5 @@ an item once the user confirms it's done.
 ## Open bugs
 | ID | Symptom |
 |---|---|
-| B-004 (parked) | Naming a section then Expanding (no icon move) makes the name jump for no reason; a subsequent Recollapse then leaves the frame and some strokes behind. Not reliably reproducible. See `BUGS/B-004.md`. |
+| B-004 | Recollapse could leave the frame and/or some content strokes behind. Fix implemented (`r101-preservednums-fix-v2`), still under active testing — not yet confirmed. See `BUGS/B-004.md`. |
 

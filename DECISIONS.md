@@ -17,7 +17,82 @@ Each entry should capture:
 
 ---
 
-## 2026-07-12 — No plugin-drawn visual marker for a section's name
+## 2026-07-14 — User-triggered Cancel instead of a blind watchdog for a stuck "working" card (B-008)
+
+**Decision.** If a tap/operation coincides with the foreground app switching
+away mid-flight (e.g. a native menu overlapping a section's icon), the
+plugin's "working" card can be left stuck as a device-wide input-blocking
+overlay, recoverable previously only via `adb force-stop`. Fixed with two
+parts: (1) mutation failures specifically carrying SDK error 102 ("not
+allowed to use this API" — the note/app isn't in a stable/foreground state)
+now fail silently instead of alerting, since the user has no expectation of
+success in that case; (2) a Cancel button appears on the working card after
+it's been up for 7s, force-closing the view and releasing the busy guard
+immediately on tap.
+
+**Alternatives considered.**
+- *A blind `setTimeout` watchdog* (matching the existing 60s one in
+  `handleMainAction`, extended to also `closePluginView()`). Rejected in
+  favor of the Cancel button: a watchdog assumes the JS runtime keeps
+  ticking while backgrounded, which the observed hang cast doubt on (a
+  `setLassoBoxState`/`reloadFile` call went silent for 29+ seconds with no
+  further logs) — whereas the trace showed the runtime *does* still respond
+  to fresh touch events even while an old operation sits stuck, so a
+  user-triggered button is both faster (immediate, not a guessed delay) and
+  more likely to actually fire.
+- *Route the deletes through the lasso pipeline so device Undo could recover
+  a mid-flight interruption.* Rejected as a much bigger change (touches how
+  every operation deletes elements) for a narrow case, when the actual
+  interruption risk (per crash-safety ordering already in place everywhere)
+  is bounded to "duplicated content," never data loss.
+
+**Constraint.** No SDK signal exists for "is native UI currently consuming
+this touch" or "did the foreground app just change" — confirmed absent from
+the official docs and `SDK_DOC.md`'s existing notes on the motion listener.
+
+## 2026-07-14 — Name auto-follow: removed the heuristic instead of patching it again (B-006)
+
+**Decision.** Deleted `nameSyncedRect`/`nameFollowDelta` (added for B-003)
+entirely. A section's name now only ever moves programmatically on a live
+expanded icon-drag, unconditionally following the icon's exact delta.
+Collapse, Recollapse, and Expand never touch it under any circumstance —
+even a bare icon move while collapsed no longer drags the name along.
+
+**Alternatives considered.**
+- *Patch the heuristic again* (find and fix whatever made the "did the name
+  move on its own" check misfire for B-006's sequence). Rejected at the
+  user's explicit direction: the same class of heuristic had already
+  produced two separate unexpected-movement reports (B-003, then B-006)
+  from two different code paths, and a third patch would still leave the
+  underlying fragility in place.
+- *Keep following on both collapsed and expanded moves, unconditionally* (no
+  moved-detection at all). Rejected as strictly harder to implement (still
+  needs collapsed-state tracking) for no behavioral benefit over just never
+  auto-following while collapsed.
+
+**Constraint.** None — a deliberate simplicity-over-cleverness tradeoff.
+Known accepted gap: dragging the icon and the name together in one gesture
+while expanded still moves the name twice (once by the drag, once by the
+live redraw) — the original B-003 shape, but only for that one specific
+gesture; not guarded against.
+
+---
+
+## 2026-07-14 — Reversal: plugin-drawn underline reinstated
+
+**Decision.** The 2026-07-12 decision below (no plugin-drawn name marker) is
+reversed at the user's request, on end-user feedback — overrides the
+"solves a problem the user doesn't have" reasoning. Re-implementing an
+automatic underline under a section's name. The bug that coincided with the
+original attempt (icon becoming unlassoable) was never root-caused; this
+time, if it recurs, it goes through Bug investigation's diagnostics-first
+process rather than being abandoned on sight.
+
+**Constraint.** None — same as before, a scope choice, not an SDK limit.
+
+---
+
+## 2026-07-12 — No plugin-drawn visual marker for a section's name (superseded 2026-07-14)
 
 **Decision.** The plugin does not draw anything to distinguish a section's
 name from ordinary nearby handwriting. If a user wants their name

@@ -26,7 +26,10 @@ button.
 - The lassoed content disappears from the page.
 - A "+" icon appears just above-left of where the lasso was (offset by half
   an icon size, clamped at the page edge), so it stays clear of the restored
-  content when the section is later expanded and remains easy to select.
+  content when the section is later expanded and remains easy to select. The
+  icon's glyph reflects the section's current state: "⊕" while collapsed,
+  "⊖" while expanded — it flips on every Expand/Recollapse (including a live
+  expanded-drag redraw, which keeps it "⊖").
 - The icon carries enough state to reproduce the original content
   (positions, ink properties, layer, …) on a later expand.
 - Pictures and titles in the lasso are left in place (not collapsable).
@@ -56,18 +59,29 @@ plugin button.
   icon, the target is ambiguous: no naming/confirmation is offered, and the
   press is treated as a normal multi-section Expand instead (ink left in
   place).
-- The name strokes move together with the icon whenever the icon is
-  repositioned — rigidly, by the icon's own movement delta. This is unlike
-  restored *content*, which stays physically fixed while expanded (only the
-  mask/outline stretch to reach a moved icon): the name has no anchored
-  position of its own to stay fixed at, so it always follows the icon
-  exactly, the same way the icon follows the user's drag.
-  - **While expanded**, it's translated live on each drag-release.
-  - **While collapsed**, there is no live tracking (the SDK gives no move
-    event for a collapsed icon) — the name catches up at the section's
-    **next Expand**, translated by the delta the icon moved since the
-    section was last saved. Until then, the name stroke stays at its old
-    position, visually detached from the icon.
+- The name never moves programmatically except when the user drags the
+  icon **while the section is expanded** — in that case it's translated
+  live, rigidly, by the icon's exact drag delta on each drag-release
+  (matching how restored *content* keeps its own position while the
+  mask/outline stretch to reach the moved icon — the name has no anchored
+  position of its own, so it follows the icon exactly instead).
+  - **While collapsed**, moving the icon, the name, or both (in one drag or
+    separately) never auto-relocates the name — Collapse, Recollapse, and
+    Expand all leave it exactly where it is. The user repositions the name
+    themselves if they want it to stay near a moved icon.
+- A thin **underline** is drawn automatically just beneath the name's
+  bounding box, spanning its width. It is redrawn (deleted + reinserted)
+  exactly when the name itself is (re)written by the plugin: on a confirmed
+  Name/Rename, and on the live redraw that translates the name when the
+  icon is dragged while expanded. It is **not** kept in sync with a manual
+  drag of the name alone (same limitation as the name's own position while
+  collapsed — the plugin has no move event for a freeform drag) — if the
+  user repositions the name by hand without the plugin's involvement, the
+  underline stays at its old position until the next time the plugin
+  rewrites the name. Erasing the underline with the normal eraser removes
+  it like any other stroke; it is redrawn the next time the plugin rewrites
+  the name (rename, or a live redraw), same as a stale one would be, but
+  stays gone until then.
 
 ### Expand
 **Trigger**: user lassoes the "+" icon of one or more collapsed sections
@@ -138,7 +152,17 @@ valid next operation on any section without the plugin losing track of:
 - which icons are sections,
 - which sections are currently collapsed vs expanded,
 - the original content of a collapsed section,
-- the strokes that should be preserved across the next recollapse.
+- the strokes that should be preserved across the next recollapse,
+- whether an icon being dragged belongs to a currently-expanded section
+  (needed to trigger the live redraw described under Recollapse).
+
+The last point applies even though the live redraw is a convenience, not a
+correctness mechanism (a missed live redraw doesn't lose or corrupt any
+content — the section stays correctly recoverable via a real
+Recollapse/Expand). It's listed here because dragging the icon of an
+expanded section to reshape it is itself a valid operation the user may
+reasonably perform right after power-on, and it must not silently do
+nothing.
 
 In practice this means **every piece of state the plugin relies on must
 live on disk** in element `userData` (icon, parts, masks) or in the
@@ -160,7 +184,8 @@ returns control to the user.
 | `CE_PART:<id>` | A piece of the section's original content currently shown on the page (one per restored stroke / text / link / geometry). | Inserted on expand, deleted on recollapse. |
 | `CE_MASK:<id>` | A polygon ring used to fake a filled (white) rectangle that hides content behind the expanded section. | Inserted on expand, deleted on recollapse. |
 | `CE_FRAME:<id>` | The thin rectangle outline marking the section boundary. Tagged separately from the fill (kept distinct for clarity / future outline-only operations). | Inserted on expand, rebuilt on a live icon-drag redraw, deleted on recollapse. |
-| `CE_NAME:<sectionId>` | One handwritten stroke of a section's optional name. Stays exactly where the user wrote it — never repositioned on creation. Always visible, independent of collapsed/expanded state — unlike `CE_PART`, never hidden. | Inserted when the user confirms a Name/Rename. Deleted and replaced wholesale on a confirmed rename. Translated whenever the icon moves (collapsed or expanded). Deleted only if the section is destroyed. |
+| `CE_NAME:<sectionId>` | One handwritten stroke of a section's optional name. Stays exactly where the user wrote it — never repositioned on creation. Always visible, independent of collapsed/expanded state — unlike `CE_PART`, never hidden. | Inserted when the user confirms a Name/Rename. Deleted and replaced wholesale on a confirmed rename. Translated only when the icon is dragged while the section is expanded (see Recollapse). Deleted only if the section is destroyed. |
+| `CE_UNDERLINE:<sectionId>` | A single geometry line spanning the name's current bounding box, drawn just beneath it. Not treated as part of the name's own content (a rename replaces it, doesn't fold it in). | Inserted/redrawn (delete + reinsert) whenever the plugin (re)writes the name: Name/Rename confirmation, and the live redraw that translates the name on an expanded icon-drag. Deleted only if the section is destroyed. |
 | (null) | Not ours — leave alone. The plugin must not claim or modify these. | — |
 
 ### `CollapseSection` (stored as JSON inside `CE_PLUG:`)
@@ -234,6 +259,9 @@ there if rendering changes.
   operation: never absorbed on recollapse, never swept up as "other
   content" by an unrelated Collapse/Expand, never hidden/restored by
   Expand. They only move when their icon moves.
+- `CE_UNDERLINE` is subject to the same exclusions as `CE_NAME` (never
+  absorbed, swept up, or hidden/restored) — it's the name's visual
+  companion, not section content.
 - Other plugins' `userData` is invisible to this plugin (SDK isolation),
   so we never need to defend against it.
 
