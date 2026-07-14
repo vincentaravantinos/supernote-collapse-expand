@@ -89,11 +89,4 @@ export interface CollapseSection {
   // not listed) from pre-existing content, absorbing only the new. Set on
   // expand, cleared on recollapse.
   preservedNums?: number[];
-  // The section's name's bounding box as of the last time it was written.
-  // Compared against the name's *current* bbox at each reconciliation
-  // checkpoint (next Expand for a collapsed-icon move; each live redraw for
-  // an expanded drag) to decide whether the name moved on its own since —
-  // if so, it's left untouched instead of being auto-translated to follow
-  // the icon. Undefined if the section has never had a name.
-  nameSyncedRect?: Rect;
 }

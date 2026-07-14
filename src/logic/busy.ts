@@ -1,3 +1,4 @@
+import { PluginManager } from 'sn-plugin-lib';
 import { LOG } from '../constants';
 
 // Single-flight guard shared by the button handler (collapse / expand /
@@ -29,4 +30,19 @@ export function releaseBusy(): void {
 
 export function isBusy(): boolean {
   return busySince !== null;
+}
+
+// User-triggered escape hatch for a stuck "working" card (see BUGS/B-008.md —
+// an operation whose foreground app switched away mid-flight can leave the
+// view stuck with nothing left running to close it). Best-effort force-close
+// + unconditional release; does NOT (and can't) stop whatever's still stuck
+// mid-await — deliberately out of scope, see DIAGNOSTIC.md.
+export async function cancelStuckOperation(): Promise<void> {
+  try {
+    const res: any = await PluginManager.closePluginView();
+    if (!res?.success) console.error(`${LOG} cancel: closePluginView res=${JSON.stringify(res)}`);
+  } catch (e) {
+    console.error(`${LOG} cancel: closePluginView failed: ${e}`);
+  }
+  releaseBusy();
 }

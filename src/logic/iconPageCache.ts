@@ -17,18 +17,14 @@ export interface PageIconEntry {
 }
 
 // No page-change event exists, so this cache is keyed by page number and
-// rebuilt whenever a tap arrives for a different page (or after our own
-// mutations invalidate it via invalidateIconCache).
+// rebuilt whenever a tap arrives for a different page, or eagerly right
+// after our own mutations (see buildIconCache's call sites) so the cost is
+// paid while a working bubble is already up, not silently on the next tap.
 let cachedPage: number | null = null;
 let cachedIcons: PageIconEntry[] = [];
 
 export function getCachedIcons(page: number): PageIconEntry[] | null {
   return cachedPage === page ? cachedIcons : null;
-}
-
-export function invalidateIconCache(): void {
-  cachedPage = null;
-  cachedIcons = [];
 }
 
 export async function buildIconCache(filePath: string, page: number): Promise<PageIconEntry[]> {

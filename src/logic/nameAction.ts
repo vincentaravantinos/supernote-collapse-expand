@@ -1,7 +1,7 @@
-import { NativeUIUtils, PluginCommAPI, PluginFileAPI, PluginNoteAPI, Point, PointUtils, Rect } from 'sn-plugin-lib';
-import { CE_NAME_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
+import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, NativeUIUtils, Point, PointUtils, Rect } from 'sn-plugin-lib';
+import { CE_NAME_PREFIX, CE_UNDERLINE_PREFIX, dlog, ELEMENT_TYPES, LOG, UNDERLINE_GAP } from '../constants';
 import { buildElement, contentBoundingBox, serializeElement } from '../utils/elementSerializer';
-import { readUserData, writeSection } from '../utils/userDataManager';
+import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
 import { CollapsedElement, CollapseSection } from '../model/types';
 
 // Elements tagged as a given section's name (there is no per-element id — every
@@ -12,6 +12,42 @@ export function findNameElements(all: any[], sectionId: string): any[] {
     const ud = readUserData(el);
     return ud?.kind === 'name' && ud.id === sectionId;
   });
+}
+
+// The underline drawn just beneath a name's bbox (see BUGS/B-003.md's
+// superseding note and DECISIONS.md's 2026-07-14 reversal).
+export function findUnderlineElements(all: any[], sectionId: string): any[] {
+  return all.filter((el) => {
+    const ud = readUserData(el);
+    return ud?.kind === 'underline' && ud.id === sectionId;
+  });
+}
+
+// A single straight-line GEO element spanning nameBBox's width, offset down
+// by UNDERLINE_GAP. Points are raw Android pixel coordinates — no EMR
+// conversion needed for a freshly-created (not stroke-derived) GEO element,
+// same convention as maskHelpers.ts's createBorderRectangle.
+export async function createUnderlineElement(nameBBox: Rect, page: number, sectionId: string): Promise<any | null> {
+  const res: any = await PluginCommAPI.createElement(ELEMENT_TYPES.GEO);
+  if (!res?.success || !res.result) {
+    console.error(`${LOG} createUnderlineElement failed res=${JSON.stringify(res)}`);
+    return null;
+  }
+  const el: any = res.result;
+  const y = nameBBox.bottom + UNDERLINE_GAP;
+  el.geometry = {
+    type: 'straightLine',
+    points: [
+      { x: nameBBox.left, y },
+      { x: nameBBox.right, y },
+    ],
+    penColor: 0x00,
+    penType: 10, // solid; penType 0 is rejected by the API
+    penWidth: 400, // matches the frame outline's ~4px line
+  };
+  el.pageNum = page;
+  el.userData = CE_UNDERLINE_PREFIX + sectionId;
+  return el;
 }
 
 // Rebuild `serialized` (already-serialized name strokes) translated by
@@ -44,28 +80,6 @@ export async function rebuildNameElements(
     if (el) built.push(el);
   }
   return built;
-}
-
-// Sub-pixel tolerance for "did the name move on its own" — matches the
-// existing icon-moved check in iconMoveRedraw.ts.
-const NAME_MOVE_TOLERANCE = 1;
-
-// Decide whether the name should auto-follow the icon's own movement delta
-// (iconDx, iconDy) or be left exactly where it is. The name only follows if
-// it hasn't moved on its own since it was last synced — if the user moved it
-// (alone, or together with the icon, collapsed or expanded), its current
-// position is trusted untouched. See BUGS/B-003.md.
-export function nameFollowDelta(
-  currentNameBBox: Rect,
-  syncedNameRect: Rect | undefined,
-  iconDx: number,
-  iconDy: number,
-): { dx: number; dy: number } {
-  if (!syncedNameRect) return { dx: 0, dy: 0 };
-  const nameMoved =
-    Math.abs(currentNameBBox.left - syncedNameRect.left) > NAME_MOVE_TOLERANCE ||
-    Math.abs(currentNameBBox.top - syncedNameRect.top) > NAME_MOVE_TOLERANCE;
-  return nameMoved ? { dx: 0, dy: 0 } : { dx: iconDx, dy: iconDy };
 }
 
 // Confirm + set/replace a section's name from `nameCandidates` (untagged
@@ -141,43 +155,48 @@ export async function handleNameAction(
     return false;
   }
 
+  // Underline spans the new name's bbox — inserted in the same batch as the
+  // name itself (see BUGS/B-003.md's superseding note / DECISIONS.md 2026-07-14).
+  const nameBBox = contentBoundingBox(serialized, pageSize);
+  const underlineEl = nameBBox ? await createUnderlineElement(nameBBox, page, target.section.id) : null;
+  const insertBatch = underlineEl ? [...newNameEls, underlineEl] : newNameEls;
+
   // CRASH-SAFETY: insert the new name before deleting the old candidate strokes
-  // and any previous name — until the insert lands, both old copies are still
-  // present on the page (recoverable), never neither.
-  const insertRes: any = await PluginFileAPI.insertElements(filePath, page, newNameEls);
+  // and any previous name/underline — until the insert lands, both old copies
+  // are still present on the page (recoverable), never neither.
+  const insertRes: any = await PluginFileAPI.insertElements(filePath, page, insertBatch);
   if (!insertRes?.success) {
     console.error(`${LOG} name insertElements failed res=${JSON.stringify(insertRes)}`);
-    alert("Couldn't set the section name — please try again.");
-    for (const el of newNameEls) { try { el.recycle?.(); } catch { /* ignore */ } }
+    if (!isUnstableNoteError(insertRes)) alert("Couldn't set the section name — please try again.");
+    for (const el of insertBatch) { try { el.recycle?.(); } catch { /* ignore */ } }
     return false;
   }
 
+  const existingUnderlineEls = findUnderlineElements(all, target.section.id);
   const numsToDelete = [
     ...strokeCandidates.map((el) => el.numInPage),
     ...existingNameEls.map((el) => el.numInPage),
+    ...existingUnderlineEls.map((el) => el.numInPage),
   ].filter((n): n is number => typeof n === 'number');
   if (numsToDelete.length > 0) {
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, numsToDelete);
     if (!delRes?.success) {
       console.error(`${LOG} name deleteElements failed res=${JSON.stringify(delRes)}`);
-      alert('Named, but the old strokes could not be removed — please retry.');
+      if (!isUnstableNoteError(delRes)) alert('Named, but the old strokes could not be removed — please retry.');
     }
   }
 
-  // Persist the name's position as the baseline for future icon-move
-  // reconciliation (nameFollowDelta) — there's no prior baseline before a
-  // name exists (or a rename resets it).
-  const bbox = contentBoundingBox(serialized, pageSize);
-  if (bbox) {
-    const freshIcon = all.find((el) => {
-      const ud = readUserData(el);
-      return ud?.kind === 'section' && ud.section?.id === target.section.id;
-    }) ?? target.icon;
-    const ok = await writeSection(filePath, page, target.icon, { ...target.section, nameSyncedRect: bbox }, freshIcon);
-    if (!ok) console.error(`${LOG} name: failed to sync nameSyncedRect`);
+  const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
+  if (!lassoRes?.success) {
+    // Error 904 here is expected — see collapseAction.ts's identical comment
+    // / BUGS/B-009.md.
+    if (lassoRes?.error?.code === 904) {
+      dlog(`${LOG} name setLassoBoxState res=${JSON.stringify(lassoRes)} (expected)`);
+    } else {
+      console.error(`${LOG} name setLassoBoxState res=${JSON.stringify(lassoRes)}`);
+    }
   }
-
-  await PluginCommAPI.setLassoBoxState(2);
-  await PluginCommAPI.reloadFile();
+  const reloadRes: any = await PluginCommAPI.reloadFile();
+  if (!reloadRes?.success) console.error(`${LOG} name reloadFile res=${JSON.stringify(reloadRes)}`);
   return false;
 }

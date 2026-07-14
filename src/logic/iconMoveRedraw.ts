@@ -6,9 +6,10 @@ import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 import { expandedCount, expandedEntries, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
 import { expandOne } from './expandAction';
-import { findNameElements, nameFollowDelta, rebuildNameElements } from './nameAction';
+import { createUnderlineElement, findNameElements, findUnderlineElements, rebuildNameElements } from './nameAction';
 import { acquireBusy, releaseBusy } from './busy';
-import { invalidateIconCache } from './iconPageCache';
+import { buildIconCache } from './iconPageCache';
+import { notifyShown } from './workingViewStore';
 
 // Section whose icon the current gesture grabbed (set on DOWN, consumed on UP),
 // and the DOWN point (to tell a tap/select from a drag on UP).
@@ -127,7 +128,8 @@ async function redrawSectionBox(id: string): Promise<void> {
   }
 
   // Confirmed move — NOW dismiss the selection (commit) before mutating.
-  await PluginCommAPI.setLassoBoxState(2);
+  const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
+  if (!lassoRes?.success) console.error(`${LOG} live redraw setLassoBoxState res=${JSON.stringify(lassoRes)}`);
 
   // Show the busy overlay for the rebuild (same heavy path as a normal expand).
   // Only past the moved check, so a tap/select never flashes it; closed in the
@@ -136,6 +138,7 @@ async function redrawSectionBox(id: string): Promise<void> {
   try {
     await PluginManager.showPluginView();
     viewShown = true;
+    notifyShown();
   } catch (e) {
     dlog(`${LOG} live redraw showPluginView failed: ${e}`);
   }
@@ -158,14 +161,8 @@ async function redrawSectionBox(id: string): Promise<void> {
     const existing = readUserData(iconEl);
     const base = existing?.kind === 'section' ? existing.section : null;
 
-    // The name (if any) has no anchored position of its own to stay fixed at
-    // (unlike content, which is rebuilt at its current position above, with
-    // the mask/frame stretching to reach the icon instead) — it must rigidly
-    // follow the icon's own movement since the last redraw, UNLESS the user
-    // moved the name on its own (alone, or together with the icon), in which
-    // case its current position is trusted untouched. See nameFollowDelta /
-    // BUGS/B-003.md.
-    let newNameSyncedRect: Rect | undefined = base?.nameSyncedRect;
+    // The name (if any) rigidly follows the icon's own drag delta — the only
+    // way it ever moves programmatically. See BUGS/B-006.md.
     if (nameEls.length > 0) {
       const nameDx = iconRect.left - entry.iconRect.left;
       const nameDy = iconRect.top - entry.iconRect.top;
@@ -174,38 +171,41 @@ async function redrawSectionBox(id: string): Promise<void> {
         const data = await serializeElement(el);
         if (data) serializedName.push({ numInPage: el.numInPage, data });
       }
-      const currentNameBBox = contentBoundingBox(serializedName, pageSize);
-      const follow = currentNameBBox ? nameFollowDelta(currentNameBBox, base?.nameSyncedRect, nameDx, nameDy) : { dx: 0, dy: 0 };
-      if ((follow.dx !== 0 || follow.dy !== 0) && currentNameBBox) {
-        // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
-        // (current) icon points independently, then subtract. See
-        // rebuildNameElements's doc comment / BUGS/B-001.md for why converting
-        // a bare delta directly would be wrong.
-        const nameEmrFrom = PointUtils.androidPoint2Emr({ x: entry.iconRect.left, y: entry.iconRect.top }, pageSize);
-        const nameEmrTo = PointUtils.androidPoint2Emr({ x: iconRect.left, y: iconRect.top }, pageSize);
-        const nameEmrDelta = { x: nameEmrTo.x - nameEmrFrom.x, y: nameEmrTo.y - nameEmrFrom.y };
-        const namePageMaxX = PointUtils.getRealMaxX(pageSize);
-        const namePageMaxY = PointUtils.getRealMaxY(pageSize);
-        const rebuiltName = await rebuildNameElements(serializedName, id, page, follow.dx, follow.dy, nameEmrDelta, namePageMaxX, namePageMaxY);
-        if (rebuiltName.length > 0) {
-          const insName: any = await PluginFileAPI.insertElements(filePath, page, rebuiltName);
-          if (insName?.success) {
-            for (const el of nameEls) {
-              if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
-            }
-            newNameSyncedRect = {
-              left: currentNameBBox.left + follow.dx,
-              top: currentNameBBox.top + follow.dy,
-              right: currentNameBBox.right + follow.dx,
-              bottom: currentNameBBox.bottom + follow.dy,
-            };
-          } else {
-            console.error(`${LOG} live redraw: failed to relocate section name res=${JSON.stringify(insName)}`);
+      // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
+      // (current) icon points independently, then subtract. See
+      // rebuildNameElements's doc comment / BUGS/B-001.md for why converting
+      // a bare delta directly would be wrong.
+      const nameEmrFrom = PointUtils.androidPoint2Emr({ x: entry.iconRect.left, y: entry.iconRect.top }, pageSize);
+      const nameEmrTo = PointUtils.androidPoint2Emr({ x: iconRect.left, y: iconRect.top }, pageSize);
+      const nameEmrDelta = { x: nameEmrTo.x - nameEmrFrom.x, y: nameEmrTo.y - nameEmrFrom.y };
+      const namePageMaxX = PointUtils.getRealMaxX(pageSize);
+      const namePageMaxY = PointUtils.getRealMaxY(pageSize);
+      const rebuiltName = await rebuildNameElements(serializedName, id, page, nameDx, nameDy, nameEmrDelta, namePageMaxX, namePageMaxY);
+      if (rebuiltName.length > 0) {
+        // Underline follows the same shift — inserted in the same batch as
+        // the name. See BUGS/B-003.md's superseding note / DECISIONS.md 2026-07-14.
+        const oldNameBBox = contentBoundingBox(serializedName, pageSize);
+        const underlineEl = oldNameBBox
+          ? await createUnderlineElement({
+              left: oldNameBBox.left + nameDx,
+              top: oldNameBBox.top + nameDy,
+              right: oldNameBBox.right + nameDx,
+              bottom: oldNameBBox.bottom + nameDy,
+            }, page, id)
+          : null;
+        const nameInsertBatch = underlineEl ? [...rebuiltName, underlineEl] : rebuiltName;
+        const insName: any = await PluginFileAPI.insertElements(filePath, page, nameInsertBatch);
+        if (insName?.success) {
+          for (const el of nameEls) {
+            if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
           }
-          for (const el of rebuiltName) { try { el.recycle?.(); } catch { /* ignore */ } }
+          for (const el of findUnderlineElements(all, id)) {
+            if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
+          }
+        } else {
+          console.error(`${LOG} live redraw: failed to relocate section name res=${JSON.stringify(insName)}`);
         }
-      } else if (currentNameBBox) {
-        newNameSyncedRect = currentNameBBox; // name moved on its own — resync to where it actually is
+        for (const el of nameInsertBatch) { try { el.recycle?.(); } catch { /* ignore */ } }
       }
     }
 
@@ -234,14 +234,13 @@ async function redrawSectionBox(id: string): Promise<void> {
       // Carry preservedNums forward; recapturing would misfile these (already
       // on-page) strokes as pre-existing.
       preservedNums: base?.preservedNums,
-      nameSyncedRect: newNameSyncedRect,
     };
 
     // CRASH-SAFETY: stash `fresh` into the icon's userData (isExpanded stays
     // true) BEFORE deleting the old parts/masks/frame. While expanded, those
     // on-page elements were the only durable copy; this snapshot means a crash
     // between the stash and the rebuild below still leaves the content durable.
-    const stashOk = await writeSection(filePath, page, iconEl, temp, iconEl);
+    const { ok: stashOk } = await writeSection(filePath, page, iconEl, temp, iconEl);
     if (!stashOk) {
       console.error(`${LOG} live redraw failed to stash content before delete — aborting, parts left in place`);
       return;
@@ -256,12 +255,20 @@ async function redrawSectionBox(id: string): Promise<void> {
     }
 
     await expandOne(temp, iconEl, filePath, page); // capturePreserved defaults false
-    await PluginCommAPI.reloadFile();
-    invalidateIconCache(); // the icon moved — the tap-hit cache for this page is stale
+    const reloadRes: any = await PluginCommAPI.reloadFile();
+    if (!reloadRes?.success) console.error(`${LOG} live redraw reloadFile res=${JSON.stringify(reloadRes)}`);
+    // Rebuild (not just invalidate) the icon cache eagerly, while the
+    // working bubble is already up — moves the cost here instead of paying
+    // it silently on the user's next tap.
+    await buildIconCache(filePath, page);
     dlog(`${LOG} live full redraw section=${id} icon=[${iconR.left},${iconR.top}] zone=[${Math.round(zone.left)},${Math.round(zone.top)},${Math.round(zone.right)},${Math.round(zone.bottom)}]`);
   } finally {
     if (viewShown) {
-      try { await PluginManager.closePluginView(); } catch (e) { dlog(`${LOG} live redraw closePluginView failed: ${e}`); }
+      try {
+        // DIAGNOSTIC (B-008): see index.ts's closePluginView comment.
+        const closeRes: any = await PluginManager.closePluginView();
+        if (!closeRes?.success) console.error(`${LOG} live redraw closePluginView res=${JSON.stringify(closeRes)}`);
+      } catch (e) { dlog(`${LOG} live redraw closePluginView failed: ${e}`); }
     }
   }
 }

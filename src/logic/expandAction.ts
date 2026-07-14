@@ -1,12 +1,35 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
-import { CE_PART_PREFIX, dlog, LOG } from '../constants';
-import { buildElement, contentBoundingBox, serializeElement } from '../utils/elementSerializer';
-import { getIconByNum, iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
+import { CE_PART_PREFIX, dlog, ICON_GLYPH_EXPANDED, LOG } from '../constants';
+import { buildElement, contentBoundingBox } from '../utils/elementSerializer';
+import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { forgetSection, noteSectionExpanded } from './expandedRegistry';
-import { findNameElements, nameFollowDelta, rebuildNameElements } from './nameAction';
-import { CollapsedElement, CollapseSection } from '../model/types';
+import { buildIconCache } from './iconPageCache';
+import { CollapseSection } from '../model/types';
+
+// One-time, best-effort warm-up so live icon-drag redraw survives a plugin
+// restart: expandedRegistry is JS-memory-only, so a restart clears it and
+// dragging an already-expanded section's icon would otherwise do nothing
+// until the section goes through a real Expand/Recollapse. Reuses the tap
+// cache's page scan (already extracts every icon + rect) instead of a
+// second independent getElements pass. Only covers the page open at call
+// time — a section expanded on a different page stays dormant until
+// visited, same limitation the tap cache already has.
+export async function rehydrateExpandedRegistry(filePath: string, page: number): Promise<void> {
+  try {
+    const icons = await buildIconCache(filePath, page);
+    for (const icon of icons) {
+      if (!icon.section.isExpanded) continue;
+      // contentBBox has no functional reader (redrawSectionBox always
+      // recomputes it fresh from the live CE_PART elements) — the icon's own
+      // rect is a cheap stand-in, overwritten on the next real redraw/expand.
+      noteSectionExpanded(icon.id, icon.rect, icon.rect, icon.iconEl?.numInPage);
+    }
+  } catch (e) {
+    dlog(`${LOG} rehydrateExpandedRegistry failed: ${e}`);
+  }
+}
 
 // Expand ONE section: insert its mask + restored content (stroke links via
 // rebuildStrokeLinks) and flip the icon's userData to isExpanded. Does NOT
@@ -27,12 +50,15 @@ export async function expandOne(
   // every untagged element on the page now (pre-existing content). On a live
   // redraw we carry the existing preservedNums forward instead of re-capturing
   // (which would misfile the new strokes as pre-existing).
-  // Fast path: fetch only the icon (one element) + the page's num list, instead
-  // of marshalling every element (the full getElements is ~7x more expensive on
-  // a dense page). preservedNums needs only the num SET — the untagged filter is
-  // unnecessary because recollapse's own untagged-check excludes our elements, so
-  // the raw num list is equivalent. Fall back to a full getElements only if the
-  // icon num is stale/missing.
+  // Fast path: fetch only the icon (one element) instead of marshalling every
+  // element (the full getElements is ~7x more expensive on a dense page). When
+  // capturePreserved is also needed, this still costs a real getElements — it
+  // MUST be filtered to untagged-only, same as the fallback path below, not a
+  // raw getElementNumList: a later Recollapse's own fast path (fastSectionElements)
+  // trusts preservedNums for exact-number exclusion with no supplementary tag
+  // check, so an unfiltered list can wrongly exclude this section's own
+  // mask/frame/part/name elements from ever being found. See BUGS/B-004.md.
+  // Fall back to a full getElements only if the icon num is stale/missing.
   const tGE = Date.now();
   let iconRectNow: any;
   let freshIconEl: any;
@@ -42,8 +68,9 @@ export async function expandOne(
     freshIconEl = fastIcon;
     iconRectNow = fastIcon.textBox?.textRect ?? section.iconRect;
     if (capturePreserved) {
-      const nlRes: any = await PluginFileAPI.getElementNumList(filePath, page);
-      preservedNums = nlRes?.success && Array.isArray(nlRes.result) ? nlRes.result : [];
+      const preservedRes: any = await PluginFileAPI.getElements(page, filePath);
+      const preservedAll: any[] = preservedRes?.success && Array.isArray(preservedRes.result) ? preservedRes.result : [];
+      preservedNums = preservedAll.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number').map((el) => el.numInPage);
     } else {
       preservedNums = section.preservedNums;
     }
@@ -83,52 +110,9 @@ export async function expandOne(
   const pageMaxY = PointUtils.getRealMaxY(pageSize);
   dlog(`${LOG} PERF expand prep(iconrect+pagesize)=${Date.now() - tPrep}ms`);
 
-  // Reconcile the section's name (if any) with the icon's movement since it
-  // was last saved — the only point a *collapsed*-icon move can be
-  // reconciled (the SDK gives no move event for a collapsed drag; a live
-  // drag while expanded is instead handled by iconMoveRedraw.ts). No-op in
-  // the common case where the icon hasn't moved. Reuses emrDelta/pageMaxX/
-  // pageMaxY already computed above for content — same translation applies.
-  // Only actually moves the name if it hasn't already moved on its own
-  // (e.g. dragged together with the icon) — see nameFollowDelta / BUGS/B-003.md.
-  let newNameSyncedRect: Rect | undefined = section.nameSyncedRect;
-  if (dx !== 0 || dy !== 0) {
-    const tName = Date.now();
-    const nameAllRes: any = await PluginFileAPI.getElements(page, filePath);
-    const nameAll: any[] = nameAllRes?.success && Array.isArray(nameAllRes.result) ? nameAllRes.result : [];
-    const nameEls = findNameElements(nameAll, section.id);
-    if (nameEls.length > 0) {
-      const serializedName: CollapsedElement[] = [];
-      for (const el of nameEls) {
-        const data = await serializeElement(el);
-        if (data) serializedName.push({ numInPage: el.numInPage, data });
-      }
-      const currentNameBBox = contentBoundingBox(serializedName, pageSize);
-      const follow = currentNameBBox ? nameFollowDelta(currentNameBBox, section.nameSyncedRect, dx, dy) : { dx: 0, dy: 0 };
-      if ((follow.dx !== 0 || follow.dy !== 0) && currentNameBBox) {
-        const rebuiltName = await rebuildNameElements(serializedName, section.id, page, follow.dx, follow.dy, emrDelta, pageMaxX, pageMaxY);
-        if (rebuiltName.length > 0) {
-          const insName: any = await PluginFileAPI.insertElements(filePath, page, rebuiltName);
-          if (insName?.success) {
-            const oldNums = nameEls.map((el) => el.numInPage).filter((n: any): n is number => typeof n === 'number');
-            if (oldNums.length > 0) await PluginFileAPI.deleteElements(filePath, page, oldNums);
-            newNameSyncedRect = {
-              left: currentNameBBox.left + follow.dx,
-              top: currentNameBBox.top + follow.dy,
-              right: currentNameBBox.right + follow.dx,
-              bottom: currentNameBBox.bottom + follow.dy,
-            };
-          } else {
-            console.error(`${LOG} expand: failed to relocate section name res=${JSON.stringify(insName)}`);
-          }
-          for (const el of rebuiltName) { try { el.recycle?.(); } catch { /* ignore */ } }
-        }
-      } else if (currentNameBBox) {
-        newNameSyncedRect = currentNameBBox; // name moved on its own — resync to where it actually is
-      }
-    }
-    dlog(`${LOG} PERF expand nameRelocate=${Date.now() - tName}ms moved=${nameEls.length}`);
-  }
+  // The section's name (if any) is never touched by Expand — it only moves
+  // when the user explicitly drags the icon while expanded (iconMoveRedraw.ts).
+  // A collapsed-icon move leaves the name exactly where it is; see BUGS/B-006.md.
 
   // Register for live box redraw on icon drag. Content bbox shifted by (dx, dy)
   // (the same delta strokes are built with) = its absolute on-page bbox.
@@ -163,12 +147,16 @@ export async function expandOne(
 
   let insertOk = true;
   const tIns = Date.now();
+  let insertUnstable = false;
   if (!hasStrokeLinks) {
     const batch = [...maskElements, ...otherElements];
     if (batch.length > 0) {
       const ins: any = await PluginFileAPI.insertElements(filePath, page, batch);
       insertOk = !!ins?.success;
-      if (!insertOk) console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
+      if (!insertOk) {
+        console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
+        insertUnstable = isUnstableNoteError(ins);
+      }
       for (const el of batch) { try { el.recycle?.(); } catch { /* ignore */ } }
     }
   } else {
@@ -194,21 +182,31 @@ export async function expandOne(
     iconRect: iconRectNow,
     collapsedElements: insertOk ? [] : section.collapsedElements,
     preservedNums,
-    nameSyncedRect: newNameSyncedRect,
   };
 
+  // Flip the icon's glyph to reflect the new state — set on the same object
+  // writeSection targets, so it rides along in the same modifyElements call.
+  if (freshIconEl?.textBox) freshIconEl.textBox.textContentFull = ICON_GLYPH_EXPANDED;
+
   const tWrite = Date.now();
-  const ok = await writeSection(filePath, page, iconElement, expandedState, freshIconEl);
+  const { ok, unstableNote: writeUnstable } = await writeSection(filePath, page, iconElement, expandedState, freshIconEl);
   if (!ok) console.error(`${LOG} failed to update section userData after expand`);
   dlog(`${LOG} PERF expand writeSection=${Date.now() - tWrite}ms`);
 
   // On a partial failure, content remains durable in userData (collapsedElements
   // was kept above), but the page doesn't reflect "expanded" and the registry
-  // shouldn't either — forget it so live-redraw doesn't act on a phantom entry,
-  // and tell the user so a swallowed failure doesn't look like a no-op.
+  // shouldn't either — forget it so live-redraw doesn't act on a phantom entry.
+  // If the failure was SDK error 102 (note not in a stable/foreground state —
+  // e.g. the triggering tap also switched the active app away from Notes), the
+  // user has no expectation anything happened, so stay silent instead of
+  // alerting. See BUGS/B-008.md.
   if (!insertOk || !ok) {
     forgetSection(section.id);
-    alert("Supernote couldn't complete the expand — please try again; if it persists, reopen the note.");
+    if (insertUnstable || writeUnstable) {
+      console.error(`${LOG} expand aborted silently — note not in a stable state (SDK error 102)`);
+    } else {
+      alert("Supernote couldn't complete the expand — please try again; if it persists, reopen the note.");
+    }
   }
 }
 
@@ -227,13 +225,15 @@ export async function expandSections(
   await PluginNoteAPI.saveCurrentNote();
   // Dismiss the lasso before any insert, so we never mutate with a lifted
   // selection (this also returns loose selected strokes to the page unchanged).
-  await PluginCommAPI.setLassoBoxState(2);
+  const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
+  if (!lassoRes?.success) console.error(`${LOG} expand setLassoBoxState res=${JSON.stringify(lassoRes)}`);
 
   for (const t of targets) {
     await expandOne(t.section, t.icon, filePath, page, true); // capture preservedNums
   }
 
   const tReload = Date.now();
-  await PluginCommAPI.reloadFile();
+  const reloadRes: any = await PluginCommAPI.reloadFile();
+  if (!reloadRes?.success) console.error(`${LOG} expand reloadFile res=${JSON.stringify(reloadRes)}`);
   dlog(`${LOG} PERF expand reload=${Date.now() - tReload}ms`);
 }

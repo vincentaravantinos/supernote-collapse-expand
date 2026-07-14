@@ -5,6 +5,7 @@ import {
   CE_NAME_PREFIX,
   CE_PART_PREFIX,
   CE_PLUG_PREFIX,
+  CE_UNDERLINE_PREFIX,
   LOG,
 } from '../constants';
 import { CollapseSection } from '../model/types';
@@ -15,6 +16,7 @@ export type UserDataKind =
   | { kind: 'mask'; id: string }
   | { kind: 'frame'; id: string }
   | { kind: 'name'; id: string }
+  | { kind: 'underline'; id: string }
   | null;
 
 // The icon's CURRENT rect (textBox.textRect) from an already-fetched element
@@ -96,6 +98,10 @@ export function readUserData(element: any): UserDataKind {
     return { kind: 'name', id: udata.substring(CE_NAME_PREFIX.length) };
   }
 
+  if (udata.startsWith(CE_UNDERLINE_PREFIX)) {
+    return { kind: 'underline', id: udata.substring(CE_UNDERLINE_PREFIX.length) };
+  }
+
   return null;
 }
 
@@ -124,13 +130,22 @@ async function resolveFreshIcon(
   return (await findSectionIcons(filePath, page)).get(sectionId) ?? null;
 }
 
+// SDK error 102 ("This app is not allowed to use this API") means the note
+// wasn't in a stable/focused state when the call landed — e.g. the user's
+// tap simultaneously switched the foreground app away from Notes. The user
+// has no expectation of the operation succeeding in that case, so callers
+// use this to fail silently (log-only) instead of alerting. See BUGS/B-008.md.
+export function isUnstableNoteError(res: any): boolean {
+  return res?.error?.code === 102;
+}
+
 export async function writeSection(
   filePath: string,
   page: number,
   iconElement: any,
   section: CollapseSection,
   freshIcon?: any,
-): Promise<boolean> {
+): Promise<{ ok: boolean; unstableNote: boolean }> {
   try {
     // modifyElements must target the icon by its CURRENT num. A lassoed snapshot
     // goes stale after a move, so we resolve the icon fresh from getElements —
@@ -144,9 +159,9 @@ export async function writeSection(
     if (!res?.success) {
       console.error(`${LOG} modifyElements res=${JSON.stringify(res)}`);
     }
-    return !!res?.success;
+    return { ok: !!res?.success, unstableNote: isUnstableNoteError(res) };
   } catch (e) {
     console.error(`${LOG} Failed to write userData:`, e);
-    return false;
+    return { ok: false, unstableNote: false };
   }
 }

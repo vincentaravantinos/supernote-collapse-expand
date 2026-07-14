@@ -2,6 +2,7 @@ import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib
 import {
   dlog,
   ELEMENT_TYPES,
+  ICON_GLYPH,
   LOG,
   MAX_USERDATA_BYTES,
   CE_PLUG_PREFIX,
@@ -9,7 +10,7 @@ import {
 } from '../constants';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
-import { getIconByNum, iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
+import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { forgetSection, getExpandedEntry } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -139,14 +140,18 @@ async function recollapseOne(
   // (recoverable), never neither. iconElement comes from the page-wide
   // getElements snapshot (fresh, and its num is stable across the delete below),
   // so writeSection can skip re-reading.
+  // Flip the icon's glyph back — set on the same object writeSection
+  // targets, so it rides along in the same modifyElements call.
+  if (iconElement?.textBox) iconElement.textBox.textContentFull = ICON_GLYPH;
+
   const tWrite = Date.now();
-  const ok = await writeSection(filePath, page, iconElement, updatedSection, iconElement);
+  const { ok, unstableNote } = await writeSection(filePath, page, iconElement, updatedSection, iconElement);
   dlog(`${LOG} PERF recollapse writeSection=${Date.now() - tWrite}ms`);
   if (!ok) {
     // userData not updated — leave the on-page parts in place, they're still the
-    // only durable copy.
+    // only durable copy. See BUGS/B-008.md re: staying silent on SDK error 102.
     console.error(`${LOG} failed to update section userData after recollapse — leaving on-page parts in place`);
-    alert("Supernote couldn't complete the recollapse — please try again.");
+    if (!unstableNote) alert("Supernote couldn't complete the recollapse — please try again.");
     return false;
   }
 
@@ -160,7 +165,7 @@ async function recollapseOne(
     dlog(`${LOG} PERF recollapse deleteElements=${Date.now() - tDel}ms n=${numsToDelete.length}`);
     if (!delRes?.success) {
       console.error(`${LOG} recollapse deleteElements failed res=${JSON.stringify(delRes)}`);
-      alert('Recollapsed, but some leftover elements could not be removed — please retry.');
+      if (!isUnstableNoteError(delRes)) alert('Recollapsed, but some leftover elements could not be removed — please retry.');
     }
   }
   return true;
@@ -263,8 +268,18 @@ export async function recollapseSections(
   }
 
   // Dismiss the lasso last, then surface every change with one reloadFile.
-  await PluginCommAPI.setLassoBoxState(2);
+  const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
+  if (!lassoRes?.success) {
+    // Error 904 here is expected — see collapseAction.ts's identical comment
+    // / BUGS/B-009.md.
+    if (lassoRes?.error?.code === 904) {
+      dlog(`${LOG} recollapse setLassoBoxState res=${JSON.stringify(lassoRes)} (expected)`);
+    } else {
+      console.error(`${LOG} recollapse setLassoBoxState res=${JSON.stringify(lassoRes)}`);
+    }
+  }
   const tReload = Date.now();
-  await PluginCommAPI.reloadFile();
+  const reloadRes: any = await PluginCommAPI.reloadFile();
+  if (!reloadRes?.success) console.error(`${LOG} recollapse reloadFile res=${JSON.stringify(reloadRes)}`);
   dlog(`${LOG} PERF recollapse reload=${Date.now() - tReload}ms`);
 }

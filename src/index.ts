@@ -7,8 +7,9 @@ import { expandSections } from './logic/expandAction';
 import { recollapseSections } from './logic/recollapseAction';
 import { handleNameAction } from './logic/nameAction';
 import { acquireBusy, releaseBusy } from './logic/busy';
-import { invalidateIconCache } from './logic/iconPageCache';
+import { buildIconCache } from './logic/iconPageCache';
 import { isLandscape } from './utils/orientation';
+import { notifyShown } from './logic/workingViewStore';
 
 // Per-action counter + tag bracketing each action's logs with BEGIN/END markers
 // that carry the build stamp (so the trace confirms which build is live).
@@ -67,6 +68,7 @@ export async function handleMainAction() {
     try {
       await PluginManager.showPluginView();
       viewShown = true;
+      notifyShown();
     } catch (e) {
       dlog(`${LOG} showPluginView failed: ${e}`);
     }
@@ -126,6 +128,7 @@ export async function handleMainAction() {
           try {
             await PluginManager.showPluginView();
             viewShown = true;
+            notifyShown();
           } catch (e) {
             dlog(`${LOG} showPluginView (post-dialog) failed: ${e}`);
           }
@@ -153,7 +156,10 @@ export async function handleMainAction() {
           dlog(`${PROBE} #${actionSeq} COLLAPSE END`);
         }
       }
-      invalidateIconCache(); // collapse/expand/recollapse can move/add/remove icons on this page
+      // Rebuild (not just invalidate) the icon cache eagerly, while the
+      // working bubble is already up — moves the cost here instead of
+      // paying it silently on the user's next tap.
+      await buildIconCache(filePath, page);
     } finally {
       for (const el of elements) {
         try { el.recycle?.(); } catch { /* ignore */ }
@@ -167,7 +173,12 @@ export async function handleMainAction() {
     releaseBusy();
     if (viewShown) {
       try {
-        await PluginManager.closePluginView();
+        // DIAGNOSTIC (B-008): log a non-success result, not just a thrown
+        // exception — if this silently fails during an app-switch race
+        // (same as insertElements/modifyElements did), that would explain
+        // the "working" card appearing to never close.
+        const closeRes: any = await PluginManager.closePluginView();
+        if (!closeRes?.success) console.error(`${LOG} closePluginView res=${JSON.stringify(closeRes)}`);
       } catch (e) {
         dlog(`${LOG} closePluginView failed: ${e}`);
       }

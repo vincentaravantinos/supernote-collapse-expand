@@ -12,7 +12,7 @@ import {
   ZONE_MARGIN,
 } from '../constants';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
-import { readUserData } from '../utils/userDataManager';
+import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 function generateSectionId(): string {
@@ -118,7 +118,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.TEXT);
   if (!createRes?.success || !createRes.result) {
     console.error(`${LOG} createElement failed res=${JSON.stringify(createRes)}`);
-    alert('Failed to create icon element.');
+    if (!isUnstableNoteError(createRes)) alert('Failed to create icon element.');
     return;
   }
   const iconEl: any = createRes.result;
@@ -140,7 +140,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   if (!insertRes?.success) {
     // Nothing deleted yet — the page is exactly as it was, no data lost.
     console.error(`${LOG} insertElements failed res=${JSON.stringify(insertRes)}`);
-    alert("Supernote couldn't complete the collapse — please try again.");
+    if (!isUnstableNoteError(insertRes)) alert("Supernote couldn't complete the collapse — please try again.");
     try { iconEl.recycle?.(); } catch { /* ignore */ }
     return;
   }
@@ -154,7 +154,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, originalNums);
     if (!delRes?.success) {
       console.error(`${LOG} collapse deleteElements failed res=${JSON.stringify(delRes)}`);
-      alert("Collapsed, but the original content couldn't be removed — please retry.");
+      if (!isUnstableNoteError(delRes)) alert("Collapsed, but the original content couldn't be removed — please retry.");
     }
   }
   dlog(`${LOG} PERF collapse delete=${Date.now() - tDel}ms`);
@@ -162,7 +162,19 @@ export async function collapseAction(filePath: string, page: number, elements: a
   // No saveCurrentNote after the writes (it would push the stale cached copy back
   // over them). Dismiss the lasso, then reloadFile syncs cached:=real. See SDK_DOC.
   const tReload = Date.now();
-  await PluginCommAPI.setLassoBoxState(2);
-  await PluginCommAPI.reloadFile();
+  const lassoRes2: any = await PluginCommAPI.setLassoBoxState(2);
+  if (!lassoRes2?.success) {
+    // Error 904 here is expected, not a bug: the elements that were lassoed
+    // were just deleted above, so the SDK's lasso reference is already gone —
+    // nothing left to dismiss. Confirmed via BUGS/B-009.md (getLassoElements
+    // fails the same way at this point). Any other error is worth knowing about.
+    if (lassoRes2?.error?.code === 904) {
+      dlog(`${LOG} collapse setLassoBoxState res=${JSON.stringify(lassoRes2)} (expected)`);
+    } else {
+      console.error(`${LOG} collapse setLassoBoxState res=${JSON.stringify(lassoRes2)}`);
+    }
+  }
+  const reloadRes: any = await PluginCommAPI.reloadFile();
+  if (!reloadRes?.success) console.error(`${LOG} collapse reloadFile res=${JSON.stringify(reloadRes)}`);
   dlog(`${LOG} PERF collapse close+reload=${Date.now() - tReload}ms`);
 }

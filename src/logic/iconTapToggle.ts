@@ -5,7 +5,8 @@ import { acquireBusy, releaseBusy } from './busy';
 import { isLandscape } from '../utils/orientation';
 import { expandSections } from './expandAction';
 import { recollapseSections } from './recollapseAction';
-import { buildIconCache, getCachedIcons, invalidateIconCache } from './iconPageCache';
+import { buildIconCache, getCachedIcons } from './iconPageCache';
+import { notifyShown } from './workingViewStore';
 
 // BACKLOG #8: a single finger tap directly on a + icon toggles that section
 // (collapsed -> expand, expanded -> recollapse). Pen taps are ignored — they
@@ -60,28 +61,36 @@ async function handleTap(x: number, y: number): Promise<void> {
 
   let viewShown = false;
   try {
-    const fpRes: any = await PluginCommAPI.getCurrentFilePath();
-    if (!fpRes?.success || typeof fpRes.result !== 'string') return;
-    const filePath = fpRes.result as string;
-
     try {
       await PluginManager.showPluginView();
       viewShown = true;
+      notifyShown();
     } catch (e) {
       dlog(`${LOG} tap-toggle showPluginView failed: ${e}`);
     }
+
+    const fpRes: any = await PluginCommAPI.getCurrentFilePath();
+    if (!fpRes?.success || typeof fpRes.result !== 'string') return;
+    const filePath = fpRes.result as string;
 
     if (hit.section.isExpanded) {
       await recollapseSections([hit.id], filePath, page);
     } else {
       await expandSections([{ section: hit.section, icon: hit.iconEl }], filePath, page);
     }
-    invalidateIconCache();
+    // Rebuild (not just invalidate) the icon cache eagerly, while the
+    // working bubble is already up — moves the cost here instead of paying
+    // it silently on the user's next tap.
+    await buildIconCache(filePath, page);
   } catch (e) {
     console.error(`${LOG} tap-toggle failed: ${e}`);
   } finally {
     if (viewShown) {
-      try { await PluginManager.closePluginView(); } catch (e) { dlog(`${LOG} tap-toggle closePluginView failed: ${e}`); }
+      try {
+        // DIAGNOSTIC (B-008): see index.ts's closePluginView comment.
+        const closeRes: any = await PluginManager.closePluginView();
+        if (!closeRes?.success) console.error(`${LOG} tap-toggle closePluginView res=${JSON.stringify(closeRes)}`);
+      } catch (e) { dlog(`${LOG} tap-toggle closePluginView failed: ${e}`); }
     }
     releaseBusy();
   }
