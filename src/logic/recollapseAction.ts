@@ -148,8 +148,8 @@ async function recollapseOne(
   const { ok, unstableNote } = await writeSection(filePath, page, iconElement, updatedSection, iconElement);
   dlog(`${LOG} PERF recollapse writeSection=${Date.now() - tWrite}ms`);
   if (!ok) {
-    // userData not updated — leave the on-page parts in place, they're still the
-    // only durable copy. See BUGS/B-008.md re: staying silent on SDK error 102.
+    // userData not updated — leave the on-page parts in place, they're still
+    // the only durable copy.
     console.error(`${LOG} failed to update section userData after recollapse — leaving on-page parts in place`);
     if (!unstableNote) alert("Supernote couldn't complete the recollapse — please try again.");
     return false;
@@ -270,8 +270,7 @@ export async function recollapseSections(
   // Dismiss the lasso last, then surface every change with one reloadFile.
   const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
   if (!lassoRes?.success) {
-    // Error 904 here is expected — see collapseAction.ts's identical comment
-    // / BUGS/B-009.md.
+    // Error 904 here is expected — see collapseAction.ts's identical comment.
     if (lassoRes?.error?.code === 904) {
       dlog(`${LOG} recollapse setLassoBoxState res=${JSON.stringify(lassoRes)} (expected)`);
     } else {

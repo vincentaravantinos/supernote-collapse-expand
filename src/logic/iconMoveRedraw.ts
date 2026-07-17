@@ -162,7 +162,7 @@ async function redrawSectionBox(id: string): Promise<void> {
     const base = existing?.kind === 'section' ? existing.section : null;
 
     // The name (if any) rigidly follows the icon's own drag delta — the only
-    // way it ever moves programmatically. See BUGS/B-006.md.
+    // way it ever moves programmatically.
     if (nameEls.length > 0) {
       const nameDx = iconRect.left - entry.iconRect.left;
       const nameDy = iconRect.top - entry.iconRect.top;
@@ -173,8 +173,8 @@ async function redrawSectionBox(id: string): Promise<void> {
       }
       // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
       // (current) icon points independently, then subtract. See
-      // rebuildNameElements's doc comment / BUGS/B-001.md for why converting
-      // a bare delta directly would be wrong.
+      // rebuildNameElements's doc comment for why converting a bare delta
+      // directly would be wrong.
       const nameEmrFrom = PointUtils.androidPoint2Emr({ x: entry.iconRect.left, y: entry.iconRect.top }, pageSize);
       const nameEmrTo = PointUtils.androidPoint2Emr({ x: iconRect.left, y: iconRect.top }, pageSize);
       const nameEmrDelta = { x: nameEmrTo.x - nameEmrFrom.x, y: nameEmrTo.y - nameEmrFrom.y };
@@ -183,7 +183,7 @@ async function redrawSectionBox(id: string): Promise<void> {
       const rebuiltName = await rebuildNameElements(serializedName, id, page, nameDx, nameDy, nameEmrDelta, namePageMaxX, namePageMaxY);
       if (rebuiltName.length > 0) {
         // Underline follows the same shift — inserted in the same batch as
-        // the name. See BUGS/B-003.md's superseding note / DECISIONS.md 2026-07-14.
+        // the name.
         const oldNameBBox = contentBoundingBox(serializedName, pageSize);
         const underlineEl = oldNameBBox
           ? await createUnderlineElement({
@@ -265,7 +265,7 @@ async function redrawSectionBox(id: string): Promise<void> {
   } finally {
     if (viewShown) {
       try {
-        // DIAGNOSTIC (B-008): see index.ts's closePluginView comment.
+        // See index.ts's closePluginView comment.
         const closeRes: any = await PluginManager.closePluginView();
         if (!closeRes?.success) console.error(`${LOG} live redraw closePluginView res=${JSON.stringify(closeRes)}`);
       } catch (e) { dlog(`${LOG} live redraw closePluginView failed: ${e}`); }

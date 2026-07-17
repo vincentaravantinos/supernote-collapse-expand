@@ -55,16 +55,9 @@ try {
     onMsg: m => {
       const a = m?.action;
       if (a === 0) {
-        // DIAGNOSTIC (B-008): full raw payload on DOWN/UP only (not MOVE, to
-        // keep volume bounded) — looking for any field that distinguishes a
-        // touch consumed by native UI (e.g. a toolbar submenu) from a normal
-        // canvas touch, since no such signal is documented. Remove once B-008
-        // is resolved either way.
-        console.error(`${LOG} [B8-PROBE] DOWN ${JSON.stringify(m)}`);
         onMotionDown(m?.x, m?.y);
         onTapDown(m?.x, m?.y, m?.toolType, m?.pointerCount);
       } else if (a === 1) {
-        console.error(`${LOG} [B8-PROBE] UP ${JSON.stringify(m)}`);
         onMotionUp(m?.x, m?.y);
         onTapUp(m?.x, m?.y, m?.toolType, m?.pointerCount);
       }

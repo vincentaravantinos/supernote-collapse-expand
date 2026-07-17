@@ -2,23 +2,24 @@
 
 ## Unreleased
 
+- Fix: the finger-tap shortcut could stop responding to a section's icon
+  entirely after it was repositioned by a plain drag (no plugin action
+  involved) — the tap-lookup cache didn't know the icon had moved. A tap
+  that doesn't land on any known icon now double-checks against the icon's
+  current position before giving up.
+
 - Performance: the finger-tap shortcut's **"working" indicator now appears
   immediately** (was noticeably delayed). The icon lookup it depends on used
   to be silently rebuilt on your *next* tap after any operation; it's now
   rebuilt at the end of the operation itself, while its own indicator is
   already showing, instead of delaying your following tap.
 
-- Fix/Safety: if an operation is interrupted mid-flight by something else
+- Fix: if an operation is interrupted mid-flight by something else
   taking over the screen (e.g. tapping a native menu that happens to overlap
   a section's icon), the plugin now fails **silently** instead of showing a
   confusing alert. If the "working" indicator ever gets stuck as a result, a
   **Cancel** button appears after it's been up for a few seconds, closing it
   immediately — no device restart needed.
-
-- Fix: a section's **name** no longer moves unexpectedly. It now only ever
-  moves programmatically when you drag the section's icon while it's
-  expanded (rigidly following); Collapse, Recollapse, and Expand never touch
-  it, no matter what happened to the icon while collapsed.
 
 - Fix: dragging an expanded section's icon to reshape it now works again
   right after a plugin or app restart — the tracking it depends on is
@@ -38,23 +39,12 @@
   the name on the page, lasso it together with the section's "+" icon, and
   press the plugin button — you'll be asked to confirm before it's set (or
   replaced, if the section already has one). The name stays visible next to
-  the icon whether the section is collapsed or expanded.
-
-- Fix: renaming a section right after erasing its old name no longer brings
-  the erased name back.
+  the icon whether the section is collapsed or expanded, and only ever moves
+  when you drag the icon while the section is expanded (rigidly following) —
+  nothing else touches it.
 
 - Feature: the single-**finger**-tap shortcut (collapse/expand without the
   menu) now also works when tapping a section's **name**, not just its icon.
-
-- Fix: if you moved a section's icon and its name together in one drag while
-  collapsed, expanding it would overshoot the name to the wrong spot. The
-  name now only auto-follows the icon when it hasn't been moved on its own —
-  moving it (alone, or together with the icon, collapsed or expanded) is
-  always respected.
-
-- Fix: renaming a section by writing new ink in among the existing name (e.g.
-  "Name" -> "Name 2") and re-lassoing both used to keep only the new ink,
-  silently dropping the old. The old ink is now kept as part of the new name.
 
 - Safety: collapse / expand / recollapse and the finger-tap shortcut now detect
   landscape mode and show a brief notice instead of running. In landscape the

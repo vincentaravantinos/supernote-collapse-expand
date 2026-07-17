@@ -57,7 +57,7 @@ export async function expandOne(
   // raw getElementNumList: a later Recollapse's own fast path (fastSectionElements)
   // trusts preservedNums for exact-number exclusion with no supplementary tag
   // check, so an unfiltered list can wrongly exclude this section's own
-  // mask/frame/part/name elements from ever being found. See BUGS/B-004.md.
+  // mask/frame/part/name elements from ever being found.
   // Fall back to a full getElements only if the icon num is stale/missing.
   const tGE = Date.now();
   let iconRectNow: any;
@@ -112,7 +112,7 @@ export async function expandOne(
 
   // The section's name (if any) is never touched by Expand — it only moves
   // when the user explicitly drags the icon while expanded (iconMoveRedraw.ts).
-  // A collapsed-icon move leaves the name exactly where it is; see BUGS/B-006.md.
+  // A collapsed-icon move leaves the name exactly where it is.
 
   // Register for live box redraw on icon drag. Content bbox shifted by (dx, dy)
   // (the same delta strokes are built with) = its absolute on-page bbox.
@@ -199,7 +199,7 @@ export async function expandOne(
   // If the failure was SDK error 102 (note not in a stable/foreground state —
   // e.g. the triggering tap also switched the active app away from Notes), the
   // user has no expectation anything happened, so stay silent instead of
-  // alerting. See BUGS/B-008.md.
+  // alerting.
   if (!insertOk || !ok) {
     forgetSection(section.id);
     if (insertUnstable || writeUnstable) {

@@ -32,11 +32,11 @@ export function isBusy(): boolean {
   return busySince !== null;
 }
 
-// User-triggered escape hatch for a stuck "working" card (see BUGS/B-008.md —
-// an operation whose foreground app switched away mid-flight can leave the
-// view stuck with nothing left running to close it). Best-effort force-close
-// + unconditional release; does NOT (and can't) stop whatever's still stuck
-// mid-await — deliberately out of scope, see DIAGNOSTIC.md.
+// User-triggered escape hatch for a stuck "working" card: an operation whose
+// foreground app switched away mid-flight can leave the view stuck with
+// nothing left running to close it. Best-effort force-close + unconditional
+// release; does NOT (and can't) stop whatever's still stuck mid-await — JS
+// has no way to cancel a pending await, only to stop waiting on it.
 export async function cancelStuckOperation(): Promise<void> {
   try {
     const res: any = await PluginManager.closePluginView();

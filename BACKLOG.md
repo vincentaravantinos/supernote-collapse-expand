@@ -12,5 +12,4 @@ an item once the user confirms it's done.
 | ID | Symptom |
 |---|---|
 | B-004 | Recollapse could leave the frame and/or some content strokes behind. Fix implemented (`r101-preservednums-fix-v2`), still under active testing — not yet confirmed. See `BUGS/B-004.md`. |
-| B-010 | Tapping a section's icon stopped expanding it once; not reproduced since (a reinstall cleared it, cause unconfirmed). Passive observation — `[B10-PROBE]` logging stays on. See `BUGS/B-010.md`. |
 

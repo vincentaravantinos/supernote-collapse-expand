@@ -14,8 +14,6 @@ export function findNameElements(all: any[], sectionId: string): any[] {
   });
 }
 
-// The underline drawn just beneath a name's bbox (see BUGS/B-003.md's
-// superseding note and DECISIONS.md's 2026-07-14 reversal).
 export function findUnderlineElements(all: any[], sectionId: string): any[] {
   return all.filter((el) => {
     const ud = readUserData(el);
@@ -62,7 +60,7 @@ export async function createUnderlineElement(nameBBox: Rect, page: number, secti
 // directly — androidPoint2Emr is not a linear map through the origin (it
 // flips/offsets between android's and EMR's coordinate conventions), so
 // converting a bare delta injects a spurious offset that lands strokes off
-// page. See BUGS/B-001.md.
+// page.
 export async function rebuildNameElements(
   serialized: CollapsedElement[],
   sectionId: string,
@@ -86,7 +84,7 @@ export async function rebuildNameElements(
 // STROKE elements from the lasso) plus any of this section's own existing
 // name strokes re-selected in the same lasso (`nameTaggedInLasso` — lets
 // writing new ink in among an existing name, e.g. "Name" -> "Name 2", keep
-// the old ink instead of dropping it; see BUGS/B-005.md). Returns true if
+// the old ink instead of dropping it). Returns true if
 // the caller should fall through to a normal Expand instead (user declined,
 // or nothing usable was selected) — the busy plugin view must be closed by
 // the caller before this runs (showRattaDialog is a blocking native modal,
@@ -115,7 +113,7 @@ export async function handleNameAction(
   // cached copy until saved) before reading state or mutating — otherwise
   // the later reloadFile() reloads cache from a real file that never
   // received e.g. an erase, reverting it. Same pattern as collapseAction.ts
-  // / expandSections / recollapseSections. See BUGS/B-002.md.
+  // / expandSections / recollapseSections.
   await PluginNoteAPI.saveCurrentNote();
 
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
@@ -156,7 +154,7 @@ export async function handleNameAction(
   }
 
   // Underline spans the new name's bbox — inserted in the same batch as the
-  // name itself (see BUGS/B-003.md's superseding note / DECISIONS.md 2026-07-14).
+  // name itself.
   const nameBBox = contentBoundingBox(serialized, pageSize);
   const underlineEl = nameBBox ? await createUnderlineElement(nameBBox, page, target.section.id) : null;
   const insertBatch = underlineEl ? [...newNameEls, underlineEl] : newNameEls;
@@ -188,8 +186,7 @@ export async function handleNameAction(
 
   const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
   if (!lassoRes?.success) {
-    // Error 904 here is expected — see collapseAction.ts's identical comment
-    // / BUGS/B-009.md.
+    // Error 904 here is expected — see collapseAction.ts's identical comment.
     if (lassoRes?.error?.code === 904) {
       dlog(`${LOG} name setLassoBoxState res=${JSON.stringify(lassoRes)} (expected)`);
     } else {

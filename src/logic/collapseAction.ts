@@ -166,8 +166,8 @@ export async function collapseAction(filePath: string, page: number, elements: a
   if (!lassoRes2?.success) {
     // Error 904 here is expected, not a bug: the elements that were lassoed
     // were just deleted above, so the SDK's lasso reference is already gone —
-    // nothing left to dismiss. Confirmed via BUGS/B-009.md (getLassoElements
-    // fails the same way at this point). Any other error is worth knowing about.
+    // nothing left to dismiss (getLassoElements fails the same way at this
+    // point). Any other error is worth knowing about.
     if (lassoRes2?.error?.code === 904) {
       dlog(`${LOG} collapse setLassoBoxState res=${JSON.stringify(lassoRes2)} (expected)`);
     } else {

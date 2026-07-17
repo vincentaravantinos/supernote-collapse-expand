@@ -134,7 +134,7 @@ async function resolveFreshIcon(
 // wasn't in a stable/focused state when the call landed — e.g. the user's
 // tap simultaneously switched the foreground app away from Notes. The user
 // has no expectation of the operation succeeding in that case, so callers
-// use this to fail silently (log-only) instead of alerting. See BUGS/B-008.md.
+// use this to fail silently (log-only) instead of alerting.
 export function isUnstableNoteError(res: any): boolean {
   return res?.error?.code === 102;
 }

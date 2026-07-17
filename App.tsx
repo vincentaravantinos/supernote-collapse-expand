@@ -4,9 +4,9 @@
  * Shown while a slow operation runs (showPluginView called by an action).
  * Static "Working…" card — no spinner (e-ink). The backdrop is transparent
  * so the page stays visible around the card. After CANCEL_DELAY_MS with the
- * card still up, a Cancel button appears (see BUGS/B-008.md: an operation
- * whose foreground app switched away mid-flight can leave this card stuck
- * with nothing left running to close it).
+ * card still up, a Cancel button appears: an operation whose foreground app
+ * switched away mid-flight can leave this card stuck with nothing left
+ * running to close it.
  *
  * @format
  */

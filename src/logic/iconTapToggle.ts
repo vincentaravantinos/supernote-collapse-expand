@@ -5,7 +5,7 @@ import { acquireBusy, releaseBusy } from './busy';
 import { isLandscape } from '../utils/orientation';
 import { expandSections } from './expandAction';
 import { recollapseSections } from './recollapseAction';
-import { buildIconCache, getCachedIcons } from './iconPageCache';
+import { buildIconCache, getCachedIcons, PageIconEntry } from './iconPageCache';
 import { notifyShown } from './workingViewStore';
 
 // BACKLOG #8: a single finger tap directly on a + icon toggles that section
@@ -36,33 +36,43 @@ export function onTapUp(x: number, y: number, toolType: number | undefined, poin
   void handleTap(x, y);
 }
 
-async function handleTap(x: number, y: number): Promise<void> {
-  // DIAGNOSTIC (B-010): every early return below was previously silent —
-  // logging which one fires (if any) to find where taps are being dropped.
-  // Remove once B-010 is resolved either way.
-  if (await isLandscape()) { console.error(`${LOG} [B10-PROBE] handleTap bail: landscape`); return; }
-  const pgRes: any = await PluginCommAPI.getCurrentPageNum();
-  if (!pgRes?.success || typeof pgRes.result !== 'number') { console.error(`${LOG} [B10-PROBE] handleTap bail: getCurrentPageNum res=${JSON.stringify(pgRes)}`); return; }
-  const page = pgRes.result as number;
-
-  let icons = getCachedIcons(page);
-  console.error(`${LOG} [B10-PROBE] handleTap cachedIcons page=${page} cacheHit=${icons !== null} count=${icons?.length ?? 'n/a'}`);
-  if (!icons) {
-    const fpRes: any = await PluginCommAPI.getCurrentFilePath();
-    if (!fpRes?.success || typeof fpRes.result !== 'string') { console.error(`${LOG} [B10-PROBE] handleTap bail: getCurrentFilePath res=${JSON.stringify(fpRes)}`); return; }
-    icons = await buildIconCache(fpRes.result as string, page);
-  }
-
-  const hit = icons.find((icon) =>
+function findHit(icons: PageIconEntry[], x: number, y: number): PageIconEntry | undefined {
+  return icons.find((icon) =>
     rectContains(padded(icon.rect, ICON_HIT_PAD), x, y) ||
     (icon.nameRect && rectContains(padded(icon.nameRect, ICON_HIT_PAD), x, y)),
   );
-  console.error(`${LOG} [B10-PROBE] handleTap hit-test x=${x} y=${y} icons=${JSON.stringify(icons.map((i) => i.rect))} hit=${!!hit}`);
+}
+
+async function handleTap(x: number, y: number): Promise<void> {
+  if (await isLandscape()) return;
+  const pgRes: any = await PluginCommAPI.getCurrentPageNum();
+  if (!pgRes?.success || typeof pgRes.result !== 'number') return;
+  const page = pgRes.result as number;
+
+  let icons = getCachedIcons(page);
+  if (!icons) {
+    const fpRes: any = await PluginCommAPI.getCurrentFilePath();
+    if (!fpRes?.success || typeof fpRes.result !== 'string') return;
+    icons = await buildIconCache(fpRes.result as string, page);
+  }
+
+  let hit = findHit(icons, x, y);
+  if (!hit) {
+    // The cache can go stale if the icon was moved by a plain native drag
+    // (no plugin operation involved, so nothing told us to rebuild) — see
+    // BUGS/B-010.md. One fresh rebuild + retry before concluding this
+    // genuinely isn't a tap on an icon.
+    const fpRes: any = await PluginCommAPI.getCurrentFilePath();
+    if (!fpRes?.success || typeof fpRes.result !== 'string') return;
+    icons = await buildIconCache(fpRes.result as string, page);
+    hit = findHit(icons, x, y);
+    if (hit) console.error(`${LOG} [B10-PROBE] stale-cache retry recovered a hit x=${x} y=${y}`);
+  }
   if (!hit) return;
 
   // Another op (button press or live redraw) is in flight — drop this tap
   // silently rather than alerting, since the user didn't press a button.
-  if (!acquireBusy()) { console.error(`${LOG} [B10-PROBE] handleTap bail: busy`); return; }
+  if (!acquireBusy()) return;
 
   let viewShown = false;
   try {
@@ -92,7 +102,7 @@ async function handleTap(x: number, y: number): Promise<void> {
   } finally {
     if (viewShown) {
       try {
-        // DIAGNOSTIC (B-008): see index.ts's closePluginView comment.
+        // See index.ts's closePluginView comment.
         const closeRes: any = await PluginManager.closePluginView();
         if (!closeRes?.success) console.error(`${LOG} tap-toggle closePluginView res=${JSON.stringify(closeRes)}`);
       } catch (e) { dlog(`${LOG} tap-toggle closePluginView failed: ${e}`); }

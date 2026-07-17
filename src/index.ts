@@ -173,10 +173,9 @@ export async function handleMainAction() {
     releaseBusy();
     if (viewShown) {
       try {
-        // DIAGNOSTIC (B-008): log a non-success result, not just a thrown
-        // exception — if this silently fails during an app-switch race
-        // (same as insertElements/modifyElements did), that would explain
-        // the "working" card appearing to never close.
+        // Log a non-success result, not just a thrown exception — a silent
+        // failure here (as opposed to a thrown error) would leave the
+        // "working" card stuck with no trace of why.
         const closeRes: any = await PluginManager.closePluginView();
         if (!closeRes?.success) console.error(`${LOG} closePluginView res=${JSON.stringify(closeRes)}`);
       } catch (e) {
