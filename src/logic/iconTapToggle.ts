@@ -37,15 +37,19 @@ export function onTapUp(x: number, y: number, toolType: number | undefined, poin
 }
 
 async function handleTap(x: number, y: number): Promise<void> {
-  if (await isLandscape()) return;
+  // DIAGNOSTIC (B-010): every early return below was previously silent —
+  // logging which one fires (if any) to find where taps are being dropped.
+  // Remove once B-010 is resolved either way.
+  if (await isLandscape()) { console.error(`${LOG} [B10-PROBE] handleTap bail: landscape`); return; }
   const pgRes: any = await PluginCommAPI.getCurrentPageNum();
-  if (!pgRes?.success || typeof pgRes.result !== 'number') return;
+  if (!pgRes?.success || typeof pgRes.result !== 'number') { console.error(`${LOG} [B10-PROBE] handleTap bail: getCurrentPageNum res=${JSON.stringify(pgRes)}`); return; }
   const page = pgRes.result as number;
 
   let icons = getCachedIcons(page);
+  console.error(`${LOG} [B10-PROBE] handleTap cachedIcons page=${page} cacheHit=${icons !== null} count=${icons?.length ?? 'n/a'}`);
   if (!icons) {
     const fpRes: any = await PluginCommAPI.getCurrentFilePath();
-    if (!fpRes?.success || typeof fpRes.result !== 'string') return;
+    if (!fpRes?.success || typeof fpRes.result !== 'string') { console.error(`${LOG} [B10-PROBE] handleTap bail: getCurrentFilePath res=${JSON.stringify(fpRes)}`); return; }
     icons = await buildIconCache(fpRes.result as string, page);
   }
 
@@ -53,11 +57,12 @@ async function handleTap(x: number, y: number): Promise<void> {
     rectContains(padded(icon.rect, ICON_HIT_PAD), x, y) ||
     (icon.nameRect && rectContains(padded(icon.nameRect, ICON_HIT_PAD), x, y)),
   );
+  console.error(`${LOG} [B10-PROBE] handleTap hit-test x=${x} y=${y} icons=${JSON.stringify(icons.map((i) => i.rect))} hit=${!!hit}`);
   if (!hit) return;
 
   // Another op (button press or live redraw) is in flight — drop this tap
   // silently rather than alerting, since the user didn't press a button.
-  if (!acquireBusy()) return;
+  if (!acquireBusy()) { console.error(`${LOG} [B10-PROBE] handleTap bail: busy`); return; }
 
   let viewShown = false;
   try {

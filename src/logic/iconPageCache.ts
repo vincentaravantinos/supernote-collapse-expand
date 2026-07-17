@@ -1,4 +1,5 @@
 import { PluginFileAPI, Rect } from 'sn-plugin-lib';
+import { LOG } from '../constants';
 import { readUserData } from '../utils/userDataManager';
 import { contentBoundingBox, serializeElement } from '../utils/elementSerializer';
 import { findNameElements } from './nameAction';
@@ -30,6 +31,10 @@ export function getCachedIcons(page: number): PageIconEntry[] | null {
 export async function buildIconCache(filePath: string, page: number): Promise<PageIconEntry[]> {
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  // DIAGNOSTIC (B-010): confirm whether this read is succeeding and finding
+  // icons — suspected the eager rebuild can silently poison the cache empty.
+  // Remove once B-010 is resolved either way.
+  console.error(`${LOG} [B10-PROBE] buildIconCache page=${page} getElementsSuccess=${allRes?.success} totalEl=${all.length}`);
 
   const icons: PageIconEntry[] = [];
   for (const el of all) {
@@ -59,5 +64,6 @@ export async function buildIconCache(filePath: string, page: number): Promise<Pa
 
   cachedPage = page;
   cachedIcons = icons;
+  console.error(`${LOG} [B10-PROBE] buildIconCache cached page=${page} icons=${icons.length}`);
   return icons;
 }
