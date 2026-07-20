@@ -100,8 +100,9 @@ async function recollapseOne(
   const bbox = contentBoundingBox(newCollapsed, pageSize);
   let iconRect = section.iconRect;
   let relativeRect = section.relativeRect;
+  let contentShift: CollapseSection['contentShift'];
   if (bbox) {
-    const zone = stretchZoneToIcon(bbox, ZONE_MARGIN, iconNow);
+    const { zone, shiftDx, shiftDy } = stretchZoneToIcon(bbox, ZONE_MARGIN, iconNow);
     iconRect = {
       left: Math.round(iconNow.left),
       top: Math.round(iconNow.top),
@@ -114,9 +115,16 @@ async function recollapseOne(
       width: Math.round(zone.right - zone.left),
       height: Math.round(zone.bottom - zone.top),
     };
+    // The zone had to move to stop covering the icon — carry the same
+    // rigid shift over to the actual content strokes at the next Expand
+    // (not the icon-relative position, which isn't meaningful here; see
+    // CollapseSection.contentShift).
+    if (shiftDx || shiftDy) contentShift = { dx: shiftDx, dy: shiftDy };
   }
 
-  // Drop preservedNums — only meaningful while expanded.
+  // Drop preservedNums — only meaningful while expanded. contentShift is
+  // always explicitly set (to a value or undefined) so a stale one from a
+  // prior recollapse never leaks forward via the spread below.
   const updatedSection: CollapseSection = {
     ...section,
     collapsedElements: newCollapsed,
@@ -124,6 +132,7 @@ async function recollapseOne(
     relativeRect,
     isExpanded: false,
     preservedNums: undefined,
+    contentShift,
   };
 
   const payload = CE_PLUG_PREFIX + JSON.stringify(updatedSection);
@@ -192,7 +201,7 @@ async function fastSectionElements(
   const icon = await getIconByNum(filePath, page, entry.iconNum, id);
   if (!icon) { dlog(`${LOG} recollapse fast: icon num ${entry.iconNum} stale for ${id} — fallback`); return null; }
   const ud = readUserData(icon);
-  if (ud?.kind !== 'section') return null;
+  if (ud?.kind !== 'plug') return null;
 
   const t = Date.now();
   const nlRes: any = await PluginFileAPI.getElementNumList(filePath, page);
@@ -252,13 +261,13 @@ export async function recollapseSections(
     const iconById = new Map<string, any>();
     for (const el of all) {
       const ud = readUserData(el);
-      if (ud?.kind === 'section' && ud.section?.id) iconById.set(ud.section.id, el);
+      if (ud?.kind === 'plug' && ud.section?.id) iconById.set(ud.section.id, el);
     }
 
     for (const id of sectionIds) {
       const icon = iconById.get(id);
       const ud = icon ? readUserData(icon) : null;
-      if (!icon || ud?.kind !== 'section') {
+      if (!icon || ud?.kind !== 'plug') {
         console.error(`${LOG} recollapse: no section icon for id=${id} (orphaned content?) — skipping`);
         continue;
       }

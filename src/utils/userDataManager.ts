@@ -11,7 +11,7 @@ import {
 import { CollapseSection } from '../model/types';
 
 export type UserDataKind =
-  | { kind: 'section'; section: CollapseSection }
+  | { kind: 'plug'; section: CollapseSection }
   | { kind: 'part'; id: string }
   | { kind: 'mask'; id: string }
   | { kind: 'frame'; id: string }
@@ -30,24 +30,11 @@ export function iconRectFromElements(
 ): any {
   for (const el of all) {
     const ud = readUserData(el);
-    if (ud?.kind === 'section' && ud.section?.id === section.id && el?.textBox?.textRect) {
+    if (ud?.kind === 'plug' && ud.section?.id === section.id && el?.textBox?.textRect) {
       return el.textBox.textRect;
     }
   }
   return iconElement?.textBox?.textRect ?? section.iconRect;
-}
-
-// As iconRectFromElements, but fetches the list itself. Callers must have
-// flushed pending edits (saveCurrentNote) first so getElements sees a moved icon.
-export async function getCurrentIconRect(
-  filePath: string,
-  page: number,
-  section: CollapseSection,
-  iconElement: any,
-): Promise<any> {
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
-  return iconRectFromElements(all, section, iconElement);
 }
 
 // Fetch a single element by num and confirm it's the section icon we expect.
@@ -65,7 +52,7 @@ export async function getIconByNum(
   const el = res?.success ? res.result : null;
   if (!el) return null;
   const ud = readUserData(el);
-  return ud?.kind === 'section' && ud.section?.id === sectionId ? el : null;
+  return ud?.kind === 'plug' && ud.section?.id === sectionId ? el : null;
 }
 
 export function readUserData(element: any): UserDataKind {
@@ -75,7 +62,7 @@ export function readUserData(element: any): UserDataKind {
   if (udata.startsWith(CE_PLUG_PREFIX)) {
     try {
       const section = JSON.parse(udata.substring(CE_PLUG_PREFIX.length));
-      return { kind: 'section', section: section as CollapseSection };
+      return { kind: 'plug', section: section as CollapseSection };
     } catch (e) {
       console.error(`${LOG} Failed to parse CE_PLUG userData:`, e);
       return null;
@@ -117,7 +104,7 @@ export async function findSectionIcons(
   const byId = new Map<string, any>();
   for (const el of all) {
     const ud = readUserData(el);
-    if (ud?.kind === 'section' && ud.section?.id) byId.set(ud.section.id, el);
+    if (ud?.kind === 'plug' && ud.section?.id) byId.set(ud.section.id, el);
   }
   return byId;
 }

@@ -11,5 +11,5 @@ an item once the user confirms it's done.
 ## Open bugs
 | ID | Symptom |
 |---|---|
-| B-004 | Recollapse could leave the frame and/or some content strokes behind. Fix implemented (`r101-preservednums-fix-v2`), still under active testing — not yet confirmed. See `BUGS/B-004.md`. |
+| B-012 | Select existing text/strokes, move them, then immediately Collapse (no other action in between): the icon appears (content reported as collapsed) but the original strokes visually remain on the page. Suspected same class as a previously-seen issue — the move likely only lands in the cached copy, not the real file, by the time the plugin reads elements; reading before a `saveCurrentNote` flush would see the pre-move (stale) position/content. Not yet investigated — reported by the user, explicitly deferred. |
 

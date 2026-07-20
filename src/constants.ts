@@ -2,14 +2,14 @@ export const LOG = '[CollapseExpand]';
 
 // Gates the PERF / SIZE / per-action diagnostic logs. Errors (`console.error`)
 // and user-facing `alert`s are never gated. Flip on while developing.
-export const DEBUG = true; // DIAGNOSTIC: half-baked recollapse report — flip back to false before shipping
+export const DEBUG = false;
 export function dlog(...args: any[]): void {
   if (DEBUG) console.log(...args);
 }
 
 // Logged at each action start to confirm which build is actually live: pushing a
 // new .snplg doesn't always replace the running one. Bump per deploy.
-export const BUILD_TAG = 'r118-stale-cache-retry';
+export const BUILD_TAG = 'r122-content-shift';
 
 export const ICON_SIZE = 50; // px
 // A gesture whose finger moved less than this is a tap/select, not a drag.

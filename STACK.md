@@ -2,7 +2,7 @@
 
 ## Frame 1
 - Process: Release
-- Step: 2 (comment cleanup) — done, about to start step 3 (coherence review)
+- Step: 3 (coherence review) done and all findings addressed (DEBUG hygiene, dead code removed, BUILD_TAG reset, kind:'section'->'plug' rename, tap-gesture dedup); about to start step 4 (duplication audit)
 - Role: Architect (next step)
-- Context: Step 1 (changelog review) and step 2 (comment cleanup) both completed and reported to the user. Nothing staged/committed yet from this pass — all edits are working-tree changes on top of the last commit (a120d48).
-- Resume: Continue with step 3 (coherence review, Architect) — read the code as a whole, check it reads as one design.
+- Context: Steps 1-2 done and reported. Step 3 fully wrapped, including the user's on-device sanity check. Detoured to fix B-004 (closed, confirmed), B-011 (closed, confirmed — content-shift mechanism added), and log B-012 (deferred, not investigated). `DEBUG` is `false` again (was toggled on/off twice during B-011's diagnosis).
+- Resume: Continue with step 4 (duplication audit, Architect) — scan for duplicated/near-duplicated logic beyond what the coherence review already caught.

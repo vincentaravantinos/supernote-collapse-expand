@@ -1,5 +1,5 @@
 import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
-import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, TAP_MAX_PX, ZONE_MARGIN, dlog } from '../constants';
+import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
 import { padded, rectContains, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
@@ -10,12 +10,10 @@ import { createUnderlineElement, findNameElements, findUnderlineElements, rebuil
 import { acquireBusy, releaseBusy } from './busy';
 import { buildIconCache } from './iconPageCache';
 import { notifyShown } from './workingViewStore';
+import { isTapDistance, noteGestureDown } from './tapGesture';
 
-// Section whose icon the current gesture grabbed (set on DOWN, consumed on UP),
-// and the DOWN point (to tell a tap/select from a drag on UP).
+// Section whose icon the current gesture grabbed (set on DOWN, consumed on UP).
 let dragCandidateId: string | null = null;
-let downX = 0;
-let downY = 0;
 
 // The plugin host does NOT pump the JS event loop while idle — timers only fire
 // when a native event or an in-flight await ticks the runtime. So we can't defer
@@ -52,8 +50,7 @@ async function kickRedraw(id: string): Promise<void> {
 // our expanded sections' icons? If not, the UP handler no-ops.
 export function onMotionDown(x: number, y: number): void {
   dragCandidateId = null;
-  downX = x;
-  downY = y;
+  noteGestureDown(x, y);
   if (expandedCount() === 0) return;
   for (const [id, e] of expandedEntries()) {
     if (rectContains(padded(e.iconRect, ICON_HIT_PAD), x, y)) {
@@ -69,7 +66,7 @@ export function onMotionUp(x: number, y: number): void {
   const id = dragCandidateId;
   dragCandidateId = null;
   if (!id) return;
-  if (Math.abs(x - downX) < TAP_MAX_PX && Math.abs(y - downY) < TAP_MAX_PX) return; // tap/select
+  if (isTapDistance(x, y)) return; // tap/select
   if (!getExpandedEntry(id)) return;
   void kickRedraw(id);
 }
@@ -105,7 +102,7 @@ async function redrawSectionBox(id: string): Promise<void> {
   for (const el of all) {
     const ud = readUserData(el);
     if (!ud) continue;
-    if (ud.kind === 'section' && ud.section?.id === id) {
+    if (ud.kind === 'plug' && ud.section?.id === id) {
       iconEl = el;
       if (el?.textBox?.textRect) iconRect = el.textBox.textRect;
     } else if (ud.kind === 'part' && ud.id === id) {
@@ -159,7 +156,7 @@ async function redrawSectionBox(id: string): Promise<void> {
       : { width: 1404, height: 1872 };
 
     const existing = readUserData(iconEl);
-    const base = existing?.kind === 'section' ? existing.section : null;
+    const base = existing?.kind === 'plug' ? existing.section : null;
 
     // The name (if any) rigidly follows the icon's own drag delta — the only
     // way it ever moves programmatically.
@@ -211,7 +208,10 @@ async function redrawSectionBox(id: string): Promise<void> {
 
     const bbox = contentBoundingBox(fresh, pageSize);
     if (!bbox) { return; }
-    const zone = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);
+    // shiftDx/shiftDy intentionally ignored here — a live redraw's content
+    // must stay exactly where it is (only the zone reshapes to reach a
+    // dragged icon), unlike Recollapse's icon-overlap-after-absorb case.
+    const { zone } = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);
 
     const iconR: Rect = {
       left: Math.round(iconRect.left),

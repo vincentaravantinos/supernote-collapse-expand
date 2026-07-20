@@ -128,6 +128,15 @@ its name** also recollapses it.
 - Any **new** strokes the user drew on top of the expanded section are
   absorbed into the section's saved state (so they reappear on the next
   expand).
+- If absorbing that new content means the section's area (content
+  bounding box + margin) would now **cover the icon** (e.g. ink drawn
+  overlapping or encircling it), the entire section's content is shifted —
+  as one rigid group, preserving every stroke's position relative to the
+  others — just far enough that the area clears the icon on the next
+  expand. The icon itself never moves. This is different from a user-driven
+  icon drag: nothing here reflects user intent to reposition content
+  relative to the icon, so the shift is whatever's needed to stop the
+  overlap, not something the user controls directly.
 - Any content that was sitting on the page **before** the expand and
   happened to be inside the section's area must remain at its original
   position, untouched by recollapse.

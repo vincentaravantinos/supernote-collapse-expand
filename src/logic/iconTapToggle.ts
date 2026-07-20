@@ -1,5 +1,5 @@
 import { PluginCommAPI, PluginManager } from 'sn-plugin-lib';
-import { ICON_HIT_PAD, LOG, TAP_MAX_PX, dlog } from '../constants';
+import { ICON_HIT_PAD, LOG, dlog } from '../constants';
 import { padded, rectContains } from '../utils/geometryHelpers';
 import { acquireBusy, releaseBusy } from './busy';
 import { isLandscape } from '../utils/orientation';
@@ -7,12 +7,11 @@ import { expandSections } from './expandAction';
 import { recollapseSections } from './recollapseAction';
 import { buildIconCache, getCachedIcons, PageIconEntry } from './iconPageCache';
 import { notifyShown } from './workingViewStore';
+import { isTapDistance, noteGestureDown } from './tapGesture';
 
 // BACKLOG #8: a single finger tap directly on a + icon toggles that section
 // (collapsed -> expand, expanded -> recollapse). Pen taps are ignored — they
 // draw ink, so reacting to them would fight the user's drawing.
-let downX = 0;
-let downY = 0;
 let downQualifies = false;
 
 function isQualifying(toolType: number | undefined, pointerCount: number | undefined): boolean {
@@ -21,8 +20,7 @@ function isQualifying(toolType: number | undefined, pointerCount: number | undef
 
 // ACTION_DOWN: in-memory only, record the start point for the tap test on UP.
 export function onTapDown(x: number, y: number, toolType: number | undefined, pointerCount: number | undefined): void {
-  downX = x;
-  downY = y;
+  noteGestureDown(x, y);
   downQualifies = isQualifying(toolType, pointerCount);
 }
 
@@ -32,7 +30,7 @@ export function onTapUp(x: number, y: number, toolType: number | undefined, poin
   const qualifies = downQualifies && isQualifying(toolType, pointerCount);
   downQualifies = false;
   if (!qualifies) return;
-  if (Math.abs(x - downX) >= TAP_MAX_PX || Math.abs(y - downY) >= TAP_MAX_PX) return; // drag, not a tap
+  if (!isTapDistance(x, y)) return; // drag, not a tap
   void handleTap(x, y);
 }
 
@@ -59,9 +57,9 @@ async function handleTap(x: number, y: number): Promise<void> {
   let hit = findHit(icons, x, y);
   if (!hit) {
     // The cache can go stale if the icon was moved by a plain native drag
-    // (no plugin operation involved, so nothing told us to rebuild) — see
-    // BUGS/B-010.md. One fresh rebuild + retry before concluding this
-    // genuinely isn't a tap on an icon.
+    // (no plugin operation involved, so nothing told us to rebuild). One
+    // fresh rebuild + retry before concluding this genuinely isn't a tap on
+    // an icon.
     const fpRes: any = await PluginCommAPI.getCurrentFilePath();
     if (!fpRes?.success || typeof fpRes.result !== 'string') return;
     icons = await buildIconCache(fpRes.result as string, page);

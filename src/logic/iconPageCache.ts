@@ -31,15 +31,11 @@ export function getCachedIcons(page: number): PageIconEntry[] | null {
 export async function buildIconCache(filePath: string, page: number): Promise<PageIconEntry[]> {
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
-  // DIAGNOSTIC (B-010): confirm whether this read is succeeding and finding
-  // icons — suspected the eager rebuild can silently poison the cache empty.
-  // Remove once B-010 is resolved either way.
-  console.error(`${LOG} [B10-PROBE] buildIconCache page=${page} getElementsSuccess=${allRes?.success} totalEl=${all.length}`);
 
   const icons: PageIconEntry[] = [];
   for (const el of all) {
     const ud = readUserData(el);
-    if (ud?.kind === 'section' && ud.section?.id && el?.textBox?.textRect) {
+    if (ud?.kind === 'plug' && ud.section?.id && el?.textBox?.textRect) {
       icons.push({ id: ud.section.id, section: ud.section, iconEl: el, rect: el.textBox.textRect });
     }
   }
@@ -64,6 +60,5 @@ export async function buildIconCache(filePath: string, page: number): Promise<Pa
 
   cachedPage = page;
   cachedIcons = icons;
-  console.error(`${LOG} [B10-PROBE] buildIconCache cached page=${page} icons=${icons.length}`);
   return icons;
 }

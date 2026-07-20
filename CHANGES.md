@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix: drawing ink that overlaps or encircles an expanded section's icon no
+  longer leaves the icon buried under the section's area on the next
+  Expand. The section's whole content now shifts together (as one group,
+  so nothing's layout relative to the rest changes) just enough to clear
+  the icon, instead of the area growing to cover it.
+
 - Fix: the finger-tap shortcut could stop responding to a section's icon
   entirely after it was repositioned by a plain drag (no plugin action
   involved) — the tap-lookup cache didn't know the icon had moved. A tap

@@ -17,6 +17,47 @@ Each entry should capture:
 
 ---
 
+## 2026-07-20 — Rigid content shift, not zone clipping, when absorbed ink covers the icon (B-011)
+
+**Decision.** When Recollapse's absorbed content would make the section's
+area cover the icon (e.g. ink drawn overlapping or encircling it), the
+*entire content* is shifted as one rigid group — via a new one-time
+persisted field, `CollapseSection.contentShift`, consumed and cleared at
+the next Expand — just far enough to clear the icon. The icon itself never
+moves. New field chosen over reusing the existing icon-position baseline
+(`section.iconRect`) because that field already serves a second purpose
+(anchoring the next Recollapse's absorb-area calculation) that a faked
+value would have silently broken.
+
+**Alternatives considered.**
+- *Shrink the zone to stop at the icon's edge* (first attempt). Rejected —
+  confirmed on-device: shrinking one edge cuts the zone's width, and
+  visually excludes real content from the frame even though the content
+  itself isn't touched (see "Visual masking" in SPEC.md: the mask/frame is
+  cosmetic, restored strokes are positioned independently of it — so a
+  shrunk zone doesn't lose content, but does look broken).
+- *Translate only the zone rect, leave content strokes where they physically
+  are* (second attempt). Rejected — confirmed on-device with a stroke that
+  circled the icon: the shifted zone no longer contained that stroke either,
+  since translating a rectangle can't simultaneously contain a bbox that
+  has the icon nested inside it *and* exclude the icon.
+- *Full storage-format refactor: strokes stored relative to the section's
+  content bbox, replayed against a (possibly shifted) bbox at Expand,
+  instead of absolute EMR positions + delta.* User-proposed as the "textbook
+  clean" architecture; established as producing an *identical* result to the
+  chosen approach for this case (both apply one uniform translation to the
+  whole content group, so relative layout is preserved either way) — not
+  pursued since it would touch core serialization across every operation
+  for no behavioral difference here.
+
+**Constraint.** None — a design tradeoff, not an SDK limitation. Genuinely
+impossible in general for *any* single-rectangle zone to both fully contain
+content that encircles the icon and exclude the icon; the fix accepts that
+the icon-relative position of content is not meaningful to preserve outside
+of an explicit user-driven icon drag while expanded (see SPEC.md's
+Recollapse section), so shifting the content instead of fighting the
+geometry is the correct tradeoff, not just a workaround.
+
 ## 2026-07-14 — User-triggered Cancel instead of a blind watchdog for a stuck "working" card (B-008)
 
 **Decision.** If a tap/operation coincides with the foreground app switching

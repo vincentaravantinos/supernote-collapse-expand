@@ -81,7 +81,7 @@ export async function expandOne(
     iconRectNow = iconRectFromElements(allAtExpand, section, iconElement);
     freshIconEl = allAtExpand.find((el) => {
       const ud = readUserData(el);
-      return ud?.kind === 'section' && ud.section?.id === section.id;
+      return ud?.kind === 'plug' && ud.section?.id === section.id;
     }) ?? iconElement;
     preservedNums = capturePreserved
       ? allAtExpand.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number').map((el) => el.numInPage)
@@ -95,15 +95,27 @@ export async function expandOne(
     bottom: iconRectNow.top + section.relativeRect.top + section.relativeRect.height,
   };
 
-  const dx = iconRectNow.left - section.iconRect.left;
-  const dy = iconRectNow.top - section.iconRect.top;
+  // Content moves by the icon's own movement, plus a one-time extra shift a
+  // prior Recollapse may have queued (contentShift — see BUGS/B-011.md /
+  // CollapseSection.contentShift). Both apply uniformly to every restored
+  // element, so their relative layout to each other never changes — only
+  // their position relative to the icon does, which is fine here since the
+  // user didn't move the icon to cause this.
+  const shiftDx = section.contentShift?.dx ?? 0;
+  const shiftDy = section.contentShift?.dy ?? 0;
+  const dx = (iconRectNow.left - section.iconRect.left) + shiftDx;
+  const dy = (iconRectNow.top - section.iconRect.top) + shiftDy;
 
   const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
   const pageSize = sizeRes?.success && sizeRes.result
     ? { width: sizeRes.result.width, height: sizeRes.result.height }
     : { width: 1404, height: 1872 };
 
-  const emrNow = PointUtils.androidPoint2Emr({ x: iconRectNow.left, y: iconRectNow.top }, pageSize);
+  // Safe two-point EMR delta (see rebuildNameElements's doc comment for why
+  // a bare delta can't just be converted directly): "to" is the icon's new
+  // position plus the queued content shift, "from" is the icon's saved
+  // position — independently converted, then subtracted.
+  const emrNow = PointUtils.androidPoint2Emr({ x: iconRectNow.left + shiftDx, y: iconRectNow.top + shiftDy }, pageSize);
   const emrSaved = PointUtils.androidPoint2Emr({ x: section.iconRect.left, y: section.iconRect.top }, pageSize);
   const emrDelta = { x: emrNow.x - emrSaved.x, y: emrNow.y - emrSaved.y };
   const pageMaxX = PointUtils.getRealMaxX(pageSize);
@@ -182,6 +194,10 @@ export async function expandOne(
     iconRect: iconRectNow,
     collapsedElements: insertOk ? [] : section.collapsedElements,
     preservedNums,
+    // Consumed above (baked into dx/dy/emrDelta) — the strokes are now
+    // physically at their shifted position, so clear it rather than
+    // leaving a stale value to leak forward via the ...section spread.
+    contentShift: undefined,
   };
 
   // Flip the icon's glyph to reflect the new state — set on the same object

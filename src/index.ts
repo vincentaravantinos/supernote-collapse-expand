@@ -93,7 +93,7 @@ export async function handleMainAction() {
         nameTaggedInLasso.push(el);
       } else if (ud.kind === 'part' || ud.kind === 'mask') {
         expandedIds.add(ud.id);
-      } else if (ud.kind === 'section') {
+      } else if (ud.kind === 'plug') {
         if (ud.section.isExpanded) expandedIds.add(ud.section.id);
         else if (!seenCollapsed.has(ud.section.id)) {
           seenCollapsed.add(ud.section.id);
