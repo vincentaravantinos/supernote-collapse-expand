@@ -1,6 +1,6 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, dlog, ICON_GLYPH_EXPANDED, LOG } from '../constants';
-import { buildElement, contentBoundingBox } from '../utils/elementSerializer';
+import { buildElement, contentBoundingBox, getPageSize } from '../utils/elementSerializer';
 import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
@@ -16,6 +16,10 @@ import { CollapseSection } from '../model/types';
 // second independent getElements pass. Only covers the page open at call
 // time — a section expanded on a different page stays dormant until
 // visited, same limitation the tap cache already has.
+//
+// Known limitation (B-013): reliable after a plain process restart
+// (force-stop), but not after a full device reboot — see BUGS/B-013.md.
+// Investigated and not fixed; documented in CHANGES.md / README.md instead.
 export async function rehydrateExpandedRegistry(filePath: string, page: number): Promise<void> {
   try {
     const icons = await buildIconCache(filePath, page);
@@ -106,10 +110,7 @@ export async function expandOne(
   const dx = (iconRectNow.left - section.iconRect.left) + shiftDx;
   const dy = (iconRectNow.top - section.iconRect.top) + shiftDy;
 
-  const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
-  const pageSize = sizeRes?.success && sizeRes.result
-    ? { width: sizeRes.result.width, height: sizeRes.result.height }
-    : { width: 1404, height: 1872 };
+  const pageSize = await getPageSize(filePath, page);
 
   // Safe two-point EMR delta (see rebuildNameElements's doc comment for why
   // a bare delta can't just be converted directly): "to" is the icon's new

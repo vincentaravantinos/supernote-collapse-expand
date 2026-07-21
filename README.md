@@ -19,9 +19,9 @@ panning, and selecting around a collapsed region.
 All actions use the **Collapse / Expand** button in the lasso menu: make a
 selection with the lasso, then tap the button.
 
-**Shortcut**: a single tap of your **finger** directly on a `+` icon expands or
-recollapses it on the spot — no lasso or button needed. (A pen tap just draws,
-as usual.)
+**Shortcut**: a single tap of your **finger** directly on a `+` icon (or a
+section's name, if it has one) expands or recollapses it on the spot — no
+lasso or button needed. (A pen tap just draws, as usual.)
 
 ---
 
@@ -32,7 +32,7 @@ as usual.)
 1. Lasso the handwriting you want to hide.
 2. Tap **Collapse / Expand**.
 
-The selected content disappears and a small `+` icon appears just above and to
+The selected content disappears and a small `⊕` icon appears just above and to
 the left of where it was. The icon holds everything needed to bring the content
 back later.
 
@@ -43,8 +43,9 @@ Pictures and titles inside the lasso are left in place — they aren't collapsed
 1. Lasso the `+` icon.
 2. Tap **Collapse / Expand**.
 
-The content reappears where it was. A white area with a thin outline marks the
-section's boundary, so you can see exactly what belongs to it.
+The content reappears where it was, the icon switches to `⊖`, and a white area
+with a thin outline marks the section's boundary, so you can see exactly what
+belongs to it.
 
 ### Recollapse — put it away again
 
@@ -52,8 +53,8 @@ section's boundary, so you can see exactly what belongs to it.
    itself.
 2. Tap **Collapse / Expand**.
 
-The content hides again and the white area disappears. The `+` icon stays right
-where it is.
+The content hides again, the white area disappears, and the icon switches back
+to `⊕`. The icon stays right where it is.
 
 ---
 
@@ -87,6 +88,23 @@ differently depending on whether the section is collapsed or expanded:
 
 ---
 
+## Naming a section
+
+You can give a collapsed section a handwritten name so you can tell sections
+apart at a glance:
+
+1. Write the name on the page.
+2. Lasso it together with the section's `+` icon.
+3. Tap **Collapse / Expand** — you'll be asked to confirm before the name is
+   set (or replaced, if the section already has one).
+
+The name appears next to the icon with a thin underline beneath it, and stays
+visible whether the section is collapsed or expanded. It only moves when you
+drag the icon while the section is expanded (it follows rigidly) — nothing
+else repositions it.
+
+---
+
 ## Modifying the content of an existing section
 
 You can add to a section while it's expanded. Any new strokes you write on top of
@@ -113,6 +131,12 @@ expanded it) is left exactly where it is and is **not** pulled into the section.
   handwriting the page holds (not just what you selected) — on a very dense page
   an operation can take several seconds. The "working" indicator shows while it
   runs; just wait for it to finish.
+- **Dragging an expanded section's icon after a device reboot.** If a
+  section is still expanded when you **reboot the device** (not just switch
+  apps), dragging its icon to reshape it won't do anything until you either
+  recollapse and re-expand the section, or reboot a second time. Tapping the
+  icon to collapse or expand it works normally the whole time — only the
+  live drag-to-reshape is affected.
 - **Typed text boxes are hidden when expanded.** If your selection includes a
   typed **text box**, it still collapses and is preserved, but when you expand the
   section the text box is covered by the section's white area and won't be

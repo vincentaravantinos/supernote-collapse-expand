@@ -9,7 +9,7 @@ export function dlog(...args: any[]): void {
 
 // Logged at each action start to confirm which build is actually live: pushing a
 // new .snplg doesn't always replace the running one. Bump per deploy.
-export const BUILD_TAG = 'r122-content-shift';
+export const BUILD_TAG = 'r130-b14-parked-clean';
 
 export const ICON_SIZE = 50; // px
 // A gesture whose finger moved less than this is a tap/select, not a drag.

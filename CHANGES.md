@@ -28,9 +28,13 @@
   immediately — no device restart needed.
 
 - Fix: dragging an expanded section's icon to reshape it now works again
-  right after a plugin or app restart — the tracking it depends on is
-  re-established for the current page at startup instead of staying empty
-  until the section is expanded again.
+  after a plugin or app restart (e.g. switching apps and coming back) — the
+  tracking it depends on is re-established for the current page at startup
+  instead of staying empty until the section is expanded again. Known
+  limitation: this doesn't survive a full **device reboot** — an
+  already-expanded section's icon won't redraw live until you switch the
+  device off and on again, or recollapse and re-expand the section. Tapping
+  the icon to collapse/expand is unaffected either way.
 
 - Feature: a section's icon now shows **"⊖" while expanded** (was always
   "⊕") — flips back on Recollapse, so the icon itself indicates the
