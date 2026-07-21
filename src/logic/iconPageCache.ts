@@ -1,7 +1,7 @@
 import { PluginFileAPI, Rect } from 'sn-plugin-lib';
 import { LOG } from '../constants';
 import { readUserData } from '../utils/userDataManager';
-import { contentBoundingBox, serializeElement } from '../utils/elementSerializer';
+import { contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
 import { findNameElements } from './nameAction';
 import { CollapsedElement, CollapseSection } from '../model/types';
 
@@ -41,10 +41,7 @@ export async function buildIconCache(filePath: string, page: number): Promise<Pa
   }
 
   if (icons.length > 0) {
-    const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
-    const pageSize = sizeRes?.success && sizeRes.result
-      ? { width: sizeRes.result.width, height: sizeRes.result.height }
-      : { width: 1404, height: 1872 };
+    const pageSize = await getPageSize(filePath, page);
     for (const icon of icons) {
       const nameEls = findNameElements(all, icon.id);
       if (nameEls.length === 0) continue;

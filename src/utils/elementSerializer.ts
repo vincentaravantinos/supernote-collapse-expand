@@ -1,4 +1,4 @@
-import { PluginCommAPI, Point, PointUtils, Rect } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, Point, PointUtils, Rect } from 'sn-plugin-lib';
 import { ELEMENT_TYPES, LOG } from '../constants';
 import {
   CollapsedElement,
@@ -29,6 +29,19 @@ function roundRect(rect: Rect): Rect {
     right: Math.round(rect.right),
     bottom: Math.round(rect.bottom),
   };
+}
+
+export type PageSize = { width: number; height: number };
+
+// A4/A5X-class fallback, used only if the SDK call itself fails — pageSize
+// otherwise always comes from the real page.
+const FALLBACK_PAGE_SIZE: PageSize = { width: 1404, height: 1872 };
+
+export async function getPageSize(filePath: string, page: number): Promise<PageSize> {
+  const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
+  return sizeRes?.success && sizeRes.result
+    ? { width: sizeRes.result.width, height: sizeRes.result.height }
+    : FALLBACK_PAGE_SIZE;
 }
 
 // Bounding box (android page coords) of serialized elements. Strokes are stored

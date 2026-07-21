@@ -11,7 +11,7 @@ import {
   SCHEMA_VERSION,
   ZONE_MARGIN,
 } from '../constants';
-import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
+import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -50,10 +50,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   // Zone = content bbox + margin (not the lasso rect), so the mask and outline
   // hug the actual strokes. Fall back to the lasso rect if the bbox is empty.
-  const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
-  const pageSize = sizeRes?.success && sizeRes.result
-    ? { width: sizeRes.result.width, height: sizeRes.result.height }
-    : { width: 1404, height: 1872 };
+  const pageSize = await getPageSize(filePath, page);
   const bbox = contentBoundingBox(collapsed, pageSize);
   const zone: Rect = bbox
     ? { left: bbox.left - ZONE_MARGIN, top: bbox.top - ZONE_MARGIN, right: bbox.right + ZONE_MARGIN, bottom: bbox.bottom + ZONE_MARGIN }

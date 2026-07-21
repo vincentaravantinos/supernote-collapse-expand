@@ -1,6 +1,6 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, NativeUIUtils, Point, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_NAME_PREFIX, CE_UNDERLINE_PREFIX, dlog, ELEMENT_TYPES, LOG, UNDERLINE_GAP } from '../constants';
-import { buildElement, contentBoundingBox, serializeElement } from '../utils/elementSerializer';
+import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
 import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
 import { CollapsedElement, CollapseSection } from '../model/types';
 
@@ -136,10 +136,7 @@ export async function handleNameAction(
     return false;
   }
 
-  const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
-  const pageSize = sizeRes?.success && sizeRes.result
-    ? { width: sizeRes.result.width, height: sizeRes.result.height }
-    : { width: 1404, height: 1872 };
+  const pageSize = await getPageSize(filePath, page);
 
   // No translation — the name stays exactly where the user wrote it.
   // pageMaxX/pageMaxY are still needed to rescale a stroke's own EMR space

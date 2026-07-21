@@ -1,7 +1,7 @@
 import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
 import { padded, rectContains, stretchZoneToIcon } from '../utils/geometryHelpers';
-import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
+import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { CollapseSection, CollapsedElement } from '../model/types';
 import { expandedCount, expandedEntries, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
@@ -150,10 +150,7 @@ async function redrawSectionBox(id: string): Promise<void> {
     fresh = resolveLinkMemberIndices(fresh);
     if (fresh.length === 0) { return; }
 
-    const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
-    const pageSize = sizeRes?.success && sizeRes.result
-      ? { width: sizeRes.result.width, height: sizeRes.result.height }
-      : { width: 1404, height: 1872 };
+    const pageSize = await getPageSize(filePath, page);
 
     const existing = readUserData(iconEl);
     const base = existing?.kind === 'plug' ? existing.section : null;

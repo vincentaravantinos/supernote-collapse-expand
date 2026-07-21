@@ -8,7 +8,7 @@ import {
   CE_PLUG_PREFIX,
   ZONE_MARGIN,
 } from '../constants';
-import { contentBoundingBox, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
+import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { forgetSection, getExpandedEntry } from './expandedRegistry';
@@ -234,10 +234,7 @@ export async function recollapseSections(
   await PluginNoteAPI.saveCurrentNote();
   dlog(`${LOG} PERF recollapse saveCurrentNote=${Date.now() - tSave}ms`);
 
-  const sizeRes: any = await PluginFileAPI.getPageSize(filePath, page);
-  const pageSize = sizeRes?.success && sizeRes.result
-    ? { width: sizeRes.result.width, height: sizeRes.result.height }
-    : { width: 1404, height: 1872 };
+  const pageSize = await getPageSize(filePath, page);
 
   // Fast path: a single same-session section whose icon num we cached at expand.
   // Fetch just the icon + the section's own elements (the nums NOT preserved at
