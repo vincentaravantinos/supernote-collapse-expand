@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 1.1.0
 
 - Fix: drawing ink that overlaps or encircles an expanded section's icon no
   longer leaves the icon buried under the section's area on the next
