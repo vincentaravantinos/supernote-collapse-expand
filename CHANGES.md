@@ -1,5 +1,11 @@
 # Changes
 
+## Unreleased
+
+- Maintenance: updated the underlying plugin SDK library to the latest
+  version, required for the plugin to run on the new Chauvet firmware
+  (3.29.43 / 2.26.40 Beta).
+
 ## 1.1.0
 
 - Fix: drawing ink that overlaps or encircles an expanded section's icon no
