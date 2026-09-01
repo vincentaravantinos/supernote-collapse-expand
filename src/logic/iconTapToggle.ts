@@ -6,8 +6,27 @@ import { isLandscape } from '../utils/orientation';
 import { expandSections } from './expandAction';
 import { recollapseSections } from './recollapseAction';
 import { buildIconCache, getCachedIcons, PageIconEntry } from './iconPageCache';
+import { ensureAllPermissions } from '../utils/permissions';
 import { notifyShown } from './workingViewStore';
 import { isTapDistance, noteGestureDown } from './tapGesture';
+
+// SPEC.md REQ-090/100/110: requested once, on the first qualifying tap of
+// any kind (hit or miss — we can't tell in advance), silently on denial,
+// and never repeated via another tap in this activation even if declined
+// (unlike a button-triggered operation's own gate, which re-asks every
+// time — see ensureAllPermissions' own grant-only cache). This flag is what
+// enforces "never repeated", since ensureAllPermissions itself doesn't cache
+// denials.
+let permissionsAttempted = false;
+
+async function ensureTapPermissions(): Promise<void> {
+  if (permissionsAttempted) return;
+  permissionsAttempted = true;
+  await ensureAllPermissions(
+    'Collapse/Expand needs permission to read and change the page.',
+    { silent: true },
+  );
+}
 
 // BACKLOG #8: a single finger tap directly on a + icon toggles that section
 // (collapsed -> expand, expanded -> recollapse). Pen taps are ignored — they
@@ -43,6 +62,11 @@ function findHit(icons: PageIconEntry[], x: number, y: number): PageIconEntry | 
 
 async function handleTap(x: number, y: number): Promise<void> {
   if (await isLandscape()) return;
+  // Deliberately before any note-context check: asking right away, even on
+  // a tap that turns out to be outside a note (e.g. dismissing the
+  // plugin-install dialog), reads as natural — "right after installing" —
+  // rather than surprising later once the user is mid-note.
+  await ensureTapPermissions();
   const pgRes: any = await PluginCommAPI.getCurrentPageNum();
   if (!pgRes?.success || typeof pgRes.result !== 'number') return;
   const page = pgRes.result as number;

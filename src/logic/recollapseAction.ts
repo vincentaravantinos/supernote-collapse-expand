@@ -11,6 +11,7 @@ import {
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
+import { ensureAllPermissions } from '../utils/permissions';
 import { forgetSection, getExpandedEntry } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -228,6 +229,11 @@ export async function recollapseSections(
   page: number,
 ): Promise<void> {
   if (sectionIds.length === 0) return;
+
+  const permitted = await ensureAllPermissions(
+    'Collapse/Expand needs permission to read and change the page to recollapse this section.',
+  );
+  if (!permitted) return;
 
   // Flush in-flight edits so the read sees strokes drawn while expanded.
   const tSave = Date.now();

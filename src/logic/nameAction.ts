@@ -2,6 +2,7 @@ import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, NativeUIUtils, Point, Poin
 import { CE_NAME_PREFIX, CE_UNDERLINE_PREFIX, dlog, ELEMENT_TYPES, LOG, UNDERLINE_GAP } from '../constants';
 import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
 import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
+import { ensureAllPermissions } from '../utils/permissions';
 import { CollapsedElement, CollapseSection } from '../model/types';
 
 // Elements tagged as a given section's name (there is no per-element id — every
@@ -108,6 +109,18 @@ export async function handleNameAction(
     return ud?.kind === 'name' && ud.id === target.section.id;
   });
   const allNameCandidates = [...strokeCandidates, ...keptOldNameEls];
+
+  // Asked upfront, before the confirm dialog: READ is needed just to know
+  // whether this is a Set or a Replace (existingNameEls) before the dialog
+  // can even be worded, and asking for everything now (rather than READ
+  // here + WRITE/DELETE after confirm) means one prompt instead of two.
+  // Denial here means false, not true: this is a real rename attempt (the
+  // user already lassoed a name + a collapsed icon), not "nothing to
+  // rename," so it must not silently fall back to Expand.
+  const permitted = await ensureAllPermissions(
+    'Collapse/Expand needs permission to read and change the page to set this name.',
+  );
+  if (!permitted) return false;
 
   // Flush pending interactive edits (a draw or an erase lives only in the
   // cached copy until saved) before reading state or mutating — otherwise

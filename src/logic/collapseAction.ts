@@ -13,6 +13,7 @@ import {
 } from '../constants';
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
+import { ensureAllPermissions } from '../utils/permissions';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 function generateSectionId(): string {
@@ -26,6 +27,11 @@ export async function collapseAction(filePath: string, page: number, elements: a
     return;
   }
   const lasso = lassoRes.result;
+
+  const permitted = await ensureAllPermissions(
+    'Collapse/Expand needs permission to read and change the page to collapse this selection.',
+  );
+  if (!permitted) return;
 
   let collapsed: CollapsedElement[] = [];
   const tSer = Date.now();

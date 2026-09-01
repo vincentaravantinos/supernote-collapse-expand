@@ -183,6 +183,77 @@ If a new feature ever needs state that doesn't fit in a single element's
 location (typically the section icon's `userData`) before the operation
 returns control to the user.
 
+## Permissions
+
+Some operations need the user's permission to read or change note content
+directly. The host may show a permission dialog before such an operation
+can proceed. Rather than asking incrementally as new operations are
+tried, the plugin asks for everything it might ever need together, the
+first time the user does anything with it at all — whichever comes
+first, a tap or a button-triggered operation. The plugin's finger-tap
+shortcut (Expand/Recollapse by tapping a section's icon) is what makes
+"a tap" a possible first interaction: since it can't tell in advance
+whether a given tap even targets one of its icons, it asks on the
+user's first single-finger tap of any kind, not tied to a hit — see
+REQ-090/100.
+
+REQ-010: The first time the user triggers Collapse, Expand, Recollapse,
+Name/Rename, or a section icon drag, and the plugin does not currently
+have every permission that operation needs, the host's standard
+permission dialog is shown before the operation makes any change to the
+page.
+
+REQ-020: A prior decline does not stick permanently from the plugin's
+own perspective: the next time the user triggers an operation that
+needs a permission that was previously declined (or only granted "this
+time" and is no longer in effect), the plugin asks again, rather than
+silently treating that permission as permanently unavailable for that
+operation.
+
+REQ-030: If the triggered operation needs more than one permission the
+user doesn't yet have, the user may see more than one permission dialog
+in sequence — not a single combined prompt.
+
+REQ-040: If the user grants every permission the triggered operation
+needs, the operation proceeds and completes normally, with no visible
+difference from a case where the permission was already granted.
+
+REQ-050: If the user denies a permission the triggered operation needs,
+the page is left completely unchanged — no partial collapse, expand,
+recollapse, rename, or icon redraw takes place.
+
+REQ-060: If the user denies a permission the triggered operation needs,
+a message is shown explaining that the plugin needs permission to make
+the requested change, and where to grant it.
+
+REQ-070: Once the user has granted a permission "always," triggering an
+operation that needs only that permission again does not show a dialog
+for it, unless the user later revokes the permission themselves.
+
+REQ-080: If the plugin cannot obtain a needed permission for a reason
+other than the user explicitly declining it, an operation the user
+triggered still leaves the page completely unchanged and still shows
+the same explanatory message as an explicit denial — it never behaves
+as if the button press did nothing.
+
+REQ-090: The first time the user makes a single-finger tap of any kind
+(whether or not it lands on a section's icon or its name), if the
+plugin does not yet have every permission it may ever need, the host's
+standard permission dialog is shown for each one still missing.
+
+REQ-100: If the user denies a permission requested under REQ-090, no
+message is shown for it — the tap shortcut simply stays inactive, as if
+the tap had landed on nothing, rather than surfacing an error for a tap
+that may not even have been meant for the plugin.
+
+REQ-110: Once the permissions requested under REQ-090 have been resolved
+(granted or declined) for the current plugin activation, they are not
+requested again via another tap in the same activation, even if some were
+declined — unlike REQ-020's guarantee, which is specific to
+button-triggered operations. Declining one via a tap does not, however,
+prevent it from being requested again the next time the user triggers a
+button-driven operation that needs it (REQ-010, REQ-020).
+
 ## Data model
 
 ### Element `userData` prefixes (explicit semantics)

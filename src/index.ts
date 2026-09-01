@@ -1,4 +1,4 @@
-import { PluginCommAPI, PluginManager } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, PluginManager } from 'sn-plugin-lib';
 import { BUILD_TAG, dlog, ELEMENT_TYPES, LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
 import { summarizeElements } from './utils/diagnostics';
@@ -85,6 +85,19 @@ export async function handleMainAction() {
     const nameTaggedInLasso: any[] = [];
     for (const el of elements) {
       const ud = readUserData(el);
+      dlog(`${LOG} B-016-PROBE classify num=${el?.numInPage} type=${el?.type} userData=${JSON.stringify(el?.userData)} parsedKind=${ud?.kind ?? 'null'}`);
+      if (!ud && el?.type === ELEMENT_TYPES.TEXT && typeof el?.numInPage === 'number') {
+        // B-016 cross-check: does the SAME element, read via PluginFileAPI
+        // instead of getLassoElements, have userData? Isolates whether the
+        // gap is specific to the lasso/comm read path.
+        try {
+          const crossRes: any = await PluginFileAPI.getElement(filePath, page, el.numInPage);
+          const crossEl = crossRes?.success ? crossRes.result : null;
+          dlog(`${LOG} B-016-PROBE cross-check num=${el.numInPage} via PluginFileAPI.getElement userData=${JSON.stringify(crossEl?.userData)}`);
+        } catch (e) {
+          dlog(`${LOG} B-016-PROBE cross-check num=${el.numInPage} threw: ${e}`);
+        }
+      }
       if (!ud) {
         if (el.type === ELEMENT_TYPES.STROKE) nameCandidates.push(el);
         continue;

@@ -3,6 +3,7 @@ import { CE_PART_PREFIX, dlog, ICON_GLYPH_EXPANDED, LOG } from '../constants';
 import { buildElement, contentBoundingBox, getPageSize } from '../utils/elementSerializer';
 import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
+import { ensureAllPermissions } from '../utils/permissions';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { forgetSection, noteSectionExpanded } from './expandedRegistry';
 import { buildIconCache } from './iconPageCache';
@@ -237,6 +238,11 @@ export async function expandSections(
   page: number,
 ): Promise<void> {
   if (targets.length === 0) return;
+
+  const permitted = await ensureAllPermissions(
+    'Collapse/Expand needs permission to read and change the page to expand this section.',
+  );
+  if (!permitted) return;
 
   // Flush in-flight edits so the per-section icon-rect reads see current state.
   await PluginNoteAPI.saveCurrentNote();

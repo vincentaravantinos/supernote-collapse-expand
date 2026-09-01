@@ -3,6 +3,7 @@ import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constan
 import { padded, rectContains, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
+import { ensureAllPermissions } from '../utils/permissions';
 import { CollapseSection, CollapsedElement } from '../model/types';
 import { expandedCount, expandedEntries, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
 import { expandOne } from './expandAction';
@@ -77,6 +78,15 @@ export function onMotionUp(x: number, y: number): void {
 async function redrawSectionBox(id: string): Promise<void> {
   const entry = getExpandedEntry(id);
   if (!entry) return;
+
+  // Denial degrades the same way a missed live redraw already does (SPEC.md
+  // Persistence requirements): no content is lost, the section stays
+  // correctly recoverable via a real Recollapse/Expand — just this
+  // convenience redraw is skipped.
+  const permitted = await ensureAllPermissions(
+    'Collapse/Expand needs permission to change the page to redraw this section.',
+  );
+  if (!permitted) return;
 
   const fpRes: any = await PluginCommAPI.getCurrentFilePath();
   const pgRes: any = await PluginCommAPI.getCurrentPageNum();

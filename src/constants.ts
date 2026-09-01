@@ -46,6 +46,12 @@ export const MAX_USERDATA_BYTES = 512 * 1024;
 export const PLUGIN_BUTTON_NAME = 'Collapse / Expand';
 export const PLUGIN_MENU_ID = 200;
 
+// No FILE:DELETE — this plugin only ever removes elements within the open
+// note (deleteElements), which the SDK validates against FILE:WRITE, not
+// a separate delete permission (docs.supernote.com/en/plugin-base/permission).
+export const PERM_FILE_READ = 'plugin.permission.FILE:READ';
+export const PERM_FILE_WRITE = 'plugin.permission.FILE:WRITE';
+
 export const ELEMENT_TYPES = {
   STROKE: 0,
   TITLE: 100,

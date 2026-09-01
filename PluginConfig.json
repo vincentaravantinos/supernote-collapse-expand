@@ -7,5 +7,6 @@
   "pluginID": "com.supernote.plugin.collapseexpand",
   "pluginKey": "CollapseExpand",
   "jsMainPath": "index",
-  "supportTypes": ["NOTE"]
+  "supportTypes": ["NOTE"],
+  "uses-permissions": ["plugin.permission.FILE:READ", "plugin.permission.FILE:WRITE"]
 }
