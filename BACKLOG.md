@@ -13,7 +13,6 @@ an item once the user confirms it's done.
 
 | ID     | Description | Status |
 |--------|-------------|--------|
-| CR-003 | Audit getElement/getElementNumList/deleteElements against the new 1-indexed convention | Analyzed — low impact, fast-track |
 | CR-004 | Investigate batchUpdatePageElements to cut per-write round-trips (BACKLOG item #3) | Analyzed — high impact, escalate to Feature |
 | CR-005 | Investigate registerPluginLifeListener as a possible fix for B-013 (reboot known limitation) | Analyzed — high impact, escalate to Feature |
 
@@ -23,6 +22,7 @@ an item once the user confirms it's done.
 |--------|-------------|--------|
 | CR-001 | Upgrade sn-plugin-lib to latest (Chauvet 3.29.43/2.26.40 SDK release) | Done |
 | CR-002 | Declare plugin permissions (FILE:READ/WRITE) for the new permission system | Done |
+| CR-003 | Audit getElement/getElementNumList/deleteElements against the new 1-indexed convention | Done — no code change needed |
 
 ## Open bugs
 | ID | Symptom |
