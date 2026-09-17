@@ -13,7 +13,6 @@ an item once the user confirms it's done.
 
 | ID     | Description | Status |
 |--------|-------------|--------|
-| CR-002 | Declare plugin permissions (FILE:READ/WRITE) for the new permission system | Escalated to Feature — implemented, Part A validated; **paused**, blocked on B-016 (external SDK bug) for final Part B validation |
 | CR-003 | Audit getElement/getElementNumList/deleteElements against the new 1-indexed convention | Analyzed — low impact, fast-track |
 | CR-004 | Investigate batchUpdatePageElements to cut per-write round-trips (BACKLOG item #3) | Analyzed — high impact, escalate to Feature |
 | CR-005 | Investigate registerPluginLifeListener as a possible fix for B-013 (reboot known limitation) | Analyzed — high impact, escalate to Feature |
@@ -23,16 +22,18 @@ an item once the user confirms it's done.
 | ID     | Description | Status |
 |--------|-------------|--------|
 | CR-001 | Upgrade sn-plugin-lib to latest (Chauvet 3.29.43/2.26.40 SDK release) | Done |
+| CR-002 | Declare plugin permissions (FILE:READ/WRITE) for the new permission system | Done |
 
 ## Open bugs
 | ID | Symptom |
 |---|---|
 | B-012 | Select existing text/strokes, move them, then immediately Collapse (no other action in between): the icon appears (content reported as collapsed) but the original strokes visually remain on the page. Suspected same class as a previously-seen issue — the move likely only lands in the cached copy, not the real file, by the time the plugin reads elements; reading before a `saveCurrentNote` flush would see the pre-move (stale) position/content. Not yet investigated — reported by the user, explicitly deferred. |
 | B-014 | A stroke link's visual indicator was once seen not surviving Collapse/Expand (functionality — tap-to-navigate — still did). Parked — could not reproduce across several attempts with instrumentation in place. See `BUGS/B-014.md`. |
-| B-016 | Parked — external SDK bug: `userData` never survives a round trip through `getElements`/`getElement`/`getLassoElements` on this firmware (Chauvet 2.26.40/3.29.43), so Collapse/Expand/Recollapse/Rename/live-redraw all break once a real icon needs to be recognized on read-back. Reported to Ratta: https://www.reddit.com/r/Supernote_dev/comments/1w44uvs/bug_userdata_never_returned_by/. See `BUGS/B-016.md`. |
 
 ## Closed bugs
 | ID | Symptom |
 |---|---|
 | B-015 | Permission gate (CR-002) silently let an operation proceed unpermitted — fixed by dropping the `hasPermission` pre-check and trusting only `requestPermission`'s documented result. See `BUGS/B-015.md`. |
+| B-016 | External SDK bug: `userData` never survived a round trip on Chauvet 2.26.40/3.29.43 — fixed by Ratta in 3.29.44/2.26.41, confirmed on-device. See `BUGS/B-016.md`. |
+| B-017 | `PluginCommAPI.reloadFile()` could hang indefinitely — removed from 5 of 6 call sites (confirmed unneeded on this SDK build), timeout-guarded at the 1 remaining one. See `BUGS/B-017.md`. |
 

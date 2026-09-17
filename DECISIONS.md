@@ -17,6 +17,38 @@ Each entry should capture:
 
 ---
 
+## 2026-09-17 — Remove `reloadFile()` where unneeded, timeout-guard where it isn't (B-017)
+
+**Decision.** `PluginCommAPI.reloadFile()` can hang indefinitely on this
+SDK build (never resolves, no error). Rather than uniformly wrapping
+every call site in a timeout, each of the 6 call sites was tested
+individually: 5 (`collapseAction.ts`, `expandAction.ts`,
+`recollapseAction.ts`, `nameAction.ts`, `iconMoveRedraw.ts`) turned out to
+no longer need it at all on this firmware — the page and any immediate
+follow-up read (e.g. `buildIconCache()`) are already correct without it —
+so the call was removed outright there. The 6th
+(`strokeLinkExpand.ts`) genuinely still needs it (its very next
+`getElements()` call depends on the reload to see just-inserted stroke
+members' real page numbers), so it's kept but wrapped in a 5s
+`Promise.race` timeout; a hang there now degrades to the same clean,
+already-existing failure path (`insertOk=false`, backup preserved, user
+sees a retry alert) instead of blocking the UI.
+
+**Alternatives considered.** *Timeout-wrap all 6 call sites uniformly,
+without testing whether each still needs the call at all.* Rejected —
+would have "fixed" the hang everywhere but left 5 unnecessary calls in
+place, each still a live (if rarer) hang risk, for no behavioral benefit.
+Removing the call outright where it's not needed is strictly better than
+timing out a call that didn't need to happen.
+
+**Constraint.** No way to actually cancel a hung native call from JS —
+`await` has no cancellation, so a timeout can only stop *waiting* on the
+promise, not stop the underlying call. This is why the one remaining
+call site's failure mode after a timeout is "proceed with stale data,"
+not "the reload eventually completes safely in the background."
+
+---
+
 ## 2026-07-20 — Rigid content shift, not zone clipping, when absorbed ink covers the icon (B-011)
 
 **Decision.** When Recollapse's absorbed content would make the section's

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Feature: the plugin now declares and requests the runtime permissions
+  the new SDK's plugin permission system requires
+  (`plugin.permission.FILE:READ`/`WRITE`) before any operation that reads
+  or writes the note. Every permission is requested upfront on first use
+  (of any kind — button, tap-shortcut, icon-drag); a decline shows a clear
+  message and the operation is aborted with the page left unchanged; the
+  user is asked again on the next attempt rather than being permanently
+  locked out.
+- Fix: an operation (Collapse/Expand/Recollapse/Rename/icon-drag) could
+  get stuck showing "Working…" forever, with no way out but the manual
+  Cancel button. Caused by an SDK call (`reloadFile()`) that can hang
+  indefinitely on this firmware; removed entirely where testing showed it
+  wasn't actually needed, and timeout-guarded at the one remaining call
+  site where it's still required.
 - Maintenance: updated the underlying plugin SDK library to the latest
   version, required for the plugin to run on the new Chauvet firmware
   (3.29.43 / 2.26.40 Beta).
