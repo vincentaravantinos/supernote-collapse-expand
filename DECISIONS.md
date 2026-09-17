@@ -17,6 +17,37 @@ Each entry should capture:
 
 ---
 
+## 2026-09-17 — Don't adopt `batchUpdatePageElements` (CR-004)
+
+**Decision.** Rejected `PluginCommAPI.batchUpdatePageElements` as a way
+to collapse this codebase's insert+delete pairs (Collapse, Recollapse,
+Rename, icon-drag live redraw) into single round-trips. A throwaway
+on-device spike (not committed — see CRS/CR-004.md) showed the delete
+component silently does nothing, even for a single valid, currently-
+existing target with no bogus entries involved, while the call still
+reports `{success: true, result: true}` and the insert component works
+correctly. A second variant with one additional bad delete target
+showed the insert can then silently fail too, in the same call, still
+reporting success. Every one of this codebase's action modules needs
+that delete to actually happen (removing originals/parts/masks) — an
+API that can silently no-op it while claiming success is unusable here,
+not a tradeoff to design around.
+
+**Alternatives considered.** *Ship it anyway with a post-call
+verification read (re-fetch and confirm the delete landed).* Rejected —
+that verification read reintroduces the very round-trip this API was
+supposed to eliminate, at which point there's no benefit over today's
+two separate, individually-erroring calls, which are simpler and
+already correctly detected as failed when they fail.
+
+**Constraint.** Confirmed via a two-part on-device spike (clean single
+target, then with a bogus target mixed in) — not inferable from the
+official docs, which only mention a missing-target being silently
+skipped, not a valid target's delete silently doing nothing. Reported to
+Ratta (FEEDBACK.md); revisit if a fixed version ships.
+
+---
+
 ## 2026-09-17 — Remove `reloadFile()` where unneeded, timeout-guard where it isn't (B-017)
 
 **Decision.** `PluginCommAPI.reloadFile()` can hang indefinitely on this
