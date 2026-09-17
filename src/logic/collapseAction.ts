@@ -177,7 +177,9 @@ export async function collapseAction(filePath: string, page: number, elements: a
       console.error(`${LOG} collapse setLassoBoxState res=${JSON.stringify(lassoRes2)}`);
     }
   }
-  const reloadRes: any = await PluginCommAPI.reloadFile();
-  if (!reloadRes?.success) console.error(`${LOG} collapse reloadFile res=${JSON.stringify(reloadRes)}`);
+  // B-017: PluginCommAPI.reloadFile() can hang indefinitely on this SDK
+  // build, and testing confirmed it's no longer needed here — the page
+  // renders correctly without it (nothing reads back afterward in this
+  // function). See BUGS/B-017.md.
   dlog(`${LOG} PERF collapse close+reload=${Date.now() - tReload}ms`);
 }

@@ -203,7 +203,7 @@ export async function handleNameAction(
       console.error(`${LOG} name setLassoBoxState res=${JSON.stringify(lassoRes)}`);
     }
   }
-  const reloadRes: any = await PluginCommAPI.reloadFile();
-  if (!reloadRes?.success) console.error(`${LOG} name reloadFile res=${JSON.stringify(reloadRes)}`);
+  // B-017: reloadFile() removed — see collapseAction.ts's identical comment
+  // and BUGS/B-017.md. Terminal call here too, nothing reads afterward.
   return false;
 }

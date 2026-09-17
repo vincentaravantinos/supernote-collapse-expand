@@ -74,7 +74,7 @@ export function onMotionUp(x: number, y: number): void {
 
 // Full live redraw: re-fill the mask AND re-place the strokes at the stretched
 // zone. Re-serializes the on-page strokes per drag (rare op). Reuses expandOne so
-// z-order and stroke links match a normal expand; one reloadFile, no flash.
+// z-order and stroke links match a normal expand.
 async function redrawSectionBox(id: string): Promise<void> {
   const entry = getExpandedEntry(id);
   if (!entry) return;
@@ -262,8 +262,9 @@ async function redrawSectionBox(id: string): Promise<void> {
     }
 
     await expandOne(temp, iconEl, filePath, page); // capturePreserved defaults false
-    const reloadRes: any = await PluginCommAPI.reloadFile();
-    if (!reloadRes?.success) console.error(`${LOG} live redraw reloadFile res=${JSON.stringify(reloadRes)}`);
+    // B-017: reloadFile() removed — see collapseAction.ts's identical comment
+    // and BUGS/B-017.md. Confirmed on-device that buildIconCache() right
+    // below still reads the fresh (post-move) icon position without it.
     // Rebuild (not just invalidate) the icon cache eagerly, while the
     // working bubble is already up — moves the cost here instead of paying
     // it silently on the user's next tap.

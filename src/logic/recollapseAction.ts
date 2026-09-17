@@ -289,8 +289,8 @@ export async function recollapseSections(
       console.error(`${LOG} recollapse setLassoBoxState res=${JSON.stringify(lassoRes)}`);
     }
   }
+  // B-017: reloadFile() removed — see collapseAction.ts's identical comment
+  // and BUGS/B-017.md. Terminal call here too, nothing reads afterward.
   const tReload = Date.now();
-  const reloadRes: any = await PluginCommAPI.reloadFile();
-  if (!reloadRes?.success) console.error(`${LOG} recollapse reloadFile res=${JSON.stringify(reloadRes)}`);
   dlog(`${LOG} PERF recollapse reload=${Date.now() - tReload}ms`);
 }

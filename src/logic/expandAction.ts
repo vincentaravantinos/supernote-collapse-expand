@@ -255,8 +255,8 @@ export async function expandSections(
     await expandOne(t.section, t.icon, filePath, page, true); // capture preservedNums
   }
 
+  // B-017: reloadFile() removed — see collapseAction.ts's identical comment
+  // and BUGS/B-017.md. Terminal call here too, nothing reads afterward.
   const tReload = Date.now();
-  const reloadRes: any = await PluginCommAPI.reloadFile();
-  if (!reloadRes?.success) console.error(`${LOG} expand reloadFile res=${JSON.stringify(reloadRes)}`);
   dlog(`${LOG} PERF expand reload=${Date.now() - tReload}ms`);
 }

@@ -3,6 +3,28 @@ import { CE_PART_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
 import { buildElement, buildStrokeLink } from '../utils/elementSerializer';
 import { CollapsedElement, SerializedLink } from '../model/types';
 
+// B-017: PluginCommAPI.reloadFile() can hang indefinitely on this SDK build
+// (see BUGS/B-017.md). Every other call site got reloadFile() removed
+// entirely once testing showed it's no longer needed to surface a write —
+// this is the one place it's still required (the immediately-following
+// getElements() needs it to see the just-inserted members' real page
+// nums). If it hangs here too, don't block the UI forever: give up after
+// RELOAD_TIMEOUT_MS and let the caller's existing failure path handle it —
+// insertBatch below will then read stale data, memberNums will come back
+// empty, and expandOne's crash-safety already treats that as a clean,
+// backup-preserving failure (confirmed on-device).
+const RELOAD_TIMEOUT_MS = 5000;
+
+async function reloadFileWithTimeout(): Promise<void> {
+  await Promise.race([
+    PluginCommAPI.reloadFile(),
+    new Promise<void>((resolve) => setTimeout(() => {
+      console.error(`${LOG} reloadFile() timed out after ${RELOAD_TIMEOUT_MS}ms — proceeding without it`);
+      resolve();
+    }, RELOAD_TIMEOUT_MS)),
+  ]);
+}
+
 export interface StrokeLinkExpandCtx {
   filePath: string;
   page: number;
@@ -98,8 +120,9 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
 
     // Reload then read back: the section's new stroke elements are this link's
     // members (masks are geometry; other strokes wait for the final batch;
-    // earlier links' members are already in knownNums).
-    await PluginCommAPI.reloadFile();
+    // earlier links' members are already in knownNums). See RELOAD_TIMEOUT_MS
+    // above for why this specific reloadFile() is timeout-guarded.
+    await reloadFileWithTimeout();
     const chk: any = await PluginFileAPI.getElements(page, filePath);
     const els: any[] = chk?.success && Array.isArray(chk.result) ? chk.result : [];
     const memberNums = els
