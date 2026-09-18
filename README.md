@@ -118,6 +118,12 @@ expanded it) is left exactly where it is and is **not** pulled into the section.
 
 ## Good to know
 
+- **First use asks for permission.** The first time you use the plugin
+  in any way (button, tap-shortcut, or dragging an icon), Supernote
+  will ask you to allow it to read and change the page — this is
+  required for the plugin to work at all. If you decline, that
+  particular action is cancelled with the page left unchanged, and
+  you'll be asked again the next time you try.
 - **It's safe to power off.** Sections are remembered across turning the device
   off, app restarts, and page reloads. You can always perform the next action on
   any section after powering back on.
