@@ -3,6 +3,7 @@ import { CE_NAME_PREFIX, CE_UNDERLINE_PREFIX, dlog, ELEMENT_TYPES, LOG, UNDERLIN
 import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
 import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
+import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
 import { CollapsedElement, CollapseSection } from '../model/types';
 
 // Elements tagged as a given section's name (there is no per-element id — every
@@ -124,9 +125,8 @@ export async function handleNameAction(
 
   // Flush pending interactive edits (a draw or an erase lives only in the
   // cached copy until saved) before reading state or mutating — otherwise
-  // the later reloadFile() reloads cache from a real file that never
-  // received e.g. an erase, reverting it. Same pattern as collapseAction.ts
-  // / expandSections / recollapseSections.
+  // the read below can miss it (e.g. an erase not yet reflected). Same
+  // pattern as collapseAction.ts / expandSections / recollapseSections.
   await PluginNoteAPI.saveCurrentNote();
 
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
@@ -194,15 +194,7 @@ export async function handleNameAction(
     }
   }
 
-  const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
-  if (!lassoRes?.success) {
-    // Error 904 here is expected — see collapseAction.ts's identical comment.
-    if (lassoRes?.error?.code === 904) {
-      dlog(`${LOG} name setLassoBoxState res=${JSON.stringify(lassoRes)} (expected)`);
-    } else {
-      console.error(`${LOG} name setLassoBoxState res=${JSON.stringify(lassoRes)}`);
-    }
-  }
+  await dismissLassoAfterDelete('name');
   // B-017: reloadFile() removed — see collapseAction.ts's identical comment
   // and BUGS/B-017.md. Terminal call here too, nothing reads afterward.
   return false;

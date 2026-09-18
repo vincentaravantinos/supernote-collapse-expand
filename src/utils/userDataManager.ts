@@ -142,11 +142,27 @@ export async function writeSection(
     const target = freshIcon ?? (await resolveFreshIcon(filePath, page, section.id)) ?? iconElement;
     target.userData = CE_PLUG_PREFIX + JSON.stringify(section);
     target.pageNum = page;
-    const res: any = await PluginFileAPI.modifyElements(filePath, page, [target]);
-    if (!res?.success) {
-      console.error(`${LOG} modifyElements res=${JSON.stringify(res)}`);
+
+    // B-018: modifyElements can report success without the write actually
+    // landing — confirmed on-device: after a "successful" expand, the icon's
+    // own isExpanded flag was still false, so the next tap ran Expand again
+    // instead of Recollapse. Verify by reading the icon back and checking
+    // isExpanded actually matches; retry the write (up to 3 attempts) if not.
+    let res: any;
+    let confirmed = false;
+    for (let attempt = 0; attempt < 3 && !confirmed; attempt++) {
+      res = await PluginFileAPI.modifyElements(filePath, page, [target]);
+      if (!res?.success) {
+        console.error(`${LOG} modifyElements res=${JSON.stringify(res)}`);
+        break; // a reported failure is trustworthy either way — don't spin on it
+      }
+      const checkRes: any = await PluginFileAPI.getElement(filePath, page, target.numInPage);
+      const checkUd = checkRes?.success ? readUserData(checkRes.result) : null;
+      confirmed = checkUd?.kind === 'plug' && checkUd.section?.isExpanded === section.isExpanded;
+      if (!confirmed) console.error(`${LOG} writeSection attempt ${attempt}: isExpanded didn't stick (wanted ${section.isExpanded}, got ${checkUd?.kind === 'plug' ? checkUd.section?.isExpanded : 'n/a'}) — retrying`);
     }
-    return { ok: !!res?.success, unstableNote: isUnstableNoteError(res) };
+    if (!confirmed && res?.success) console.error(`${LOG} writeSection gave up: isExpanded never confirmed after retries`);
+    return { ok: !!res?.success && confirmed, unstableNote: isUnstableNoteError(res) };
   } catch (e) {
     console.error(`${LOG} Failed to write userData:`, e);
     return { ok: false, unstableNote: false };

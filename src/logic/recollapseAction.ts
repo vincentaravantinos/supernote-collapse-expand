@@ -1,4 +1,4 @@
-import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
+import { PluginFileAPI, PluginNoteAPI, Rect } from 'sn-plugin-lib';
 import {
   dlog,
   ELEMENT_TYPES,
@@ -12,6 +12,8 @@ import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeEle
 import { rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
+import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
+import { alertOverBusyView } from '../utils/busyView';
 import { forgetSection, getExpandedEntry } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -26,8 +28,8 @@ const ABSORBABLE_TYPES = new Set<number>([
 
 // Recollapse ONE section from a pre-fetched element list `all`: re-serialize its
 // on-page parts back into the icon's userData and delete the parts/masks. Does
-// NOT saveCurrentNote / reloadFile / dismiss the lasso — recollapseSections
-// batches those. Returns false if skipped (payload over the size cap).
+// NOT saveCurrentNote / dismiss the lasso — recollapseSections batches those.
+// Returns false if skipped (payload over the size cap).
 async function recollapseOne(
   section: CollapseSection,
   iconElement: any,
@@ -36,13 +38,39 @@ async function recollapseOne(
   page: number,
   pageSize: { width: number; height: number },
 ): Promise<boolean> {
-  const maskEls: any[] = [];
-  const partEls: any[] = [];
-  for (const el of all) {
-    const ud = readUserData(el);
-    if (!ud) continue;
-    if ((ud.kind === 'mask' || ud.kind === 'frame') && ud.id === section.id) maskEls.push(el);
-    else if (ud.kind === 'part' && ud.id === section.id) partEls.push(el);
+  const classify = (elements: any[]) => {
+    const masks: any[] = [];
+    const parts: any[] = [];
+    for (const el of elements) {
+      const ud = readUserData(el);
+      if (!ud) continue;
+      if ((ud.kind === 'mask' || ud.kind === 'frame') && ud.id === section.id) masks.push(el);
+      else if (ud.kind === 'part' && ud.id === section.id) parts.push(el);
+    }
+    return { masks, parts };
+  };
+
+  let { masks: maskEls, parts: partEls } = classify(all);
+
+  // B-018: an expanded section should always have at least a mask/frame on
+  // the page — finding literally nothing tagged for it is a strong signal
+  // the element list this was called with (often the "fast path"'s narrower
+  // candidate scan) is stale/incomplete, not that there's genuinely nothing
+  // to recollapse. Confirmed on-device: this exact case silently no-ops
+  // (icon glyph unchanged, nothing deleted, no error) without this check.
+  // Re-fetch the whole page fresh before accepting "nothing found".
+  if (maskEls.length === 0 && partEls.length === 0) {
+    console.error(`${LOG} recollapse: no tagged elements found for id=${section.id} in the given list (${all.length} el) — re-fetching full page`);
+    const freshRes: any = await PluginFileAPI.getElements(page, filePath);
+    const fresh: any[] = freshRes?.success && Array.isArray(freshRes.result) ? freshRes.result : [];
+    const reclassified = classify(fresh);
+    maskEls = reclassified.masks;
+    partEls = reclassified.parts;
+    if (maskEls.length === 0 && partEls.length === 0) {
+      console.error(`${LOG} recollapse: still nothing tagged for id=${section.id} after a full re-fetch — nothing to do`);
+    } else {
+      all = fresh; // absorb-scan below also needs the fresh list
+    }
   }
 
   let newCollapsed: CollapsedElement[] = [];
@@ -89,7 +117,7 @@ async function recollapseOne(
     if (typeof m.numInPage === 'number') numSet.add(m.numInPage);
   }
 
-  newCollapsed = resolveLinkMemberIndices(newCollapsed);
+  newCollapsed = await resolveLinkMemberIndices(newCollapsed);
 
   // Re-anchor to the icon's CURRENT position and recompute the zone from the
   // content bbox + margin, stretched to touch the icon. So an icon moved while
@@ -139,7 +167,7 @@ async function recollapseOne(
   const payload = CE_PLUG_PREFIX + JSON.stringify(updatedSection);
   dlog(`${LOG} SIZE recollapse payload=${payload.length} bytes for ${newCollapsed.length} element(s)`);
   if (payload.length > MAX_USERDATA_BYTES) {
-    alert('Content too large to re-collapse. Remove some content from this section.');
+    await alertOverBusyView('recollapse', 'Content too large to re-collapse. Remove some content from this section.');
     return false;
   }
 
@@ -161,21 +189,38 @@ async function recollapseOne(
     // userData not updated — leave the on-page parts in place, they're still
     // the only durable copy.
     console.error(`${LOG} failed to update section userData after recollapse — leaving on-page parts in place`);
-    if (!unstableNote) alert("Supernote couldn't complete the recollapse — please try again.");
+    if (!unstableNote) await alertOverBusyView('recollapse', "Supernote couldn't complete the recollapse — please try again.");
     return false;
   }
 
   // Content now durable in the icon. Delete parts + absorbed + mask rings (REAL
-  // file; surfaced by the single reloadFile in recollapseSections). No
-  // saveCurrentNote — it would push the stale cached copy back over the deletion.
+  // file — already visible without an explicit reload on this SDK build, see
+  // BUGS/B-017.md). No saveCurrentNote — it would push the stale cached copy
+  // back over the deletion.
+  // B-018: deleteElements can silently apply to only SOME of a multi-target
+  // call (confirmed: recollapsing a section with a stroke link left the
+  // link's own member strokes + mask/frame behind while everything else in
+  // the same call was removed, with the call still reporting success) — the
+  // same "aggregate success doesn't mean every target landed" class of bug
+  // CR-004 found in batchUpdatePageElements. Don't trust the flag: re-read
+  // and retry whatever's still actually there.
   const numsToDelete = Array.from(numSet);
   if (numsToDelete.length > 0) {
-    const tDel = Date.now();
-    const delRes: any = await PluginFileAPI.deleteElements(filePath, page, numsToDelete);
-    dlog(`${LOG} PERF recollapse deleteElements=${Date.now() - tDel}ms n=${numsToDelete.length}`);
-    if (!delRes?.success) {
-      console.error(`${LOG} recollapse deleteElements failed res=${JSON.stringify(delRes)}`);
-      if (!isUnstableNoteError(delRes)) alert('Recollapsed, but some leftover elements could not be removed — please retry.');
+    let remaining: number[] = numsToDelete;
+    for (let attempt = 0; attempt < 3 && remaining.length > 0; attempt++) {
+      const tDel = Date.now();
+      const delRes: any = await PluginFileAPI.deleteElements(filePath, page, remaining);
+      dlog(`${LOG} PERF recollapse deleteElements[${attempt}]=${Date.now() - tDel}ms n=${remaining.length}`);
+      if (!delRes?.success && isUnstableNoteError(delRes)) break; // note not stable — retrying won't help
+      const chkRes: any = await PluginFileAPI.getElements(page, filePath);
+      const chk: any[] = chkRes?.success && Array.isArray(chkRes.result) ? chkRes.result : [];
+      const stillThere = new Set(chk.map((e) => e.numInPage));
+      remaining = remaining.filter((n) => stillThere.has(n));
+      if (remaining.length > 0) console.error(`${LOG} recollapse deleteElements attempt ${attempt} left ${remaining.length} element(s) behind: ${JSON.stringify(remaining)}`);
+    }
+    if (remaining.length > 0) {
+      console.error(`${LOG} recollapse deleteElements: ${remaining.length} element(s) never removed after retries: ${JSON.stringify(remaining)}`);
+      await alertOverBusyView('recollapse', 'Recollapsed, but some leftover elements could not be removed — please retry.');
     }
   }
   return true;
@@ -220,9 +265,9 @@ async function fastSectionElements(
   return { section: ud.section, icon, elements };
 }
 
-// Recollapse one or more sections in a single screen refresh: flush, read the
-// section's elements (fast path, or a full getElements), mutate, then dismiss the
-// lasso and reloadFile once.
+// Recollapse one or more sections in a single pass: flush, read the section's
+// elements (fast path, or a full getElements), mutate, then dismiss the lasso
+// once.
 export async function recollapseSections(
   sectionIds: string[],
   filePath: string,
@@ -279,16 +324,9 @@ export async function recollapseSections(
     }
   }
 
-  // Dismiss the lasso last, then surface every change with one reloadFile.
-  const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
-  if (!lassoRes?.success) {
-    // Error 904 here is expected — see collapseAction.ts's identical comment.
-    if (lassoRes?.error?.code === 904) {
-      dlog(`${LOG} recollapse setLassoBoxState res=${JSON.stringify(lassoRes)} (expected)`);
-    } else {
-      console.error(`${LOG} recollapse setLassoBoxState res=${JSON.stringify(lassoRes)}`);
-    }
-  }
+  // Dismiss the lasso last — the writes are already visible without an
+  // explicit reload on this SDK build (see BUGS/B-017.md).
+  await dismissLassoAfterDelete('recollapse');
   // B-017: reloadFile() removed — see collapseAction.ts's identical comment
   // and BUGS/B-017.md. Terminal call here too, nothing reads afterward.
   const tReload = Date.now();

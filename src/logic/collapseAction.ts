@@ -14,6 +14,8 @@ import {
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
+import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
+import { alertOverBusyView } from '../utils/busyView';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 function generateSectionId(): string {
@@ -23,7 +25,7 @@ function generateSectionId(): string {
 export async function collapseAction(filePath: string, page: number, elements: any[]) {
   const lassoRes: any = await PluginCommAPI.getLassoRect();
   if (!lassoRes?.success || !lassoRes.result) {
-    alert('Please make a selection first.');
+    await alertOverBusyView('collapse', 'Please make a selection first.');
     return;
   }
   const lasso = lassoRes.result;
@@ -47,10 +49,10 @@ export async function collapseAction(filePath: string, page: number, elements: a
 
   dlog(`${LOG} PERF collapse serialize=${Date.now() - tSer}ms for ${collapsed.length} element(s)`);
 
-  collapsed = resolveLinkMemberIndices(collapsed);
+  collapsed = await resolveLinkMemberIndices(collapsed);
 
   if (collapsed.length === 0) {
-    alert('Nothing collapsable in selection.');
+    await alertOverBusyView('collapse', 'Nothing collapsable in selection.');
     return;
   }
 
@@ -95,7 +97,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   const payload = CE_PLUG_PREFIX + JSON.stringify(section);
   dlog(`${LOG} SIZE collapse payload=${payload.length} bytes for ${collapsed.length} element(s)`);
   if (payload.length > MAX_USERDATA_BYTES) {
-    alert('Selection too large to collapse. Pick a smaller area.');
+    await alertOverBusyView('collapse', 'Selection too large to collapse. Pick a smaller area.');
     return;
   }
 
@@ -121,7 +123,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   const createRes: any = await PluginCommAPI.createElement(ELEMENT_TYPES.TEXT);
   if (!createRes?.success || !createRes.result) {
     console.error(`${LOG} createElement failed res=${JSON.stringify(createRes)}`);
-    if (!isUnstableNoteError(createRes)) alert('Failed to create icon element.');
+    if (!isUnstableNoteError(createRes)) await alertOverBusyView('collapse', 'Failed to create icon element.');
     return;
   }
   const iconEl: any = createRes.result;
@@ -143,7 +145,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
   if (!insertRes?.success) {
     // Nothing deleted yet — the page is exactly as it was, no data lost.
     console.error(`${LOG} insertElements failed res=${JSON.stringify(insertRes)}`);
-    if (!isUnstableNoteError(insertRes)) alert("Supernote couldn't complete the collapse — please try again.");
+    if (!isUnstableNoteError(insertRes)) await alertOverBusyView('collapse', "Supernote couldn't complete the collapse — please try again.");
     try { iconEl.recycle?.(); } catch { /* ignore */ }
     return;
   }
@@ -157,26 +159,16 @@ export async function collapseAction(filePath: string, page: number, elements: a
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, originalNums);
     if (!delRes?.success) {
       console.error(`${LOG} collapse deleteElements failed res=${JSON.stringify(delRes)}`);
-      if (!isUnstableNoteError(delRes)) alert("Collapsed, but the original content couldn't be removed — please retry.");
+      if (!isUnstableNoteError(delRes)) await alertOverBusyView('collapse', "Collapsed, but the original content couldn't be removed — please retry.");
     }
   }
   dlog(`${LOG} PERF collapse delete=${Date.now() - tDel}ms`);
 
   // No saveCurrentNote after the writes (it would push the stale cached copy back
-  // over them). Dismiss the lasso, then reloadFile syncs cached:=real. See SDK_DOC.
+  // over them). Dismiss the lasso — the writes are already visible without an
+  // explicit reload on this SDK build (see BUGS/B-017.md).
   const tReload = Date.now();
-  const lassoRes2: any = await PluginCommAPI.setLassoBoxState(2);
-  if (!lassoRes2?.success) {
-    // Error 904 here is expected, not a bug: the elements that were lassoed
-    // were just deleted above, so the SDK's lasso reference is already gone —
-    // nothing left to dismiss (getLassoElements fails the same way at this
-    // point). Any other error is worth knowing about.
-    if (lassoRes2?.error?.code === 904) {
-      dlog(`${LOG} collapse setLassoBoxState res=${JSON.stringify(lassoRes2)} (expected)`);
-    } else {
-      console.error(`${LOG} collapse setLassoBoxState res=${JSON.stringify(lassoRes2)}`);
-    }
-  }
+  await dismissLassoAfterDelete('collapse');
   // B-017: PluginCommAPI.reloadFile() can hang indefinitely on this SDK
   // build, and testing confirmed it's no longer needed here — the page
   // renders correctly without it (nothing reads back afterward in this

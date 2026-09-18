@@ -9,7 +9,8 @@ import {handleMainAction} from './src/index';
 import {onMotionDown, onMotionUp} from './src/logic/iconMoveRedraw';
 import {onTapDown, onTapUp} from './src/logic/iconTapToggle';
 import {rehydrateExpandedRegistry} from './src/logic/expandAction';
-import {PluginCommAPI, PluginManager} from 'sn-plugin-lib';
+import {getCurrentFileContext} from './src/utils/currentFile';
+import {PluginManager} from 'sn-plugin-lib';
 import {BUILD_TAG, LOG, PLUGIN_BUTTON_NAME, PLUGIN_MENU_ID} from './src/constants';
 
 AppRegistry.registerComponent(appName, () => App);
@@ -73,11 +74,10 @@ try {
 // page open right now. Fire-and-forget — must not delay init.
 (async () => {
   try {
-    const fpRes = await PluginCommAPI.getCurrentFilePath();
-    const pgRes = await PluginCommAPI.getCurrentPageNum();
-    if (fpRes?.success && typeof fpRes.result === 'string' && pgRes?.success && typeof pgRes.result === 'number') {
-      await rehydrateExpandedRegistry(fpRes.result, pgRes.result);
-      console.log(`${LOG} rehydrateExpandedRegistry done for page=${pgRes.result}`);
+    const ctx = await getCurrentFileContext();
+    if (ctx) {
+      await rehydrateExpandedRegistry(ctx.filePath, ctx.page);
+      console.log(`${LOG} rehydrateExpandedRegistry done for page=${ctx.page}`);
     }
   } catch (e) {
     console.log(`${LOG} rehydrateExpandedRegistry threw: ${e}`);

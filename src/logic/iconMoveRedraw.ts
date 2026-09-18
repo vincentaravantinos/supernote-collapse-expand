@@ -1,4 +1,4 @@
-import { PluginCommAPI, PluginFileAPI, PluginManager, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
 import { padded, rectContains, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
@@ -10,8 +10,9 @@ import { expandOne } from './expandAction';
 import { createUnderlineElement, findNameElements, findUnderlineElements, rebuildNameElements } from './nameAction';
 import { acquireBusy, releaseBusy } from './busy';
 import { buildIconCache } from './iconPageCache';
-import { notifyShown } from './workingViewStore';
 import { isTapDistance, noteGestureDown } from './tapGesture';
+import { getCurrentFileContext } from '../utils/currentFile';
+import { showBusyView, closeBusyView } from '../utils/busyView';
 
 // Section whose icon the current gesture grabbed (set on DOWN, consumed on UP).
 let dragCandidateId: string | null = null;
@@ -88,12 +89,9 @@ async function redrawSectionBox(id: string): Promise<void> {
   );
   if (!permitted) return;
 
-  const fpRes: any = await PluginCommAPI.getCurrentFilePath();
-  const pgRes: any = await PluginCommAPI.getCurrentPageNum();
-  if (!fpRes?.success || typeof fpRes.result !== 'string') return;
-  if (!pgRes?.success || typeof pgRes.result !== 'number') return;
-  const filePath = fpRes.result as string;
-  const page = pgRes.result as number;
+  const ctx = await getCurrentFileContext();
+  if (!ctx) return;
+  const { filePath, page } = ctx;
 
   // Flush, then READ before dismissing: only setLassoBoxState (which cancels the
   // selection) if the icon actually moved. saveCurrentNote surfaces a real drag
@@ -141,14 +139,7 @@ async function redrawSectionBox(id: string): Promise<void> {
   // Show the busy overlay for the rebuild (same heavy path as a normal expand).
   // Only past the moved check, so a tap/select never flashes it; closed in the
   // finally regardless of which early return fires.
-  let viewShown = false;
-  try {
-    await PluginManager.showPluginView();
-    viewShown = true;
-    notifyShown();
-  } catch (e) {
-    dlog(`${LOG} live redraw showPluginView failed: ${e}`);
-  }
+  let viewShown = await showBusyView('live redraw');
   try {
     // Re-serialize the current on-page content so we can rebuild it above a fresh
     // fill. resolveLinkMemberIndices keeps stroke links.
@@ -157,7 +148,7 @@ async function redrawSectionBox(id: string): Promise<void> {
       const data = await serializeElement(el);
       if (data) fresh.push({ numInPage: el.numInPage, data });
     }
-    fresh = resolveLinkMemberIndices(fresh);
+    fresh = await resolveLinkMemberIndices(fresh);
     if (fresh.length === 0) { return; }
 
     const pageSize = await getPageSize(filePath, page);
@@ -272,11 +263,7 @@ async function redrawSectionBox(id: string): Promise<void> {
     dlog(`${LOG} live full redraw section=${id} icon=[${iconR.left},${iconR.top}] zone=[${Math.round(zone.left)},${Math.round(zone.top)},${Math.round(zone.right)},${Math.round(zone.bottom)}]`);
   } finally {
     if (viewShown) {
-      try {
-        // See index.ts's closePluginView comment.
-        const closeRes: any = await PluginManager.closePluginView();
-        if (!closeRes?.success) console.error(`${LOG} live redraw closePluginView res=${JSON.stringify(closeRes)}`);
-      } catch (e) { dlog(`${LOG} live redraw closePluginView failed: ${e}`); }
+      await closeBusyView('live redraw');
     }
   }
 }

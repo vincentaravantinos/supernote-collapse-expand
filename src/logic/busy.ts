@@ -1,5 +1,5 @@
-import { PluginManager } from 'sn-plugin-lib';
 import { LOG } from '../constants';
+import { closeBusyView } from '../utils/busyView';
 
 // Single-flight guard shared by the button handler (collapse / expand /
 // recollapse) and the motion-driven live redraw. Both mutate the note via
@@ -38,11 +38,6 @@ export function isBusy(): boolean {
 // release; does NOT (and can't) stop whatever's still stuck mid-await — JS
 // has no way to cancel a pending await, only to stop waiting on it.
 export async function cancelStuckOperation(): Promise<void> {
-  try {
-    const res: any = await PluginManager.closePluginView();
-    if (!res?.success) console.error(`${LOG} cancel: closePluginView res=${JSON.stringify(res)}`);
-  } catch (e) {
-    console.error(`${LOG} cancel: closePluginView failed: ${e}`);
-  }
+  await closeBusyView('cancel');
   releaseBusy();
 }

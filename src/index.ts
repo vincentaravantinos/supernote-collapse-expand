@@ -1,4 +1,4 @@
-import { PluginCommAPI, PluginFileAPI, PluginManager } from 'sn-plugin-lib';
+import { PluginCommAPI, PluginFileAPI } from 'sn-plugin-lib';
 import { BUILD_TAG, dlog, ELEMENT_TYPES, LOG } from './constants';
 import { readUserData } from './utils/userDataManager';
 import { summarizeElements } from './utils/diagnostics';
@@ -9,7 +9,7 @@ import { handleNameAction } from './logic/nameAction';
 import { acquireBusy, releaseBusy } from './logic/busy';
 import { buildIconCache } from './logic/iconPageCache';
 import { isLandscape } from './utils/orientation';
-import { notifyShown } from './logic/workingViewStore';
+import { showBusyView, closeBusyView, alertOverBusyView } from './utils/busyView';
 
 // Per-action counter + tag bracketing each action's logs with BEGIN/END markers
 // that carry the build stamp (so the trace confirms which build is live).
@@ -62,16 +62,9 @@ export async function handleMainAction() {
 
     // Busy overlay: the SDK has no non-blocking busy primitive (every native
     // dialog is a blocking modal), so we render the plugin's own React view (a
-    // small "working" card, see App.tsx) via showPluginView and hide it in the
-    // finally. Shown AFTER the selection is read, so showing the view can't eat
-    // the lasso the operation still depends on.
-    try {
-      await PluginManager.showPluginView();
-      viewShown = true;
-      notifyShown();
-    } catch (e) {
-      dlog(`${LOG} showPluginView failed: ${e}`);
-    }
+    // small "working" card, see App.tsx). Shown AFTER the selection is read,
+    // so showing the view can't eat the lasso the operation still depends on.
+    viewShown = await showBusyView('handleMainAction');
 
     // Classify the selection. An expanded section referenced by the lasso (its
     // icon, or its CE_PART / CE_MASK) → recollapse; a collapsed icon plus bare
@@ -134,17 +127,11 @@ export async function handleMainAction() {
           // around it and reopen before any further mutation (expand fallback
           // included).
           if (viewShown) {
-            try { await PluginManager.closePluginView(); } catch (e) { dlog(`${LOG} closePluginView (pre-dialog) failed: ${e}`); }
+            await closeBusyView('handleMainAction (pre-dialog)');
             viewShown = false;
           }
           const fallBackToExpand = await handleNameAction(collapsedTargets[0], nameCandidates, nameTaggedInLasso, filePath, page);
-          try {
-            await PluginManager.showPluginView();
-            viewShown = true;
-            notifyShown();
-          } catch (e) {
-            dlog(`${LOG} showPluginView (post-dialog) failed: ${e}`);
-          }
+          viewShown = await showBusyView('handleMainAction (post-dialog)');
           if (fallBackToExpand) {
             await expandSections([collapsedTargets[0]], filePath, page);
           }
@@ -180,20 +167,13 @@ export async function handleMainAction() {
     }
   } catch (error) {
     console.error(`${LOG} Plugin action failed:`, error);
-    alert('An error occurred during processing.');
+    await alertOverBusyView('handleMainAction', 'An error occurred during processing.');
+    viewShown = false;
   } finally {
     clearTimeout(watchdog);
     releaseBusy();
     if (viewShown) {
-      try {
-        // Log a non-success result, not just a thrown exception — a silent
-        // failure here (as opposed to a thrown error) would leave the
-        // "working" card stuck with no trace of why.
-        const closeRes: any = await PluginManager.closePluginView();
-        if (!closeRes?.success) console.error(`${LOG} closePluginView res=${JSON.stringify(closeRes)}`);
-      } catch (e) {
-        dlog(`${LOG} closePluginView failed: ${e}`);
-      }
+      await closeBusyView('handleMainAction');
     }
   }
 }

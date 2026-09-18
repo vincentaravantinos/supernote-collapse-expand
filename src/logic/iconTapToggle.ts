@@ -1,5 +1,4 @@
-import { PluginCommAPI, PluginManager } from 'sn-plugin-lib';
-import { ICON_HIT_PAD, LOG, dlog } from '../constants';
+import { ICON_HIT_PAD, LOG } from '../constants';
 import { padded, rectContains } from '../utils/geometryHelpers';
 import { acquireBusy, releaseBusy } from './busy';
 import { isLandscape } from '../utils/orientation';
@@ -7,8 +6,9 @@ import { expandSections } from './expandAction';
 import { recollapseSections } from './recollapseAction';
 import { buildIconCache, getCachedIcons, PageIconEntry } from './iconPageCache';
 import { ensureAllPermissions } from '../utils/permissions';
-import { notifyShown } from './workingViewStore';
 import { isTapDistance, noteGestureDown } from './tapGesture';
+import { getCurrentFilePathOrNull, getCurrentPageNumOrNull } from '../utils/currentFile';
+import { showBusyView, closeBusyView } from '../utils/busyView';
 
 // SPEC.md REQ-090/100/110: requested once, on the first qualifying tap of
 // any kind (hit or miss — we can't tell in advance), silently on denial,
@@ -67,15 +67,14 @@ async function handleTap(x: number, y: number): Promise<void> {
   // plugin-install dialog), reads as natural — "right after installing" —
   // rather than surprising later once the user is mid-note.
   await ensureTapPermissions();
-  const pgRes: any = await PluginCommAPI.getCurrentPageNum();
-  if (!pgRes?.success || typeof pgRes.result !== 'number') return;
-  const page = pgRes.result as number;
+  const page = await getCurrentPageNumOrNull();
+  if (page === null) return;
 
   let icons = getCachedIcons(page);
   if (!icons) {
-    const fpRes: any = await PluginCommAPI.getCurrentFilePath();
-    if (!fpRes?.success || typeof fpRes.result !== 'string') return;
-    icons = await buildIconCache(fpRes.result as string, page);
+    const filePath = await getCurrentFilePathOrNull();
+    if (filePath === null) return;
+    icons = await buildIconCache(filePath, page);
   }
 
   let hit = findHit(icons, x, y);
@@ -84,9 +83,9 @@ async function handleTap(x: number, y: number): Promise<void> {
     // (no plugin operation involved, so nothing told us to rebuild). One
     // fresh rebuild + retry before concluding this genuinely isn't a tap on
     // an icon.
-    const fpRes: any = await PluginCommAPI.getCurrentFilePath();
-    if (!fpRes?.success || typeof fpRes.result !== 'string') return;
-    icons = await buildIconCache(fpRes.result as string, page);
+    const filePath = await getCurrentFilePathOrNull();
+    if (filePath === null) return;
+    icons = await buildIconCache(filePath, page);
     hit = findHit(icons, x, y);
     if (hit) console.error(`${LOG} [B10-PROBE] stale-cache retry recovered a hit x=${x} y=${y}`);
   }
@@ -98,17 +97,10 @@ async function handleTap(x: number, y: number): Promise<void> {
 
   let viewShown = false;
   try {
-    try {
-      await PluginManager.showPluginView();
-      viewShown = true;
-      notifyShown();
-    } catch (e) {
-      dlog(`${LOG} tap-toggle showPluginView failed: ${e}`);
-    }
+    viewShown = await showBusyView('tap-toggle');
 
-    const fpRes: any = await PluginCommAPI.getCurrentFilePath();
-    if (!fpRes?.success || typeof fpRes.result !== 'string') return;
-    const filePath = fpRes.result as string;
+    const filePath = await getCurrentFilePathOrNull();
+    if (filePath === null) return;
 
     if (hit.section.isExpanded) {
       await recollapseSections([hit.id], filePath, page);
@@ -123,11 +115,7 @@ async function handleTap(x: number, y: number): Promise<void> {
     console.error(`${LOG} tap-toggle failed: ${e}`);
   } finally {
     if (viewShown) {
-      try {
-        // See index.ts's closePluginView comment.
-        const closeRes: any = await PluginManager.closePluginView();
-        if (!closeRes?.success) console.error(`${LOG} tap-toggle closePluginView res=${JSON.stringify(closeRes)}`);
-      } catch (e) { dlog(`${LOG} tap-toggle closePluginView failed: ${e}`); }
+      await closeBusyView('tap-toggle');
     }
     releaseBusy();
   }

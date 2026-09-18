@@ -37,4 +37,5 @@ an item once the user confirms it's done.
 | B-015 | Permission gate (CR-002) silently let an operation proceed unpermitted — fixed by dropping the `hasPermission` pre-check and trusting only `requestPermission`'s documented result. See `BUGS/B-015.md`. |
 | B-016 | External SDK bug: `userData` never survived a round trip on Chauvet 2.26.40/3.29.43 — fixed by Ratta in 3.29.44/2.26.41, confirmed on-device. See `BUGS/B-016.md`. |
 | B-017 | `PluginCommAPI.reloadFile()` could hang indefinitely — removed from 5 of 6 call sites (confirmed unneeded on this SDK build), timeout-guarded at the 1 remaining one. See `BUGS/B-017.md`. |
+| B-018 | Tap-triggered Recollapse/Expand of a stroke-link section could partially complete or misfire — root cause was `writeSection`'s `modifyElements` call silently not persisting the icon's `isExpanded` flag, causing the next tap to run the wrong action; also fixed `deleteElements` silently applying to only some targets, a `reloadFile`-then-read race, and every failure alert being swallowed by the busy overlay. See `BUGS/B-018.md`. |
 

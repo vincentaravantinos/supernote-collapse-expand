@@ -1,5 +1,6 @@
 import { PluginCommAPI, PluginFileAPI, Point, PointUtils, Rect } from 'sn-plugin-lib';
 import { ELEMENT_TYPES, LOG } from '../constants';
+import { alertOverBusyView } from './busyView';
 import {
   CollapsedElement,
   SerializedElement,
@@ -363,7 +364,7 @@ export async function buildStrokeLink(
 // Convert each stroke link's raw page-num srcControlNums into stable indexes
 // into `collapsed` (memberIndices), so the reference survives the round-trip.
 // A link whose members aren't all present is dropped (its strokes stay) + alert.
-export function resolveLinkMemberIndices(collapsed: CollapsedElement[]): CollapsedElement[] {
+export async function resolveLinkMemberIndices(collapsed: CollapsedElement[]): Promise<CollapsedElement[]> {
   let dropped = false;
   const presentNums = new Set(collapsed.map((ce) => ce.numInPage));
   const kept = collapsed.filter((ce) => {
@@ -387,7 +388,7 @@ export function resolveLinkMemberIndices(collapsed: CollapsedElement[]): Collaps
     }
   }
   if (dropped) {
-    alert('A handwritten link could not be fully collapsed and was dropped (its strokes were kept).');
+    await alertOverBusyView('serialize', 'A handwritten link could not be fully collapsed and was dropped (its strokes were kept).');
   }
   return kept;
 }

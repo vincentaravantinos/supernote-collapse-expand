@@ -8,6 +8,7 @@ import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand'
 import { forgetSection, noteSectionExpanded } from './expandedRegistry';
 import { buildIconCache } from './iconPageCache';
 import { CollapseSection } from '../model/types';
+import { alertOverBusyView } from '../utils/busyView';
 
 // One-time, best-effort warm-up so live icon-drag redraw survives a plugin
 // restart: expandedRegistry is JS-memory-only, so a restart clears it and
@@ -38,8 +39,8 @@ export async function rehydrateExpandedRegistry(filePath: string, page: number):
 
 // Expand ONE section: insert its mask + restored content (stroke links via
 // rebuildStrokeLinks) and flip the icon's userData to isExpanded. Does NOT
-// saveCurrentNote / setLassoBoxState / reloadFile — expandSections does those
-// once around the loop so N sections cost a single refresh.
+// saveCurrentNote / setLassoBoxState — expandSections does those once around
+// the loop so N sections cost a single flush + lasso dismiss.
 export async function expandOne(
   section: CollapseSection,
   iconElement: any,
@@ -184,12 +185,13 @@ export async function expandOne(
   }
   dlog(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
 
-  // No saveCurrentNote (would clobber the inserts with the stale cached copy);
-  // the end-of-batch reloadFile in expandSections surfaces them. While expanded
-  // the content lives on the page as CE_PART and recollapse rebuilds the payload
-  // from it, so drop collapsedElements from userData — but only if the insert
-  // succeeded, keeping exactly one durable copy (userData while collapsed, page
-  // while expanded).
+  // No saveCurrentNote (would clobber the inserts with the stale cached copy) —
+  // the inserts are already visible without an explicit reload on this SDK
+  // build (see BUGS/B-017.md). While expanded the content lives on the page as
+  // CE_PART and recollapse rebuilds the payload from it, so drop
+  // collapsedElements from userData — but only if the insert succeeded,
+  // keeping exactly one durable copy (userData while collapsed, page while
+  // expanded).
   const expandedState: CollapseSection = {
     ...section,
     isExpanded: true,
@@ -223,15 +225,14 @@ export async function expandOne(
     if (insertUnstable || writeUnstable) {
       console.error(`${LOG} expand aborted silently — note not in a stable state (SDK error 102)`);
     } else {
-      alert("Supernote couldn't complete the expand — please try again; if it persists, reopen the note.");
+      await alertOverBusyView('expand', "Supernote couldn't complete the expand — please try again; if it persists, reopen the note.");
     }
   }
 }
 
-// Expand one or more sections in a single screen refresh: flush + dismiss the
-// lasso once, expand each, then one reloadFile. (A stroke-link section adds its
-// own internal reloads; see rebuildStrokeLinks.) Loose strokes in the selection
-// are left untouched.
+// Expand one or more sections in a single flush + lasso dismiss: dismiss once,
+// expand each. (A stroke-link section still needs its own internal reload; see
+// rebuildStrokeLinks.) Loose strokes in the selection are left untouched.
 export async function expandSections(
   targets: { section: CollapseSection; icon: any }[],
   filePath: string,

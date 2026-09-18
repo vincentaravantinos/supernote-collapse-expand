@@ -17,6 +17,38 @@ Each entry should capture:
 
 ---
 
+## 2026-09-18 — Verify-and-retry every write this codebase's own decisions depend on (B-018)
+
+**Decision.** `deleteElements`, `modifyElements`, and a `reloadFile()`-
+then-read pair can each report success without the change actually
+landing (confirmed on-device for all three — see CORNER_CASES.md/
+SDK_DOC.md). Rather than treating this as one-off bugs to patch
+individually, applied a uniform pattern everywhere this codebase's own
+later logic depends on a write having actually taken effect: re-read
+after the write, compare against what was intended, and retry (capped,
+typically 3 attempts) before giving up. Applied to: `recollapseOne`'s
+multi-target delete, `rebuildStrokeLinks`'s member-num recovery read,
+and `writeSection`'s `isExpanded` flag update — the last of these was
+the actual root cause of B-018's headline symptom (a silently-reverted
+`isExpanded` flag made the next tap run the wrong action entirely).
+
+**Alternatives considered.** *Treat each occurrence as an isolated bug
+and fix only the specific call site that broke.* Rejected — the same
+underlying SDK unreliability had already surfaced three times
+independently (`deleteElements`, `modifyElements`, and separately
+`batchUpdatePageElements` in CR-004); fixing one call site at a time
+would leave the next one to be rediscovered the same expensive way.
+
+**Constraint.** No way to know in advance which write will silently
+fail — it isn't tied to a specific error code or detectable input
+shape, only caught by reading the data back. This means the retry-
+and-verify cost is now paid on every write in these paths, not just
+the ones that turn out to fail; accepted as the price of correctness
+here, since these particular writes gate this codebase's own state
+machine (what's expanded, what's collapsed, what's still on the page).
+
+---
+
 ## 2026-09-17 — Don't adopt `batchUpdatePageElements` (CR-004)
 
 **Decision.** Rejected `PluginCommAPI.batchUpdatePageElements` as a way

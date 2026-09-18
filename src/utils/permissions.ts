@@ -1,5 +1,6 @@
 import { PluginManager } from 'sn-plugin-lib';
 import { dlog, LOG, PERM_FILE_READ, PERM_FILE_WRITE } from '../constants';
+import { alertOverBusyView } from './busyView';
 
 // Grants only — never denials. This is what makes "ask again next time"
 // (SPEC.md REQ-040) correct by construction: a decline just isn't cached,
@@ -55,7 +56,7 @@ export async function ensurePermissions(
     } catch (e) {
       console.error(`${LOG} permission request threw for ${name}: ${e}`);
     }
-    if (!opts.silent) alert(message);
+    if (!opts.silent) await alertOverBusyView('permission', message);
     dlog(`${LOG} B-016-PROBE ensurePermissions EXIT false`);
     return false;
   }

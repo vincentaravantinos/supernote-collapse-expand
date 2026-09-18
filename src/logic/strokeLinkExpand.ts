@@ -78,8 +78,9 @@ async function insertBatch(filePath: string, page: number, batch: any[]): Promis
 // To minimize refreshes: take the baseline WITHOUT a reload (cached == pre-expand
 // page, since the caller deferred its inserts here), bundle masks with the first
 // link's members (masks first → underneath), and defer all other content + the
-// links to one final batch the caller's end-of-expand reload surfaces. One reload
-// per stroke link. Returns true iff every insert succeeded.
+// links to one final batch — visible directly, without needing a reload of its
+// own on this SDK build (see BUGS/B-017.md). One reload per stroke link (for the
+// member-num recovery above). Returns true iff every insert succeeded.
 export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<boolean> {
   const { filePath, page, collapsedElements, sectionId, emrDelta, pageMaxX, pageMaxY, dx, dy, maskElements, otherElements } = ctx;
   const tag = CE_PART_PREFIX + sectionId;
@@ -122,12 +123,28 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
     // members (masks are geometry; other strokes wait for the final batch;
     // earlier links' members are already in knownNums). See RELOAD_TIMEOUT_MS
     // above for why this specific reloadFile() is timeout-guarded.
-    await reloadFileWithTimeout();
-    const chk: any = await PluginFileAPI.getElements(page, filePath);
-    const els: any[] = chk?.success && Array.isArray(chk.result) ? chk.result : [];
-    const memberNums = els
-      .filter((e) => e?.type === ELEMENT_TYPES.STROKE && typeof e?.userData === 'string' && e.userData.startsWith(tag) && !knownNums.has(e.numInPage))
-      .map((e) => e.numInPage);
+    //
+    // B-018: a reload that resolves (doesn't hit the timeout) doesn't
+    // guarantee getElements() immediately reflects it — confirmed: memberNums
+    // sometimes comes back short of memberEls.length even when reloadMs was
+    // well under the timeout. Retry the reload+read a couple times if the
+    // count looks wrong before accepting whatever's found, rather than
+    // silently building the link with wrong/missing controlTrailNums.
+    let memberNums: number[] = [];
+    let els: any[] = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await reloadFileWithTimeout();
+      const chk: any = await PluginFileAPI.getElements(page, filePath);
+      els = chk?.success && Array.isArray(chk.result) ? chk.result : [];
+      memberNums = els
+        .filter((e) => e?.type === ELEMENT_TYPES.STROKE && typeof e?.userData === 'string' && e.userData.startsWith(tag) && !knownNums.has(e.numInPage))
+        .map((e) => e.numInPage);
+      if (memberNums.length >= memberEls.length) break;
+      console.error(`${LOG} rebuildStrokeLinks link[${i}] attempt ${attempt}: found ${memberNums.length}/${memberEls.length} members — retrying`);
+    }
+    if (memberNums.length < memberEls.length) {
+      console.error(`${LOG} rebuildStrokeLinks link[${i}] gave up: ${memberNums.length}/${memberEls.length} members found`);
+    }
 
     const rect: Rect = { left: d.rect.left + dx, top: d.rect.top + dy, right: d.rect.right + dx, bottom: d.rect.bottom + dy };
     pending.push({ data: d, memberNums, rect });
@@ -135,7 +152,8 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
   }
 
   // Build the links (members' nums now known) and insert them with the remaining
-  // content in one final batch; the caller's end-of-expand reload surfaces it.
+  // content in one final batch — visible directly on this SDK build (see
+  // BUGS/B-017.md), no reload of its own needed.
   const linkEls: any[] = [];
   for (const p of pending) {
     const el = await buildStrokeLink(p.data, page, tag, p.memberNums, p.rect);

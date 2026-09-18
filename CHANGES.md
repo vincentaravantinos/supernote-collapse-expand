@@ -16,6 +16,14 @@
   indefinitely on this firmware; removed entirely where testing showed it
   wasn't actually needed, and timeout-guarded at the one remaining call
   site where it's still required.
+- Fix: Recollapse or Expand of a section containing a handwritten link
+  could occasionally leave things half-done — some content removed or
+  restored, some not — or silently do nothing at all with no error
+  shown. Root cause: some SDK write calls this plugin depends on can
+  report success without actually applying the change; the plugin now
+  double-checks the ones that matter and retries when needed. Also
+  fixed a separate bug where the plugin's own error messages weren't
+  showing up at all while the "Working…" card was up.
 - Maintenance: updated the underlying plugin SDK library to the latest
   version, required for the plugin to run on the new Chauvet firmware
   (3.29.43 / 2.26.40 Beta).
