@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 1.2.0
 
 - Feature: the plugin now declares and requests the runtime permissions
   the new SDK's plugin permission system requires
