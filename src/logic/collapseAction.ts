@@ -141,10 +141,29 @@ export async function collapseAction(filePath: string, page: number, elements: a
   iconEl.userData = payload;
   iconEl.pageNum = page;
 
-  const insertRes: any = await PluginFileAPI.insertElements(filePath, page, [iconEl]);
-  if (!insertRes?.success) {
+  // B-018: insertElements can report success without the element actually
+  // landing (same bug class confirmed for deleteElements/modifyElements —
+  // see CORNER_CASES.md). This is the single highest-stakes write in the
+  // whole plugin: it's the only backup of the original content, and the
+  // very next step deletes that content from the page. Don't trust the
+  // flag — verify the icon is actually there before proceeding, retrying
+  // the insert (up to 3 attempts) if not.
+  let insertRes: any;
+  let iconLanded = false;
+  for (let attempt = 0; attempt < 3 && !iconLanded; attempt++) {
+    insertRes = await PluginFileAPI.insertElements(filePath, page, [iconEl]);
+    if (!insertRes?.success) {
+      console.error(`${LOG} insertElements failed res=${JSON.stringify(insertRes)}`);
+      if (isUnstableNoteError(insertRes)) break; // note not stable — retrying won't help
+      continue;
+    }
+    const checkRes: any = await PluginFileAPI.getElements(page, filePath);
+    const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
+    iconLanded = check.some((el) => el.userData === payload);
+    if (!iconLanded) console.error(`${LOG} collapse: icon insert reported success but wasn't found on re-read (attempt ${attempt}) — retrying`);
+  }
+  if (!iconLanded) {
     // Nothing deleted yet — the page is exactly as it was, no data lost.
-    console.error(`${LOG} insertElements failed res=${JSON.stringify(insertRes)}`);
     if (!isUnstableNoteError(insertRes)) await alertOverBusyView('collapse', "Supernote couldn't complete the collapse — please try again.");
     try { iconEl.recycle?.(); } catch { /* ignore */ }
     return;

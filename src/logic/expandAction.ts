@@ -166,11 +166,36 @@ export async function expandOne(
   if (!hasStrokeLinks) {
     const batch = [...maskElements, ...otherElements];
     if (batch.length > 0) {
-      const ins: any = await PluginFileAPI.insertElements(filePath, page, batch);
-      insertOk = !!ins?.success;
-      if (!insertOk) {
-        console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
-        insertUnstable = isUnstableNoteError(ins);
+      // B-018: insertElements can report success without the elements
+      // actually landing. The very next step clears the icon's
+      // collapsedElements backup based on `insertOk` alone — if that trusts
+      // a lie, the content is gone from both the page and the backup. Verify
+      // by re-reading and counting this section's tagged elements. A
+      // reported *failure* is safe to retry (nothing landed yet); a
+      // reported success with a short count is NOT retried by re-inserting
+      // — the batch might have partially landed, and blindly re-inserting
+      // the same elements risks duplicating whatever did — only the read
+      // is retried, in case it's a visibility lag rather than a real gap.
+      insertOk = false;
+      for (let attempt = 0; attempt < 3 && !insertOk; attempt++) {
+        const ins: any = await PluginFileAPI.insertElements(filePath, page, batch);
+        if (!ins?.success) {
+          console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
+          insertUnstable = isUnstableNoteError(ins);
+          if (insertUnstable) break;
+          continue; // nothing landed — safe to retry the insert itself
+        }
+        for (let readAttempt = 0; readAttempt < 3 && !insertOk; readAttempt++) {
+          const checkRes: any = await PluginFileAPI.getElements(page, filePath);
+          const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
+          const landed = check.filter((el) => {
+            const ud = readUserData(el);
+            return ud != null && (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame') && ud.id === section.id;
+          }).length;
+          insertOk = landed >= batch.length;
+          if (!insertOk) console.error(`${LOG} expand: insertElements reported success but only ${landed}/${batch.length} tagged elements found (read attempt ${readAttempt}) — re-reading`);
+        }
+        break; // don't re-insert after a reported success either way — avoid duplicating a partial land
       }
       for (const el of batch) { try { el.recycle?.(); } catch { /* ignore */ } }
     }

@@ -31,6 +31,17 @@ multi-target delete, `rebuildStrokeLinks`'s member-num recovery read,
 and `writeSection`'s `isExpanded` flag update — the last of these was
 the actual root cause of B-018's headline symptom (a silently-reverted
 `isExpanded` flag made the next tap run the wrong action entirely).
+Extended during the release's robustness review to the two highest-
+stakes writes not yet covered: `collapseAction`'s icon insert (the sole
+backup of the original content, immediately followed by deleting that
+content) and `expandAction`'s simple-path content insert (which clears
+the userData backup based on the same insert's reported success). For
+inserts specifically, a reported failure is retried (nothing landed
+yet); a reported success with a short verified count is not — blindly
+re-inserting risks duplicating whatever already landed, so only the
+verification read is retried there, and a persistent shortfall is
+treated as a failure (backup preserved, alert shown) rather than
+auto-healed.
 
 **Alternatives considered.** *Treat each occurrence as an isolated bug
 and fix only the specific call site that broke.* Rejected — the same
