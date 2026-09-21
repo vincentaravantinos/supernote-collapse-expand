@@ -16,6 +16,7 @@ import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
 import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
 import { alertOverBusyView } from '../utils/busyView';
+import { reloadFileWithTimeout } from '../utils/reloadFile';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
 function generateSectionId(): string {
@@ -157,6 +158,7 @@ export async function collapseAction(filePath: string, page: number, elements: a
       if (isUnstableNoteError(insertRes)) break; // note not stable — retrying won't help
       continue;
     }
+    await reloadFileWithTimeout(); // B-018: without this, the read below can miss a just-landed insert
     const checkRes: any = await PluginFileAPI.getElements(page, filePath);
     const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
     iconLanded = check.some((el) => el.userData === payload);

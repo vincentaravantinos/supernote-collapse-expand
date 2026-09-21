@@ -14,6 +14,7 @@ import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, 
 import { ensureAllPermissions } from '../utils/permissions';
 import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
 import { alertOverBusyView } from '../utils/busyView';
+import { reloadFileWithTimeout } from '../utils/reloadFile';
 import { forgetSection, getExpandedEntry } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
@@ -61,16 +62,25 @@ async function recollapseOne(
   // Re-fetch the whole page fresh before accepting "nothing found".
   if (maskEls.length === 0 && partEls.length === 0) {
     console.error(`${LOG} recollapse: no tagged elements found for id=${section.id} in the given list (${all.length} el) — re-fetching full page`);
+    await reloadFileWithTimeout(); // B-018: without this, this read can miss a recent write too
     const freshRes: any = await PluginFileAPI.getElements(page, filePath);
     const fresh: any[] = freshRes?.success && Array.isArray(freshRes.result) ? freshRes.result : [];
     const reclassified = classify(fresh);
     maskEls = reclassified.masks;
     partEls = reclassified.parts;
     if (maskEls.length === 0 && partEls.length === 0) {
-      console.error(`${LOG} recollapse: still nothing tagged for id=${section.id} after a full re-fetch — nothing to do`);
-    } else {
-      all = fresh; // absorb-scan below also needs the fresh list
+      // Genuinely nothing on the page for this section, even after a fresh
+      // full read. Falling through here would build and write an EMPTY
+      // collapsedElements backup — permanently losing whatever this
+      // section's content actually was. Nothing has been touched yet
+      // (no delete, no write), so abort cleanly instead: the icon and the
+      // page are exactly as they were, and the existing backup (if any) is
+      // untouched.
+      console.error(`${LOG} recollapse: still nothing tagged for id=${section.id} after a full re-fetch — aborting, nothing changed`);
+      await alertOverBusyView('recollapse', "This section's content couldn't be found on the page — nothing was changed. If this keeps happening, please report it.");
+      return false;
     }
+    all = fresh; // absorb-scan below also needs the fresh list
   }
 
   let newCollapsed: CollapsedElement[] = [];
@@ -212,6 +222,7 @@ async function recollapseOne(
       const delRes: any = await PluginFileAPI.deleteElements(filePath, page, remaining);
       dlog(`${LOG} PERF recollapse deleteElements[${attempt}]=${Date.now() - tDel}ms n=${remaining.length}`);
       if (!delRes?.success && isUnstableNoteError(delRes)) break; // note not stable — retrying won't help
+      await reloadFileWithTimeout(); // B-018: without this, this read can miss the delete having just landed
       const chkRes: any = await PluginFileAPI.getElements(page, filePath);
       const chk: any[] = chkRes?.success && Array.isArray(chkRes.result) ? chkRes.result : [];
       const stillThere = new Set(chk.map((e) => e.numInPage));

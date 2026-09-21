@@ -1,5 +1,5 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
-import { CE_PART_PREFIX, dlog, ICON_GLYPH_EXPANDED, LOG } from '../constants';
+import { CE_PART_PREFIX, dlog, ICON_GLYPH, ICON_GLYPH_EXPANDED, LOG } from '../constants';
 import { buildElement, contentBoundingBox, getPageSize } from '../utils/elementSerializer';
 import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
@@ -9,6 +9,7 @@ import { forgetSection, noteSectionExpanded } from './expandedRegistry';
 import { buildIconCache } from './iconPageCache';
 import { CollapseSection } from '../model/types';
 import { alertOverBusyView } from '../utils/busyView';
+import { reloadFileWithTimeout } from '../utils/reloadFile';
 
 // One-time, best-effort warm-up so live icon-drag redraw survives a plugin
 // restart: expandedRegistry is JS-memory-only, so a restart clears it and
@@ -47,7 +48,7 @@ export async function expandOne(
   filePath: string,
   page: number,
   capturePreserved: boolean = false,
-): Promise<void> {
+): Promise<boolean> {
   dlog(`${LOG} SIZE expand icon userData=${iconElement?.userData?.length ?? 0} bytes, collapsed=${section.collapsedElements?.length ?? 0} element(s)`);
 
   const tPrep = Date.now();
@@ -186,6 +187,7 @@ export async function expandOne(
           continue; // nothing landed — safe to retry the insert itself
         }
         for (let readAttempt = 0; readAttempt < 3 && !insertOk; readAttempt++) {
+          await reloadFileWithTimeout(); // B-018: without this, the read below can miss a just-landed insert
           const checkRes: any = await PluginFileAPI.getElements(page, filePath);
           const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
           const landed = check.filter((el) => {
@@ -217,21 +219,33 @@ export async function expandOne(
   // collapsedElements from userData — but only if the insert succeeded,
   // keeping exactly one durable copy (userData while collapsed, page while
   // expanded).
-  const expandedState: CollapseSection = {
-    ...section,
-    isExpanded: true,
-    iconRect: iconRectNow,
-    collapsedElements: insertOk ? [] : section.collapsedElements,
-    preservedNums,
-    // Consumed above (baked into dx/dy/emrDelta) — the strokes are now
-    // physically at their shifted position, so clear it rather than
-    // leaving a stale value to leak forward via the ...section spread.
-    contentShift: undefined,
-  };
+  // B-018: isExpanded used to be set to `true` unconditionally here, even
+  // when insertOk is false — leaving the icon claiming "expanded" while
+  // simultaneously keeping the pre-expand backup (collapsedElements) intact.
+  // That combination is itself an inconsistent, hard-to-recover state: the
+  // very next tap reads isExpanded and tries to Recollapse a section whose
+  // content may never have actually landed on the page. On failure, revert
+  // to the pre-expand state in full instead — only iconRect (the icon's own
+  // real position) is trustworthy regardless of insertOk.
+  const expandedState: CollapseSection = insertOk
+    ? {
+        ...section,
+        isExpanded: true,
+        iconRect: iconRectNow,
+        collapsedElements: [],
+        preservedNums,
+        // Consumed above (baked into dx/dy/emrDelta) — the strokes are now
+        // physically at their shifted position, so clear it rather than
+        // leaving a stale value to leak forward via the ...section spread.
+        contentShift: undefined,
+      }
+    : { ...section, iconRect: iconRectNow };
 
   // Flip the icon's glyph to reflect the new state — set on the same object
   // writeSection targets, so it rides along in the same modifyElements call.
-  if (freshIconEl?.textBox) freshIconEl.textBox.textContentFull = ICON_GLYPH_EXPANDED;
+  // Only flips forward on success; reverts to the collapsed glyph otherwise,
+  // matching expandedState's own full revert above.
+  if (freshIconEl?.textBox) freshIconEl.textBox.textContentFull = insertOk ? ICON_GLYPH_EXPANDED : ICON_GLYPH;
 
   const tWrite = Date.now();
   const { ok, unstableNote: writeUnstable } = await writeSection(filePath, page, iconElement, expandedState, freshIconEl);
@@ -253,6 +267,7 @@ export async function expandOne(
       await alertOverBusyView('expand', "Supernote couldn't complete the expand — please try again; if it persists, reopen the note.");
     }
   }
+  return insertOk && ok;
 }
 
 // Expand one or more sections in a single flush + lasso dismiss: dismiss once,

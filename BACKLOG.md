@@ -30,6 +30,7 @@ an item once the user confirms it's done.
 |---|---|
 | B-012 | Select existing text/strokes, move them, then immediately Collapse (no other action in between): the icon appears (content reported as collapsed) but the original strokes visually remain on the page. Suspected same class as a previously-seen issue — the move likely only lands in the cached copy, not the real file, by the time the plugin reads elements; reading before a `saveCurrentNote` flush would see the pre-move (stale) position/content. Not yet investigated — reported by the user, explicitly deferred. |
 | B-014 | A stroke link's visual indicator was once seen not surviving Collapse/Expand (functionality — tap-to-navigate — still did). Parked — could not reproduce across several attempts with instrumentation in place. See `BUGS/B-014.md`. |
+| B-019 | Dragging a natively-created link (not tracked by the plugin) into an already-expanded section, then dragging the icon again, landed on page -1 and lost the link. Not yet investigated — stress-test edge case. See `BUGS/B-019.md`. |
 
 ## Closed bugs
 | ID | Symptom |
@@ -37,5 +38,5 @@ an item once the user confirms it's done.
 | B-015 | Permission gate (CR-002) silently let an operation proceed unpermitted — fixed by dropping the `hasPermission` pre-check and trusting only `requestPermission`'s documented result. See `BUGS/B-015.md`. |
 | B-016 | External SDK bug: `userData` never survived a round trip on Chauvet 2.26.40/3.29.43 — fixed by Ratta in 3.29.44/2.26.41, confirmed on-device. See `BUGS/B-016.md`. |
 | B-017 | `PluginCommAPI.reloadFile()` could hang indefinitely — removed from 5 of 6 call sites (confirmed unneeded on this SDK build), timeout-guarded at the 1 remaining one. See `BUGS/B-017.md`. |
-| B-018 | Tap-triggered Recollapse/Expand of a stroke-link section could partially complete or misfire — root cause was `writeSection`'s `modifyElements` call silently not persisting the icon's `isExpanded` flag, causing the next tap to run the wrong action; also fixed `deleteElements` silently applying to only some targets, a `reloadFile`-then-read race, and every failure alert being swallowed by the busy overlay. See `BUGS/B-018.md`. |
+| B-018 | Recollapse/Expand/icon-drag-redraw of a stroke-link section could partially complete or misfire. Five root causes fixed: `deleteElements`/`modifyElements` silently applying to only some targets or not at all; a `reloadFile`-then-read race; `writeSection`'s own verification checking the wrong field; `expandOne` not reverting cleanly on failure; and `insertElements` silently no-op'ing right after this codebase's own `deleteElements` in the icon-drag sequence (fixed with a `saveCurrentNote()` flush). Every failure alert being swallowed by the busy overlay was also fixed. See `BUGS/B-018.md`. |
 

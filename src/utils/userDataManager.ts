@@ -9,6 +9,7 @@ import {
   LOG,
 } from '../constants';
 import { CollapseSection } from '../model/types';
+import { reloadFileWithTimeout } from './reloadFile';
 
 export type UserDataKind =
   | { kind: 'plug'; section: CollapseSection }
@@ -144,10 +145,16 @@ export async function writeSection(
     target.pageNum = page;
 
     // B-018: modifyElements can report success without the write actually
-    // landing — confirmed on-device: after a "successful" expand, the icon's
-    // own isExpanded flag was still false, so the next tap ran Expand again
-    // instead of Recollapse. Verify by reading the icon back and checking
-    // isExpanded actually matches; retry the write (up to 3 attempts) if not.
+    // landing. Verify by reading the icon back and comparing its raw
+    // userData string against exactly what we just set — not just one field
+    // parsed out of it (e.g. isExpanded alone), which stays unchanged and
+    // therefore "matches" trivially on calls that only change other fields
+    // (e.g. iconMoveRedraw's stash, which rewrites collapsedElements while
+    // isExpanded stays true throughout) — confirmed on-device: that gap let
+    // a failed content stash look "confirmed", and the caller went on to
+    // delete the only real copy of the content, permanently losing it.
+    // Retry the write itself (up to 3 attempts) if the string doesn't match.
+    const wantedUserData = target.userData;
     let res: any;
     let confirmed = false;
     for (let attempt = 0; attempt < 3 && !confirmed; attempt++) {
@@ -156,12 +163,12 @@ export async function writeSection(
         console.error(`${LOG} modifyElements res=${JSON.stringify(res)}`);
         break; // a reported failure is trustworthy either way — don't spin on it
       }
+      await reloadFileWithTimeout(); // B-018: without this, the read below can miss the write having just landed
       const checkRes: any = await PluginFileAPI.getElement(filePath, page, target.numInPage);
-      const checkUd = checkRes?.success ? readUserData(checkRes.result) : null;
-      confirmed = checkUd?.kind === 'plug' && checkUd.section?.isExpanded === section.isExpanded;
-      if (!confirmed) console.error(`${LOG} writeSection attempt ${attempt}: isExpanded didn't stick (wanted ${section.isExpanded}, got ${checkUd?.kind === 'plug' ? checkUd.section?.isExpanded : 'n/a'}) — retrying`);
+      confirmed = checkRes?.success && checkRes.result?.userData === wantedUserData;
+      if (!confirmed) console.error(`${LOG} writeSection attempt ${attempt}: userData didn't stick — retrying`);
     }
-    if (!confirmed && res?.success) console.error(`${LOG} writeSection gave up: isExpanded never confirmed after retries`);
+    if (!confirmed && res?.success) console.error(`${LOG} writeSection gave up: userData never confirmed after retries`);
     return { ok: !!res?.success && confirmed, unstableNote: isUnstableNoteError(res) };
   } catch (e) {
     console.error(`${LOG} Failed to write userData:`, e);

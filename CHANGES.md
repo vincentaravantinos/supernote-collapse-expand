@@ -1,5 +1,17 @@
 # Changes
 
+## Unreleased
+
+- Fix: dragging an expanded section's icon to resize it (when the section
+  contains a handwritten link) could leave the section half-restored —
+  some content back, some not — with no error, or in rarer cases get
+  stuck needing a manual screen refresh to show correctly. Several SDK
+  write calls involved in this path could report success without the
+  change actually taking effect; the plugin now double-checks the ones
+  that matter and retries or cleanly reverts when needed, the same
+  fix already shipped in 1.2.0 for the button/tap-shortcut paths,
+  extended to cover the icon-drag path as well.
+
 ## 1.2.0
 
 - Feature: the plugin now declares and requests the runtime permissions

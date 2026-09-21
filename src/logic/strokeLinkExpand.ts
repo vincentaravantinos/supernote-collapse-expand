@@ -1,29 +1,8 @@
-import { PluginCommAPI, PluginFileAPI, Point, Rect } from 'sn-plugin-lib';
+import { PluginFileAPI, Point, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
 import { buildElement, buildStrokeLink } from '../utils/elementSerializer';
+import { reloadFileWithTimeout } from '../utils/reloadFile';
 import { CollapsedElement, SerializedLink } from '../model/types';
-
-// B-017: PluginCommAPI.reloadFile() can hang indefinitely on this SDK build
-// (see BUGS/B-017.md). Every other call site got reloadFile() removed
-// entirely once testing showed it's no longer needed to surface a write —
-// this is the one place it's still required (the immediately-following
-// getElements() needs it to see the just-inserted members' real page
-// nums). If it hangs here too, don't block the UI forever: give up after
-// RELOAD_TIMEOUT_MS and let the caller's existing failure path handle it —
-// insertBatch below will then read stale data, memberNums will come back
-// empty, and expandOne's crash-safety already treats that as a clean,
-// backup-preserving failure (confirmed on-device).
-const RELOAD_TIMEOUT_MS = 5000;
-
-async function reloadFileWithTimeout(): Promise<void> {
-  await Promise.race([
-    PluginCommAPI.reloadFile(),
-    new Promise<void>((resolve) => setTimeout(() => {
-      console.error(`${LOG} reloadFile() timed out after ${RELOAD_TIMEOUT_MS}ms — proceeding without it`);
-      resolve();
-    }, RELOAD_TIMEOUT_MS)),
-  ]);
-}
 
 export interface StrokeLinkExpandCtx {
   filePath: string;
@@ -119,31 +98,39 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
     const batch = i === 0 ? [...maskElements, ...memberEls] : memberEls;
     ok = (await insertBatch(filePath, page, batch)) && ok;
 
-    // Reload then read back: the section's new stroke elements are this link's
-    // members (masks are geometry; other strokes wait for the final batch;
-    // earlier links' members are already in knownNums). See RELOAD_TIMEOUT_MS
-    // above for why this specific reloadFile() is timeout-guarded.
+    // Read back the section's new stroke elements — this link's members
+    // (masks are geometry; other strokes wait for the final batch; earlier
+    // links' members are already in knownNums).
     //
-    // B-018: a reload that resolves (doesn't hit the timeout) doesn't
-    // guarantee getElements() immediately reflects it — confirmed: memberNums
-    // sometimes comes back short of memberEls.length even when reloadMs was
-    // well under the timeout. Retry the reload+read a couple times if the
-    // count looks wrong before accepting whatever's found, rather than
-    // silently building the link with wrong/missing controlTrailNums.
+    // B-018: reloadFile() before this read was confirmed reliably hanging
+    // (5s timeout, every attempt) specifically when this whole path is
+    // triggered from the icon-drag redraw (iconMoveRedraw.ts) — not from a
+    // normal button-triggered Expand. Try a plain read FIRST (no reload) on
+    // every attempt; only fall back to a timeout-guarded reload on the 2nd/
+    // 3rd attempt if the plain read came up short. This tests, per call,
+    // whether the reload is even needed here at all, instead of paying its
+    // hang risk unconditionally.
     let memberNums: number[] = [];
     let els: any[] = [];
     for (let attempt = 0; attempt < 3; attempt++) {
-      await reloadFileWithTimeout();
+      if (attempt > 0) await reloadFileWithTimeout();
       const chk: any = await PluginFileAPI.getElements(page, filePath);
       els = chk?.success && Array.isArray(chk.result) ? chk.result : [];
       memberNums = els
         .filter((e) => e?.type === ELEMENT_TYPES.STROKE && typeof e?.userData === 'string' && e.userData.startsWith(tag) && !knownNums.has(e.numInPage))
         .map((e) => e.numInPage);
       if (memberNums.length >= memberEls.length) break;
-      console.error(`${LOG} rebuildStrokeLinks link[${i}] attempt ${attempt}: found ${memberNums.length}/${memberEls.length} members — retrying`);
+      console.error(`${LOG} rebuildStrokeLinks link[${i}] attempt ${attempt}: found ${memberNums.length}/${memberEls.length} members — retrying${attempt === 0 ? ' (with reload this time)' : ''}`);
     }
     if (memberNums.length < memberEls.length) {
-      console.error(`${LOG} rebuildStrokeLinks link[${i}] gave up: ${memberNums.length}/${memberEls.length} members found`);
+      // A short-but-nonzero memberNums wouldn't necessarily fail the final
+      // insert the way a fully-empty one does (see buildElement's own
+      // comment on error 510) — it could silently build a link referencing
+      // only some of its intended members instead. Abort the whole rebuild
+      // rather than let that through; expandOne's existing insertOk=false
+      // handling already preserves the backup and alerts cleanly.
+      console.error(`${LOG} rebuildStrokeLinks link[${i}] gave up: ${memberNums.length}/${memberEls.length} members found — aborting`);
+      return false;
     }
 
     const rect: Rect = { left: d.rect.left + dx, top: d.rect.top + dy, right: d.rect.right + dx, bottom: d.rect.bottom + dy };

@@ -17,6 +17,46 @@ Each entry should capture:
 
 ---
 
+## 2026-09-21 — Verify the whole payload, not one field; flush before insert-after-delete (B-018 continued)
+
+**Decision.** Two follow-on fixes to the 2026-09-18 verify-and-retry
+pattern, both found by reproducing the icon-drag redraw path
+specifically (button-triggered Collapse/Expand/Recollapse never showed
+either):
+1. `writeSection`'s verification compared only the `isExpanded` field
+   after a write. That's blind to a write that changes *other* fields
+   while `isExpanded` stays the same value throughout — exactly what
+   the redraw's own content-only "stash" does. Changed to compare the
+   entire raw `userData` string against what was just set, so any
+   silent partial/failed write is caught regardless of which field it
+   was supposed to change.
+2. `insertElements` was found to silently insert nothing at all,
+   specifically right after this same function's own `deleteElements`
+   call in the redraw sequence — not a read-timing race, confirmed via
+   a plain immediate re-read finding zero new elements by raw count.
+   A `PluginNoteAPI.saveCurrentNote()` flush between the delete and the
+   following insert resolved it — the same "let the native side settle
+   before mutating again" idiom already used elsewhere in this
+   codebase, just not previously known to be needed *between two of the
+   plugin's own consecutive writes*, only after user pen input.
+
+**Alternatives considered.** *Keep retrying the insert itself when the
+post-insert count comes up short* (mirroring the delete-retry pattern).
+Rejected specifically for inserts: a partially-landed batch can't be
+safely distinguished from a fully-missing one without per-element
+identity, so blindly re-inserting the same batch risks duplicating
+whatever did land. Verification failure on an insert is treated as
+uncertain, not retryable in place — the fix here was to prevent the
+false failure at its source (the settle flush) rather than paper over
+it with a riskier retry.
+
+**Constraint.** Confirmed only for the icon-drag redraw's specific
+delete-then-insert sequence; not established whether other delete-
+then-insert sequences in this codebase have the same latent need for a
+settle flush, since none have reproduced it so far.
+
+---
+
 ## 2026-09-18 — Verify-and-retry every write this codebase's own decisions depend on (B-018)
 
 **Decision.** `deleteElements`, `modifyElements`, and a `reloadFile()`-

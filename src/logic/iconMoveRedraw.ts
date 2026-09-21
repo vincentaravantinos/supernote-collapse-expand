@@ -5,7 +5,7 @@ import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeEle
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
 import { CollapseSection, CollapsedElement } from '../model/types';
-import { expandedCount, expandedEntries, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
+import { expandedCount, expandedEntries, forgetSection, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
 import { expandOne } from './expandAction';
 import { createUnderlineElement, findNameElements, findUnderlineElements, rebuildNameElements } from './nameAction';
 import { acquireBusy, releaseBusy } from './busy';
@@ -13,6 +13,7 @@ import { buildIconCache } from './iconPageCache';
 import { isTapDistance, noteGestureDown } from './tapGesture';
 import { getCurrentFileContext } from '../utils/currentFile';
 import { showBusyView, closeBusyView } from '../utils/busyView';
+import { reloadFileWithTimeout } from '../utils/reloadFile';
 
 // Section whose icon the current gesture grabbed (set on DOWN, consumed on UP).
 let dragCandidateId: string | null = null;
@@ -252,10 +253,36 @@ async function redrawSectionBox(id: string): Promise<void> {
       if (!del?.success) console.error(`${LOG} live redraw deleteElements failed res=${JSON.stringify(del)}`);
     }
 
-    await expandOne(temp, iconEl, filePath, page); // capturePreserved defaults false
-    // B-017: reloadFile() removed — see collapseAction.ts's identical comment
-    // and BUGS/B-017.md. Confirmed on-device that buildIconCache() right
-    // below still reads the fresh (post-move) icon position without it.
+    // B-018-PROBE2 experiment: insertElements right after this delete has been
+    // confirmed to silently no-op (reports success, nothing lands) specifically
+    // in this redraw sequence. Testing whether a saveCurrentNote() flush here
+    // lets the native side settle before the re-insert, the same idiom already
+    // used elsewhere in this codebase before a mutating sequence.
+    await PluginNoteAPI.saveCurrentNote();
+
+    const reinsertOk = await expandOne(temp, iconEl, filePath, page); // capturePreserved defaults false
+    if (!reinsertOk) {
+      // B-018: expandOne already alerted and reverted the icon to `temp`'s own
+      // state on failure — but `temp` has isExpanded:true with the content
+      // only in its userData backup, since the old on-page parts were already
+      // deleted above. That combination isn't one any normal tap can recover
+      // from (isExpanded:true routes the next tap to Recollapse, which finds
+      // nothing on the page and aborts). Explicitly fall back to a clean
+      // collapsed state instead — the content is safely in `temp`'s backup,
+      // so this is a real, working "undo" of the redraw, not a data loss.
+      const { ok: revertOk } = await writeSection(filePath, page, iconEl, { ...temp, isExpanded: false }, iconEl);
+      if (!revertOk) console.error(`${LOG} live redraw: failed to fall back to collapsed after a failed re-expand — section may be left inconsistent`);
+      forgetSection(id);
+      return;
+    }
+    // B-018-PROBE2 experiment: the data itself is now correct without this
+    // (confirmed via manual screen refresh), but the on-screen render was
+    // stale afterward — added the saveCurrentNote() flush above shifted
+    // something such that this path now needs an explicit reload to
+    // refresh the display, unlike every other call site (see BUGS/B-017.md).
+    // Testing whether reloadFile() now actually resolves here too (it used
+    // to reliably hang in this exact sequence, before the flush above).
+    await reloadFileWithTimeout();
     // Rebuild (not just invalidate) the icon cache eagerly, while the
     // working bubble is already up — moves the cost here instead of paying
     // it silently on the user's next tap.
