@@ -1,6 +1,6 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
-import { padded, rectContains, stretchZoneToIcon } from '../utils/geometryHelpers';
+import { padded, rectContains, rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
@@ -212,6 +212,24 @@ async function redrawSectionBox(id: string): Promise<void> {
     // dragged icon), unlike Recollapse's icon-overlap-after-absorb case.
     const { zone } = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);
 
+    // CR-006: grow preservedNums with whatever's newly caught under the
+    // stretched zone right now — at this exact moment we know for certain
+    // it's here because the zone grew, not because the user dragged it in,
+    // so it must stay protected from a later Recollapse's absorb-scan
+    // (REQ-230). Anything not caught here that later overlaps the zone was
+    // genuinely moved in by the user, so it stays absorbable (REQ-210).
+    const priorPreserved = new Set<number>(base?.preservedNums ?? []);
+    const newlyCovered: number[] = [];
+    for (const el of all) {
+      if (readUserData(el) !== null) continue; // tagged — ours or another section's
+      if (typeof el.numInPage !== 'number' || priorPreserved.has(el.numInPage)) continue;
+      const data = await serializeElement(el);
+      if (!data) continue;
+      const elBbox = contentBoundingBox([{ numInPage: el.numInPage, data }], pageSize);
+      if (elBbox && rectsOverlap(elBbox, zone)) newlyCovered.push(el.numInPage);
+    }
+    const preservedNums = newlyCovered.length > 0 ? [...priorPreserved, ...newlyCovered] : base?.preservedNums;
+
     const iconR: Rect = {
       left: Math.round(iconRect.left),
       top: Math.round(iconRect.top),
@@ -230,9 +248,10 @@ async function redrawSectionBox(id: string): Promise<void> {
       },
       collapsedElements: fresh,
       isExpanded: true,
-      // Carry preservedNums forward; recapturing would misfile these (already
-      // on-page) strokes as pre-existing.
-      preservedNums: base?.preservedNums,
+      // Carry preservedNums forward (grown above with anything newly covered
+      // by this resize) — recapturing from scratch would misfile these
+      // (already on-page) strokes as pre-existing.
+      preservedNums,
     };
 
     // CRASH-SAFETY: stash `fresh` into the icon's userData (isExpanded stays

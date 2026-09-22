@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fix: resizing an expanded section by dragging its icon could
+  permanently absorb pre-existing content the new shape happened to
+  cover, even though the user never touched that content. Resizing now
+  only ever visually hides pre-existing content beneath the section —
+  it's never pulled into the section's saved data unless the user
+  actually draws or drags something into the area, which is still
+  correctly absorbed on the next Recollapse (including pre-existing
+  content, e.g. a native link, dragged in from elsewhere on the page).
 - Fix: dragging an expanded section's icon to resize it (when the section
   contains a handwritten link) could leave the section half-restored —
   some content back, some not — with no error, or in rarer cases get

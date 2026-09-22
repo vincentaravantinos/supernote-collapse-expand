@@ -1,8 +1,9 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, dlog, ICON_GLYPH, ICON_GLYPH_EXPANDED, LOG } from '../constants';
-import { buildElement, contentBoundingBox, getPageSize } from '../utils/elementSerializer';
+import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
 import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
+import { rectsOverlap } from '../utils/geometryHelpers';
 import { ensureAllPermissions } from '../utils/permissions';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { forgetSection, noteSectionExpanded } from './expandedRegistry';
@@ -69,7 +70,7 @@ export async function expandOne(
   const tGE = Date.now();
   let iconRectNow: any;
   let freshIconEl: any;
-  let preservedNums: number[] | undefined;
+  let preservedCandidates: any[] | undefined; // untagged elements, filtered by zone overlap below — only gathered when capturePreserved
   const fastIcon = await getIconByNum(filePath, page, iconElement?.numInPage, section.id);
   if (fastIcon) {
     freshIconEl = fastIcon;
@@ -77,11 +78,9 @@ export async function expandOne(
     if (capturePreserved) {
       const preservedRes: any = await PluginFileAPI.getElements(page, filePath);
       const preservedAll: any[] = preservedRes?.success && Array.isArray(preservedRes.result) ? preservedRes.result : [];
-      preservedNums = preservedAll.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number').map((el) => el.numInPage);
-    } else {
-      preservedNums = section.preservedNums;
+      preservedCandidates = preservedAll.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number');
     }
-    dlog(`${LOG} PERF expand read(fast getElement+numList)=${Date.now() - tGE}ms preserved=${preservedNums?.length ?? 0}`);
+    dlog(`${LOG} PERF expand read(fast getElement+numList)=${Date.now() - tGE}ms`);
   } else {
     const allAtExpandRes: any = await PluginFileAPI.getElements(page, filePath);
     const allAtExpand: any[] = allAtExpandRes?.success && Array.isArray(allAtExpandRes.result) ? allAtExpandRes.result : [];
@@ -90,9 +89,9 @@ export async function expandOne(
       const ud = readUserData(el);
       return ud?.kind === 'plug' && ud.section?.id === section.id;
     }) ?? iconElement;
-    preservedNums = capturePreserved
-      ? allAtExpand.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number').map((el) => el.numInPage)
-      : section.preservedNums;
+    if (capturePreserved) {
+      preservedCandidates = allAtExpand.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number');
+    }
     dlog(`${LOG} PERF expand read(fallback full getElements)=${Date.now() - tGE}ms total=${allAtExpand.length} el`);
   }
   const contentRect: Rect = {
@@ -101,6 +100,28 @@ export async function expandOne(
     right: iconRectNow.left + section.relativeRect.left + section.relativeRect.width,
     bottom: iconRectNow.top + section.relativeRect.top + section.relativeRect.height,
   };
+
+  const pageSize = await getPageSize(filePath, page);
+
+  // CR-006: zone-scoped, not whole-page — only untagged content actually
+  // positioned inside the zone at expand time is protected from Recollapse's
+  // absorb-scan (REQ-220). Content elsewhere on the page that the user later
+  // drags in stays unprotected, so a later Recollapse absorbs it (REQ-210).
+  // See redrawSectionBox for the matching incremental grow-on-resize (REQ-230).
+  let preservedNums: number[] | undefined;
+  if (capturePreserved) {
+    const tPreserve = Date.now();
+    preservedNums = [];
+    for (const el of preservedCandidates ?? []) {
+      const data = await serializeElement(el);
+      if (!data) continue;
+      const bbox = contentBoundingBox([{ numInPage: el.numInPage, data }], pageSize);
+      if (bbox && rectsOverlap(bbox, contentRect)) preservedNums.push(el.numInPage);
+    }
+    dlog(`${LOG} PERF expand preserve-scan=${Date.now() - tPreserve}ms candidates=${preservedCandidates?.length ?? 0} preserved=${preservedNums.length}`);
+  } else {
+    preservedNums = section.preservedNums;
+  }
 
   // Content moves by the icon's own movement, plus a one-time extra shift a
   // prior Recollapse may have queued (contentShift — see BUGS/B-011.md /
@@ -112,8 +133,6 @@ export async function expandOne(
   const shiftDy = section.contentShift?.dy ?? 0;
   const dx = (iconRectNow.left - section.iconRect.left) + shiftDx;
   const dy = (iconRectNow.top - section.iconRect.top) + shiftDy;
-
-  const pageSize = await getPageSize(filePath, page);
 
   // Safe two-point EMR delta (see rebuildNameElements's doc comment for why
   // a bare delta can't just be converted directly): "to" is the icon's new

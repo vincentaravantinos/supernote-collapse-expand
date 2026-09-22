@@ -17,6 +17,45 @@ Each entry should capture:
 
 ---
 
+## 2026-09-22 — Zone-scoped, incrementally-grown `preservedNums` (CR-006)
+
+**Decision.** To distinguish "content already inside an expanded
+section's zone at expand time" (must stay protected, REQ-220/230) from
+"pre-existing content the user later dragged into the zone" (must be
+absorbed on the next Recollapse, REQ-210), `preservedNums` was narrowed
+from "every untagged element on the page" to "every untagged element
+whose bbox overlaps the zone", captured once at Expand and then grown
+incrementally each time the zone is resized (`redrawSectionBox` adds
+whatever's newly caught under the stretched zone at that exact moment,
+since at that moment coverage is known for certain to come from the
+resize, not a user drag). Recollapse's absorb-scan itself is unchanged —
+it already just checks membership in this list.
+
+**Alternatives considered.**
+- Tracking each preserved element's bounding box (or position) instead
+  of just its number, and comparing current vs. recorded position at
+  Recollapse time to infer whether it moved. Rejected: real storage and
+  computation cost for no benefit over the chosen approach, since the
+  incremental-growth mechanism gets the same correctness by construction
+  (attributing coverage to a resize at the moment it happens) without
+  storing any position at all.
+- Keeping `preservedNums` whole-page and instead special-casing the
+  absorb-scan at Recollapse time. Rejected: would need the same position
+  information the bbox-tracking alternative needed, just computed later.
+
+**Constraint.** `CollapseSection.preservedNums` stays `number[]` — no
+schema change, no new persisted geometry.
+
+**Known tradeoff.** Recollapse's `fastSectionElements` short-circuit
+uses `preservedNums` to cheaply exclude most of a dense page's unrelated
+content; scoping it to the zone shrinks that exclusion set, so pages
+with a lot of unrelated untagged content will hit the fast path's
+candidate cap and fall back to the (already-correct) slow path more
+often. Performance-only — accepted as-is, revisit only if it proves to
+matter on-device.
+
+---
+
 ## 2026-09-21 — Verify the whole payload, not one field; flush before insert-after-delete (B-018 continued)
 
 **Decision.** Two follow-on fixes to the 2026-09-18 verify-and-retry

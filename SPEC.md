@@ -125,9 +125,16 @@ its name** also recollapses it.
   the final result immediately. This rebuilds the strokes each time (to keep them
   above the fresh fill), so it is noticeably slower than a normal pan; it is
   intended for occasional repositioning, not continuous dragging.
-- Any **new** strokes the user drew on top of the expanded section are
-  absorbed into the section's saved state (so they reappear on the next
-  expand).
+- REQ-200: Any new content the user draws on top of an expanded
+  section's area, after it was expanded, is absorbed into the
+  section's saved state the next time it is recollapsed — it
+  disappears along with the rest of the section's content and
+  reappears the next time the section is expanded.
+- REQ-210: Any pre-existing content the user drags into an expanded
+  section's area from elsewhere on the page, after it was expanded, is
+  absorbed into the section's saved state the next time it is
+  recollapsed — the same outcome as REQ-200, whether the content is
+  newly drawn or relocated there.
 - If absorbing that new content means the section's area (content
   bounding box + margin) would now **cover the icon** (e.g. ink drawn
   overlapping or encircling it), the entire section's content is shifted —
@@ -137,9 +144,16 @@ its name** also recollapses it.
   icon drag: nothing here reflects user intent to reposition content
   relative to the icon, so the shift is whatever's needed to stop the
   overlap, not something the user controls directly.
-- Any content that was sitting on the page **before** the expand and
-  happened to be inside the section's area must remain at its original
-  position, untouched by recollapse.
+- REQ-220: Any content that was already inside an expanded section's
+  area at the moment it was expanded remains at its original position,
+  untouched, when the section is recollapsed.
+- REQ-230: Dragging an expanded section's icon to reshape its area
+  never absorbs anything by itself. If the reshaped area ends up
+  covering content that wasn't drawn or moved there by the user, that
+  content is only visually hidden beneath the section for as long as
+  it stays covered — it is not pulled into the section's saved state,
+  even on a later recollapse, unless the user separately draws or
+  drags something into the area (REQ-200/REQ-210).
 
 ## Busy feedback
 

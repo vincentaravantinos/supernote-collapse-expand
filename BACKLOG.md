@@ -24,6 +24,7 @@ an item once the user confirms it's done.
 | CR-002 | Declare plugin permissions (FILE:READ/WRITE) for the new permission system | Done |
 | CR-003 | Audit getElement/getElementNumList/deleteElements against the new 1-indexed convention | Done — no code change needed |
 | CR-004 | Investigate batchUpdatePageElements to cut per-write round-trips (BACKLOG item #3) | Done — rejected, delete component doesn't work |
+| CR-006 | Absorb pre-existing content dragged into an expanded section's zone (position-based, not just number-based, tracking) | Done — zone-scoped, incrementally-grown preservedNums; confirmed on-device |
 
 ## Open bugs
 | ID | Symptom |
