@@ -31,7 +31,7 @@ an item once the user confirms it's done.
 |---|---|
 | B-012 | Select existing text/strokes, move them, then immediately Collapse (no other action in between): the icon appears (content reported as collapsed) but the original strokes visually remain on the page. Suspected same class as a previously-seen issue — the move likely only lands in the cached copy, not the real file, by the time the plugin reads elements; reading before a `saveCurrentNote` flush would see the pre-move (stale) position/content. Not yet investigated — reported by the user, explicitly deferred. |
 | B-014 | A stroke link's visual indicator was once seen not surviving Collapse/Expand (functionality — tap-to-navigate — still did). Parked — could not reproduce across several attempts with instrumentation in place. See `BUGS/B-014.md`. |
-| B-019 | Dragging a natively-created link (not tracked by the plugin) into an already-expanded section, then dragging the icon again, landed on page -1 and lost the link. Not yet investigated — stress-test edge case. See `BUGS/B-019.md`. |
+| B-019 | Dragging native/untracked content (esp. links) into an expanded section: one strand (Recollapse orphaning a dragged-in link) fixed and confirmed; the other (page -1 + app-wide corruption after icon-drag redraw) parked — not reproducible after extensive retesting. See `BUGS/B-019.md`. |
 
 ## Closed bugs
 | ID | Symptom |

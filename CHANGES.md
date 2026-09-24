@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix: dragging a native handwritten link into an expanded section's
+  area and then recollapsing could leave the link's annotation behind
+  on the page, empty and broken (its strokes correctly folded into the
+  section, but the link itself orphaned). The link is now absorbed
+  along with its strokes, same as any other dragged-in content.
 - Fix: resizing an expanded section by dragging its icon could
   permanently absorb pre-existing content the new shape happened to
   cover, even though the user never touched that content. Resizing now

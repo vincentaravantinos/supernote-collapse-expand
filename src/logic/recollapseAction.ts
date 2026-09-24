@@ -18,13 +18,17 @@ import { reloadFileWithTimeout } from '../utils/reloadFile';
 import { forgetSection, getExpandedEntry } from './expandedRegistry';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
-// Types we absorb when drawn on an expanded section (strokes / text / geometry).
+// Types we absorb when drawn or dragged onto an expanded section (strokes /
+// text / geometry / links). A link's member strokes and its link element are
+// both absorbable here; resolveLinkMemberIndices (below) stitches them back
+// together, or drops the link alone if not all its members made it in.
 const ABSORBABLE_TYPES = new Set<number>([
   ELEMENT_TYPES.STROKE,
   ELEMENT_TYPES.TEXT,
   ELEMENT_TYPES.TEXT_DIGEST_QUOTE,
   ELEMENT_TYPES.TEXT_DIGEST_CREATE,
   ELEMENT_TYPES.GEO,
+  ELEMENT_TYPES.LINK,
 ]);
 
 // Recollapse ONE section from a pre-fetched element list `all`: re-serialize its
