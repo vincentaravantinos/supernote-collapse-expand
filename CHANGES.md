@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix: dragging an expanded section's icon to a position deep inside
+  its own content could shrink the redrawn area small enough that some
+  of the section's own strokes ended up outside it, and could leave
+  the icon itself hidden underneath the section. The area now always
+  stays large enough to contain every stroke, and the icon is nudged
+  to sit just outside it instead of disappearing beneath it.
 - Fix: content drawn on an expanded section after it was expanded
   could get permanently excluded from the section (never absorbed on
   Recollapse) if the icon was resized in between — it would sit there

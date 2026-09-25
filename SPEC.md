@@ -158,6 +158,13 @@ its name** also recollapses it.
   a later icon-drag resize of the section — reshaping the area never
   hides or disappears it, unlike content that only became covered
   because the area grew (REQ-230).
+- REQ-250: Regardless of where an expanded section's icon is dragged,
+  every one of the section's own strokes stays fully inside the
+  redrawn area — the area never shrinks to a size that excludes any of
+  the section's own content.
+- REQ-260: If dragging the icon would otherwise leave it inside the
+  redrawn area, the icon is repositioned to sit just outside the area
+  instead — it never ends up hidden beneath the section.
 
 ## Busy feedback
 

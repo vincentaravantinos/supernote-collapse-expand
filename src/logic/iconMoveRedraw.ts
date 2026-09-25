@@ -1,6 +1,6 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
-import { padded, rectContains, rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
+import { padded, projectIconOutsideZone, rectContains, rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
@@ -255,12 +255,22 @@ async function redrawSectionBox(id: string): Promise<void> {
     fresh = await resolveLinkMemberIndices(fresh);
     const preservedNums = newlyCovered.length > 0 ? [...priorPreserved, ...newlyCovered] : base?.preservedNums;
 
+    // B-022: content-containment clamping in stretchZoneToIcon can leave the
+    // icon overlapping the zone (the guarantee that used to keep it clear was
+    // traded away in favor of never excluding content). Project it to just
+    // outside the zone's nearest edge and write that back to the actual page
+    // element, so it never ends up hidden underneath the mask.
+    const iconWasOverlapping = rectsOverlap(iconRect, zone);
+    const projectedIcon = projectIconOutsideZone(iconRect, zone, ZONE_MARGIN);
     const iconR: Rect = {
-      left: Math.round(iconRect.left),
-      top: Math.round(iconRect.top),
-      right: Math.round(iconRect.right),
-      bottom: Math.round(iconRect.bottom),
+      left: Math.round(projectedIcon.left),
+      top: Math.round(projectedIcon.top),
+      right: Math.round(projectedIcon.right),
+      bottom: Math.round(projectedIcon.bottom),
     };
+    if (iconWasOverlapping && iconEl?.textBox) {
+      iconEl.textBox.textRect = iconR;
+    }
     const temp: CollapseSection = {
       schemaVersion: base?.schemaVersion ?? SCHEMA_VERSION,
       id,

@@ -17,6 +17,47 @@ Each entry should capture:
 
 ---
 
+## 2026-09-25 — Content containment wins over icon clearance; icon repositioned to match (B-022)
+
+**Decision.** `stretchZoneToIcon`'s overlap-avoidance shift (which
+translates the whole zone away from the icon when dragged deep inside
+the content) is now clamped so it can never push a zone edge past the
+content's own bounding box — full containment of the section's content
+always wins over fully clearing the icon. Since this can leave the
+icon overlapping the (now content-safe) zone, `iconMoveRedraw.ts`
+additionally projects the icon to just outside the zone's nearest edge
+when this happens, and writes that position back to the actual page
+element — the first time this codebase programmatically repositions
+the icon itself, rather than only ever recording wherever the user
+dropped it.
+
+**Alternatives considered.**
+- Leave the shift unclamped (today's original behavior) and accept
+  that content can end up outside the frame in extreme drags.
+  Rejected, explicitly, by the user: content appearing to escape its
+  own section's boundary reads as data corruption even when the
+  underlying data is fine, which is worse than the icon ending up
+  adjacent to (rather than fully clear of) the frame.
+- Leave the icon at its raw dropped position once containment is
+  clamped, accepting it may render underneath the mask in the extreme
+  case. Rejected, explicitly, by the user: an icon a user can no longer
+  see or tap is a worse failure mode than a slightly-imprecise resize.
+
+**Constraint.** `stretchZoneToIcon` is shared by `recollapseAction.ts`
+(which already applies `shiftDx`/`shiftDy` to its own content, per an
+existing, different scenario — SPEC.md: "the icon itself never moves"
+there) and `iconMoveRedraw.ts` (which doesn't move content at all).
+Clamping the shift in the shared function benefits both callers
+identically; the icon-projection-and-reposition step is deliberately
+scoped to `iconMoveRedraw.ts` only, since `recollapseAction.ts`'s own
+icon-never-moves guarantee is an explicit, separate SPEC requirement
+that this change must not touch.
+
+Added REQ-250 (content containment) and REQ-260 (icon never hidden
+beneath the section) to SPEC.md.
+
+---
+
 ## 2026-09-25 — Resize absorbs already-in-zone content immediately, not just on Recollapse (B-020)
 
 **Decision.** `redrawSectionBox`'s zone-overlap scan already had to
