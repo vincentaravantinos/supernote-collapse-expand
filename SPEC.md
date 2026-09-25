@@ -328,6 +328,11 @@ A thin rectangle outline traces the section boundary to mark the expanded
 area more clearly. (A dotted/dashed outline isn't possible — the SDK has no
 dashed-line geometry — so the outline is solid.)
 
+REQ-300: While a section is expanded, its content behaves like
+ordinary page content — the user can interact with it (select, edit,
+erase, and any other standard note-taking action) almost as if the
+section didn't exist. 
+
 Empirical parameters live in `maskHelpers.ts`; tune via the constants
 there if rendering changes.
 

@@ -17,6 +17,53 @@ Each entry should capture:
 
 ---
 
+## 2026-09-25 — Mask/border built as STROKE, not GEO_polygon (CR-007/B-021)
+
+**Decision.** The mask fill and border, previously built as
+`GEO_polygon` geometry elements, are now built as `STROKE` elements
+instead — same visual technique (concentric thick closed-path shapes
+faking a fill; one thin closed-path outline for the border), same
+colors, only the element type changes. Confirmed on-device:
+`GEO_polygon`'s lasso hit-test appears to use the shape's full
+bounding box regardless of visible ink, while `STROKE`'s hit-test
+appears to use actually-rendered pixels — a near-white `STROKE` is
+both invisible and fully unselectable by lasso, without affecting the
+selectability of real content nearby.
+
+**Alternatives considered.**
+- 4 line segments instead of 1 closed `GEO_polygon` per ring/border.
+  Rejected: the mask's fill exists specifically to provide dense,
+  gapless ink coverage (hide anything underneath) — reshaping the
+  same total ink into more/thinner pieces doesn't reduce how much of
+  the interior is covered, so it doesn't change the fact that any
+  lasso inside the zone crosses real ink. Confirmed by testing with
+  only the mask rings present (no border): the problem persisted.
+- Native "erase" strokes instead of a colored fill (idea: erase
+  covers without adding selectable ink; back up covered content
+  first, restore on recollapse). Rejected after on-device
+  investigation: a full erase deletes the underlying stroke outright;
+  a partial erase rewrites its geometry into a new element — genuinely
+  destructive either way, not a reversible overlay. No stroke property
+  distinguishes "erased" from ordinary ink, and there is no
+  programmatic way to invoke erase behavior at all — inserting a
+  stroke with an out-of-palette `penType` is rejected outright by the
+  SDK (error 302), not silently ignored.
+- A temporary "unlock" action (remove the mask on demand for editing,
+  redraw it after) and weakening the mask's visual guarantee (thin
+  outline or nothing, walking back REQ-230) were both raised as
+  fallback options if no code-level fix could be found. Superseded
+  once the `STROKE`-based fix was confirmed to work without giving up
+  anything — REQ-230's "fully hide" guarantee stays exactly as
+  specified.
+
+**Constraint.** The SDK cannot draw a true filled shape with either
+element type (`GEO_polygon` or `STROKE`) — the "stack many overlapping
+thick shapes" fill technique itself is unavoidable regardless of which
+element type is used; only which type provides better lasso
+hit-testing changed.
+
+---
+
 ## 2026-09-22 — Zone-scoped, incrementally-grown `preservedNums` (CR-006)
 
 **Decision.** To distinguish "content already inside an expanded

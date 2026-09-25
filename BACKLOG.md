@@ -25,6 +25,7 @@ an item once the user confirms it's done.
 | CR-003 | Audit getElement/getElementNumList/deleteElements against the new 1-indexed convention | Done — no code change needed |
 | CR-004 | Investigate batchUpdatePageElements to cut per-write round-trips (BACKLOG item #3) | Done — rejected, delete component doesn't work |
 | CR-006 | Absorb pre-existing content dragged into an expanded section's zone (position-based, not just number-based, tracking) | Done — zone-scoped, incrementally-grown preservedNums; confirmed on-device |
+| CR-007 | Content inside an expanded section must stay individually lasso-selectable (from B-021) | Done — mask/border rebuilt as STROKE instead of GEO_polygon; confirmed on-device |
 
 ## Open bugs
 | ID | Symptom |
@@ -32,7 +33,7 @@ an item once the user confirms it's done.
 | B-012 | Select existing text/strokes, move them, then immediately Collapse (no other action in between): the icon appears (content reported as collapsed) but the original strokes visually remain on the page. Suspected same class as a previously-seen issue — the move likely only lands in the cached copy, not the real file, by the time the plugin reads elements; reading before a `saveCurrentNote` flush would see the pre-move (stale) position/content. Not yet investigated — reported by the user, explicitly deferred. |
 | B-014 | A stroke link's visual indicator was once seen not surviving Collapse/Expand (functionality — tap-to-navigate — still did). Parked — could not reproduce across several attempts with instrumentation in place. See `BUGS/B-014.md`. |
 | B-019 | Dragging native/untracked content (esp. links) into an expanded section: one strand (Recollapse orphaning a dragged-in link) fixed and confirmed; the other (page -1 + app-wide corruption after icon-drag redraw) parked — not reproducible after extensive retesting. See `BUGS/B-019.md`. |
-
+| B-020 | Content drawn after Expand gets wrongly protected from absorb (not folded into the section on Recollapse) once a resize happens in between — a gap in CR-006's incremental preservedNums growth. Deferred, not yet investigated. See `BUGS/B-020.md`. |
 ## Closed bugs
 | ID | Symptom |
 |---|---|
@@ -40,4 +41,5 @@ an item once the user confirms it's done.
 | B-016 | External SDK bug: `userData` never survived a round trip on Chauvet 2.26.40/3.29.43 — fixed by Ratta in 3.29.44/2.26.41, confirmed on-device. See `BUGS/B-016.md`. |
 | B-017 | `PluginCommAPI.reloadFile()` could hang indefinitely — removed from 5 of 6 call sites (confirmed unneeded on this SDK build), timeout-guarded at the 1 remaining one. See `BUGS/B-017.md`. |
 | B-018 | Recollapse/Expand/icon-drag-redraw of a stroke-link section could partially complete or misfire. Five root causes fixed: `deleteElements`/`modifyElements` silently applying to only some targets or not at all; a `reloadFile`-then-read race; `writeSection`'s own verification checking the wrong field; `expandOne` not reverting cleanly on failure; and `insertElements` silently no-op'ing right after this codebase's own `deleteElements` in the icon-drag sequence (fixed with a `saveCurrentNote()` flush). Every failure alert being swallowed by the busy overlay was also fixed. See `BUGS/B-018.md`. |
+| B-021 | Can't lasso individual content inside an expanded section — the mask/border, built as `GEO_polygon`, swept in any lasso drawn anywhere inside them. Fixed by rebuilding both as `STROKE` elements instead (CR-007); confirmed on-device. See `BUGS/B-021.md`. |
 

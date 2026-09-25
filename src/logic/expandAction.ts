@@ -168,7 +168,7 @@ export async function expandOne(
 
   const tBuild = Date.now();
   // Mask rings first so they sit below the collapsed content.
-  const maskElements = await createMaskElements(contentRect, page, section.id);
+  const maskElements = await createMaskElements(contentRect, page, section.id, pageSize);
 
   const otherElements: any[] = [];
   for (let i = 0; i < section.collapsedElements.length; i++) {

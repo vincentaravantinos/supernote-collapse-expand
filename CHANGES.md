@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix: while a section was expanded, lassoing even a small piece of its
+  content also selected the section's own visual mask/boundary,
+  making it effectively impossible to select anything specific inside
+  an expanded section. The mask and boundary are now built as a
+  different kind of element that a lasso can't pick up at all — same
+  look, but content inside an expanded section can now be selected
+  normally, exactly as if the section weren't there.
 - Fix: dragging a native handwritten link into an expanded section's
   area and then recollapsing could leave the link's annotation behind
   on the page, empty and broken (its strokes correctly folded into the
