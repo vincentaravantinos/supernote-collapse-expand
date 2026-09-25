@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix: content drawn on an expanded section after it was expanded
+  could get permanently excluded from the section (never absorbed on
+  Recollapse) if the icon was resized in between — it would sit there
+  looking normal but silently never become part of the section. It's
+  now correctly absorbed regardless of any resize in between, and no
+  longer briefly disappears from view when a resize happens right
+  after drawing it.
 - Fix: while a section was expanded, lassoing even a small piece of its
   content also selected the section's own visual mask/boundary,
   making it effectively impossible to select anything specific inside

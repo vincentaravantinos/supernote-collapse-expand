@@ -22,7 +22,7 @@ import { CollapseSection, CollapsedElement } from '../model/types';
 // text / geometry / links). A link's member strokes and its link element are
 // both absorbable here; resolveLinkMemberIndices (below) stitches them back
 // together, or drops the link alone if not all its members made it in.
-const ABSORBABLE_TYPES = new Set<number>([
+export const ABSORBABLE_TYPES = new Set<number>([
   ELEMENT_TYPES.STROKE,
   ELEMENT_TYPES.TEXT,
   ELEMENT_TYPES.TEXT_DIGEST_QUOTE,

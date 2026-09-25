@@ -17,6 +17,46 @@ Each entry should capture:
 
 ---
 
+## 2026-09-25 — Resize absorbs already-in-zone content immediately, not just on Recollapse (B-020)
+
+**Decision.** `redrawSectionBox`'s zone-overlap scan already had to
+distinguish "content newly covered because the zone just grew"
+(REQ-230, protect) from "content already in the zone before this
+resize" (REQ-200/210, stays absorbable) to fix B-020's data bug. The
+second category is now also merged into the redraw's own reinsert
+step — serialized, tagged `CE_PART`, and reinserted on top of the
+fresh mask, the same as the section's own already-tracked content,
+filtered through `ABSORBABLE_TYPES` (now exported from
+`recollapseAction.ts` for reuse) so pictures/titles are never swept
+in. This means such content becomes part of the section's tracked
+state at resize time, not only at an actual Recollapse.
+
+**Alternatives considered.**
+- Reinsert this content visually (so it doesn't vanish under the
+  fresh mask) without tagging it `CE_PART` — i.e. keep it untracked,
+  purely fixing the visual glitch. Rejected: the untracked state would
+  have to be re-derived and re-handled on *every* subsequent redraw
+  (each resize would need to re-identify and re-reinsert the same
+  content, since it's still not part of `partEls`), whereas tagging it
+  once makes every later redraw treat it identically to any other
+  section content, with no special-casing needed going forward.
+- Leave the visual glitch alone, since it self-resolves after an
+  actual Recollapse/Expand cycle. Rejected — explicitly, by the user:
+  disappearing content the user just drew is not acceptable UX, data
+  correctness alone doesn't excuse it.
+
+**Constraint.** REQ-200/210 promise absorption "the next time it is
+recollapsed" — early-tagging during a resize doesn't violate this
+(the content is still durably part of the section by the time any real
+Recollapse happens), but it does mean the exact moment of the
+underlying data transition can be earlier than the wording implies.
+Captured as its own observable guarantee, REQ-240, rather than folded
+into REQ-200/210's wording, since "does it survive a resize
+untouched" is a separately testable fact from "does it eventually get
+absorbed."
+
+---
+
 ## 2026-09-25 — Mask/border built as STROKE, not GEO_polygon (CR-007/B-021)
 
 **Decision.** The mask fill and border, previously built as

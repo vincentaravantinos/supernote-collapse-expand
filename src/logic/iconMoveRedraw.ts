@@ -11,6 +11,7 @@ import { createUnderlineElement, findNameElements, findUnderlineElements, rebuil
 import { acquireBusy, releaseBusy } from './busy';
 import { buildIconCache } from './iconPageCache';
 import { isTapDistance, noteGestureDown } from './tapGesture';
+import { ABSORBABLE_TYPES } from './recollapseAction';
 import { getCurrentFileContext } from '../utils/currentFile';
 import { showBusyView, closeBusyView } from '../utils/busyView';
 import { reloadFileWithTimeout } from '../utils/reloadFile';
@@ -143,13 +144,13 @@ async function redrawSectionBox(id: string): Promise<void> {
   let viewShown = await showBusyView('live redraw');
   try {
     // Re-serialize the current on-page content so we can rebuild it above a fresh
-    // fill. resolveLinkMemberIndices keeps stroke links.
+    // fill. Stroke links are resolved later, once any newly-absorbed content
+    // (below) is merged in too.
     let fresh: CollapsedElement[] = [];
     for (const el of partEls) {
       const data = await serializeElement(el);
       if (data) fresh.push({ numInPage: el.numInPage, data });
     }
-    fresh = await resolveLinkMemberIndices(fresh);
     if (fresh.length === 0) { return; }
 
     const pageSize = await getPageSize(filePath, page);
@@ -212,22 +213,46 @@ async function redrawSectionBox(id: string): Promise<void> {
     // dragged icon), unlike Recollapse's icon-overlap-after-absorb case.
     const { zone } = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);
 
-    // CR-006: grow preservedNums with whatever's newly caught under the
-    // stretched zone right now — at this exact moment we know for certain
-    // it's here because the zone grew, not because the user dragged it in,
-    // so it must stay protected from a later Recollapse's absorb-scan
-    // (REQ-230). Anything not caught here that later overlaps the zone was
-    // genuinely moved in by the user, so it stays absorbable (REQ-210).
+    // CR-006/B-020: grow preservedNums with whatever's newly caught under the
+    // stretched zone — but only content that overlaps the NEW zone and did
+    // NOT already overlap the OLD zone (the section's shape just before this
+    // redraw). Checking the new zone alone (B-020) can't tell "covered
+    // because the zone just grew" (REQ-230, must protect) apart from
+    // "already sitting here for some other reason, e.g. drawn after Expand"
+    // (REQ-200, must stay absorbable) — both look identical under that check.
+    // Comparing against the old zone is what actually isolates the delta the
+    // resize itself caused.
     const priorPreserved = new Set<number>(base?.preservedNums ?? []);
+    const oldZone: Rect | null = base ? {
+      left: base.iconRect.left + base.relativeRect.left,
+      top: base.iconRect.top + base.relativeRect.top,
+      right: base.iconRect.left + base.relativeRect.left + base.relativeRect.width,
+      bottom: base.iconRect.top + base.relativeRect.top + base.relativeRect.height,
+    } : null;
     const newlyCovered: number[] = [];
+    // B-020: content already inside the zone before this resize (e.g. drawn
+    // since Expand) isn't "newly covered" — it's eligible content the user put
+    // there themselves (REQ-200/210). Absorb it now (tag + reinsert as CE_PART
+    // alongside the section's own content) instead of leaving it an untracked
+    // bystander that would otherwise vanish under the freshly-redrawn mask
+    // until an actual Recollapse got around to it.
     for (const el of all) {
       if (readUserData(el) !== null) continue; // tagged — ours or another section's
       if (typeof el.numInPage !== 'number' || priorPreserved.has(el.numInPage)) continue;
       const data = await serializeElement(el);
       if (!data) continue;
       const elBbox = contentBoundingBox([{ numInPage: el.numInPage, data }], pageSize);
-      if (elBbox && rectsOverlap(elBbox, zone)) newlyCovered.push(el.numInPage);
+      if (!elBbox || !rectsOverlap(elBbox, zone)) continue;
+      if (oldZone && rectsOverlap(elBbox, oldZone)) {
+        if (ABSORBABLE_TYPES.has(el.type)) {
+          fresh.push({ numInPage: el.numInPage, data });
+          removeNums.push(el.numInPage);
+        }
+        continue;
+      }
+      newlyCovered.push(el.numInPage);
     }
+    fresh = await resolveLinkMemberIndices(fresh);
     const preservedNums = newlyCovered.length > 0 ? [...priorPreserved, ...newlyCovered] : base?.preservedNums;
 
     const iconR: Rect = {

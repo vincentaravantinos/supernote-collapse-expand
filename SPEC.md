@@ -154,6 +154,10 @@ its name** also recollapses it.
   it stays covered — it is not pulled into the section's saved state,
   even on a later recollapse, unless the user separately draws or
   drags something into the area (REQ-200/REQ-210).
+- REQ-240: Content covered by REQ-200 or REQ-210 stays visible through
+  a later icon-drag resize of the section — reshaping the area never
+  hides or disappears it, unlike content that only became covered
+  because the area grew (REQ-230).
 
 ## Busy feedback
 
