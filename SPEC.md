@@ -371,6 +371,15 @@ section didn't exist.
 Empirical parameters live in `maskHelpers.ts`; tune via the constants
 there if rendering changes.
 
+## Section identity
+
+- REQ-400: If copy-pasting a section's icon while it's collapsed
+  produces two icons that would otherwise act as the same section
+  (e.g. recollapsing or expanding one also affects the other), the
+  plugin corrects this the next time it gets the opportunity, without
+  altering either section's content — the two then behave as fully
+  independent sections.
+
 ## Constraints / explicit non-goals
 
 - Pictures and titles cannot be collapsed.

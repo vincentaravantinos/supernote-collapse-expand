@@ -17,6 +17,38 @@ Each entry should capture:
 
 ---
 
+## 2026-09-28 — Duplicate-id self-heal scoped to collapsed sections only, hooked into the existing icon-cache scan (CR-010)
+
+**Decision.** `buildIconCache` (already scanning every `CE_PLUG` icon on
+a page for tap hit-testing) now also detects two icons sharing the same
+section id and regenerates the id on all but one — but only when the
+colliding icon is **collapsed**. A `CE_NAME`/`CE_UNDERLINE` pair, if
+any, is left tagged with the old id, which after healing belongs solely
+to whichever icon kept it — correct in the ordinary case (a name is a
+separate, position-fixed element that a plain icon copy-paste wouldn't
+have duplicated), with one accepted narrow exception: a copy-paste of
+the icon *together with* its name would leave the pasted name
+cosmetically unassociated from the healed copy. The fix itself is
+gated behind the existing single-flight busy lock, so it only ever
+writes when nothing else is in flight — otherwise it's silently
+skipped and retried on a later call.
+
+**Alternatives considered.** Also retagging any `CE_NAME`/
+`CE_UNDERLINE` elements found for the colliding id — rejected: in the
+ordinary case (icon copy-pasted alone) there's only one such pair,
+already correctly associated with the icon that kept the old id: moving
+it to the healed duplicate's new id would be the actually-wrong
+outcome, not a safety improvement. Handling an **expanded** colliding
+section (retagging `CE_PART`/`CE_MASK`/`CE_FRAME`/`CE_HANDLE` too) —
+rejected as out of scope: the user asked for something simple, and
+copy-pasting a whole expanded section's visible area is a far less
+likely real-world action than copy-pasting a small collapsed icon.
+
+**Constraint.** None from the SDK — this is a scope choice, not a
+technical limitation.
+
+---
+
 ## 2026-09-28 — Finger-drag resize synthesizes position from raw delta; page re-checked before the destructive write (CR-009)
 
 **Decision.** A finger drag on the icon or handle never reads a moved

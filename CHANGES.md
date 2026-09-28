@@ -51,6 +51,11 @@
   or the bottom-right handle — now also works with a **finger**, not
   just the pencil. Nothing visibly moves while your finger is down;
   the resized area appears once you lift it.
+- Fix: copy-pasting a collapsed section's icon produced two icons that
+  silently shared the same identity — interacting with either one
+  could affect both. The plugin now detects this and gives the copy a
+  new, independent identity the next time it notices, so both behave
+  as fully separate sections.
 - Fix: dragging an expanded section's icon to resize it (when the section
   contains a handwritten link) could leave the section half-restored —
   some content back, some not — with no error, or in rarer cases get

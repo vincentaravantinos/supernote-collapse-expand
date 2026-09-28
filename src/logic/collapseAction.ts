@@ -19,7 +19,8 @@ import { alertOverBusyView } from '../utils/busyView';
 import { reloadFileWithTimeout } from '../utils/reloadFile';
 import { CollapseSection, CollapsedElement } from '../model/types';
 
-function generateSectionId(): string {
+// CR-010: exported for iconPageCache.ts's self-heal of a duplicated id.
+export function generateSectionId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
