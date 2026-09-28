@@ -1,7 +1,7 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, dlog, ICON_GLYPH, ICON_GLYPH_EXPANDED, LOG } from '../constants';
 import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
-import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
+import { deleteElementsVerified, getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { createMaskElements } from '../utils/maskHelpers';
 import { rectsOverlap } from '../utils/geometryHelpers';
 import { ensureAllPermissions } from '../utils/permissions';
@@ -49,6 +49,11 @@ export async function expandOne(
   filePath: string,
   page: number,
   capturePreserved: boolean = false,
+  // B-023: a full element list the caller already has in hand, used only to
+  // scan for stale leftovers (below) when this call's own fast path doesn't
+  // fetch one itself. Currently only iconMoveRedraw.ts's live-redraw call
+  // passes this (it already does its own full fetch for unrelated reasons).
+  knownElements?: any[],
 ): Promise<boolean> {
   dlog(`${LOG} SIZE expand icon userData=${iconElement?.userData?.length ?? 0} bytes, collapsed=${section.collapsedElements?.length ?? 0} element(s)`);
 
@@ -71,6 +76,7 @@ export async function expandOne(
   let iconRectNow: any;
   let freshIconEl: any;
   let preservedCandidates: any[] | undefined; // untagged elements, filtered by zone overlap below — only gathered when capturePreserved
+  let rawAll: any[] | undefined; // full page list, whenever this call happens to fetch one — reused below for the stale-leftover cleanup scan
   const fastIcon = await getIconByNum(filePath, page, iconElement?.numInPage, section.id);
   if (fastIcon) {
     freshIconEl = fastIcon;
@@ -78,12 +84,14 @@ export async function expandOne(
     if (capturePreserved) {
       const preservedRes: any = await PluginFileAPI.getElements(page, filePath);
       const preservedAll: any[] = preservedRes?.success && Array.isArray(preservedRes.result) ? preservedRes.result : [];
+      rawAll = preservedAll;
       preservedCandidates = preservedAll.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number');
     }
     dlog(`${LOG} PERF expand read(fast getElement+numList)=${Date.now() - tGE}ms`);
   } else {
     const allAtExpandRes: any = await PluginFileAPI.getElements(page, filePath);
     const allAtExpand: any[] = allAtExpandRes?.success && Array.isArray(allAtExpandRes.result) ? allAtExpandRes.result : [];
+    rawAll = allAtExpand;
     iconRectNow = iconRectFromElements(allAtExpand, section, iconElement);
     freshIconEl = allAtExpand.find((el) => {
       const ud = readUserData(el);
@@ -159,6 +167,27 @@ export async function expandOne(
       right: baseBBox.right + dx,
       bottom: baseBBox.bottom + dy,
     }, freshIconEl?.numInPage ?? iconElement?.numInPage); // icon num lets recollapse fetch it without a full scan
+  }
+
+  // B-023: clean up any CE_PART/CE_MASK/CE_FRAME leftovers from a previous,
+  // separately-triggered Expand attempt that failed partway — before this
+  // attempt's own insert-verification below, which would otherwise count
+  // such leftovers as if they were its own and could pass on a lie. Safe to
+  // delete: section.collapsedElements (the durable backup) hasn't been
+  // touched yet at this point, so nothing here is the sole copy of anything.
+  const cleanupSource = rawAll ?? knownElements;
+  if (cleanupSource) {
+    const staleNums = cleanupSource
+      .filter((el) => {
+        const ud = readUserData(el);
+        return ud != null && (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame') && ud.id === section.id;
+      })
+      .map((el) => el.numInPage)
+      .filter((n): n is number => typeof n === 'number');
+    if (staleNums.length > 0) {
+      const { ok: cleanupOk, remaining } = await deleteElementsVerified(filePath, page, staleNums);
+      if (!cleanupOk) console.error(`${LOG} expand: couldn't clean up ${remaining.length} stale leftover element(s) from a prior attempt: ${JSON.stringify(remaining)}`);
+    }
   }
 
   // Stroke-link members are re-inserted out-of-band by rebuildStrokeLinks, so

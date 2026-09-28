@@ -17,6 +17,47 @@ Each entry should capture:
 
 ---
 
+## 2026-09-28 — Expand self-heals stale leftovers instead of relying on a clean transaction (B-023)
+
+**Decision.** `expandOne` now deletes any pre-existing `CE_PART`/
+`CE_MASK`/`CE_FRAME` elements tagged for the section, before either
+insert path (simple batch or `rebuildStrokeLinks`) runs. This scopes
+the existing insert-verification to only what *this* attempt produced,
+instead of being able to pass on stale content a previous, separately
+failed attempt left behind. Extracted the delete-verify-retry loop
+(already duplicated once, in `recollapseAction.ts`) into a shared
+`deleteElementsVerified` helper rather than adding a second copy.
+
+**Alternatives considered.**
+- A true rollback (undo exactly what a failed attempt did, restoring
+  the prior state) — the user's original proposal. Rejected: rollback
+  would have to use the same `insertElements`/`deleteElements` calls
+  that just failed (can fail identically), and `insertElements` is
+  documented not to round-trip position, so "put it back exactly as it
+  was" isn't achievable for already-deleted elements anyway. Also
+  doesn't cover a crash/power-loss mid-operation, where there's no
+  detected failure to roll back from.
+- Leave the fast path (`capturePreserved=false`, used by the live
+  redraw) to trigger its own full-page fetch for the cleanup scan.
+  Rejected: that path deliberately avoids a full fetch (~7x cheaper on
+  a dense page per its own comment); reusing the caller's own
+  already-fetched list (threaded through as a new `knownElements`
+  parameter) avoids adding a read.
+
+**Verification.** Confirmed via failure injection (temporary probe,
+removed after use): manually inserted fake `CE_PART`-tagged elements
+for a collapsed section (simulating a prior failed attempt's
+leftovers), then triggered a normal Expand — confirmed the leftovers
+were found and deleted before the real content was inserted, with the
+verification passing on genuinely-fresh content only.
+
+**Constraint.** Safe from a data-loss standpoint regardless of when
+this cleanup runs within `expandOne`: `section.collapsedElements` (the
+durable backup) is untouched until *after* `insertOk` is confirmed, so
+nothing this cleanup deletes is ever the sole copy of anything.
+
+---
+
 ## 2026-09-25 — Content containment wins over icon clearance; icon repositioned to match (B-022)
 
 **Decision.** `stretchZoneToIcon`'s overlap-avoidance shift (which

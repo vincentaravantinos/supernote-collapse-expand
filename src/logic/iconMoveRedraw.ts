@@ -314,7 +314,9 @@ async function redrawSectionBox(id: string): Promise<void> {
     // used elsewhere in this codebase before a mutating sequence.
     await PluginNoteAPI.saveCurrentNote();
 
-    const reinsertOk = await expandOne(temp, iconEl, filePath, page); // capturePreserved defaults false
+    // B-023: pass `all` (already fetched above) so expandOne can clean up any
+    // stale leftovers from a prior failed attempt without a second fetch.
+    const reinsertOk = await expandOne(temp, iconEl, filePath, page, false, all); // capturePreserved defaults false
     if (!reinsertOk) {
       // B-018: expandOne already alerted and reverted the icon to `temp`'s own
       // state on failure — but `temp` has isExpanded:true with the content

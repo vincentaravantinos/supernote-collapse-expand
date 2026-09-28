@@ -10,7 +10,7 @@ import {
 } from '../constants';
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
-import { getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
+import { deleteElementsVerified, getIconByNum, iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
 import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
 import { alertOverBusyView } from '../utils/busyView';
@@ -220,20 +220,10 @@ async function recollapseOne(
   // and retry whatever's still actually there.
   const numsToDelete = Array.from(numSet);
   if (numsToDelete.length > 0) {
-    let remaining: number[] = numsToDelete;
-    for (let attempt = 0; attempt < 3 && remaining.length > 0; attempt++) {
-      const tDel = Date.now();
-      const delRes: any = await PluginFileAPI.deleteElements(filePath, page, remaining);
-      dlog(`${LOG} PERF recollapse deleteElements[${attempt}]=${Date.now() - tDel}ms n=${remaining.length}`);
-      if (!delRes?.success && isUnstableNoteError(delRes)) break; // note not stable — retrying won't help
-      await reloadFileWithTimeout(); // B-018: without this, this read can miss the delete having just landed
-      const chkRes: any = await PluginFileAPI.getElements(page, filePath);
-      const chk: any[] = chkRes?.success && Array.isArray(chkRes.result) ? chkRes.result : [];
-      const stillThere = new Set(chk.map((e) => e.numInPage));
-      remaining = remaining.filter((n) => stillThere.has(n));
-      if (remaining.length > 0) console.error(`${LOG} recollapse deleteElements attempt ${attempt} left ${remaining.length} element(s) behind: ${JSON.stringify(remaining)}`);
-    }
-    if (remaining.length > 0) {
+    const tDel = Date.now();
+    const { ok: deleteOk, remaining } = await deleteElementsVerified(filePath, page, numsToDelete);
+    dlog(`${LOG} PERF recollapse deleteElements=${Date.now() - tDel}ms n=${numsToDelete.length}`);
+    if (!deleteOk) {
       console.error(`${LOG} recollapse deleteElements: ${remaining.length} element(s) never removed after retries: ${JSON.stringify(remaining)}`);
       await alertOverBusyView('recollapse', 'Recollapsed, but some leftover elements could not be removed — please retry.');
     }

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix: recovering from a rare Expand-time failure alert could take
+  several rounds of Collapse/Expand or Recollapse/Expand before things
+  looked normal again — because a failed attempt's leftover content
+  was never cleaned up, and a later retry could be wrongly convinced it
+  had succeeded by counting that leftover content as its own. A retry
+  now cleans up after any earlier failed attempt first, so it succeeds
+  (or genuinely fails) in one try, with no leftover duplicates either way.
 - Fix: dragging an expanded section's icon to a position deep inside
   its own content could shrink the redrawn area small enough that some
   of the section's own strokes ended up outside it, and could leave

@@ -127,6 +127,28 @@ export function isUnstableNoteError(res: any): boolean {
   return res?.error?.code === 102;
 }
 
+// Delete by numInPage, don't trust a bare success flag (B-018: deleteElements
+// can report success while leaving some targets behind) — re-read and retry
+// whatever's still actually there, up to 3 attempts. Mechanical only; callers
+// own their own logging/alerting on a non-empty `remaining`.
+export async function deleteElementsVerified(
+  filePath: string,
+  page: number,
+  nums: number[],
+): Promise<{ ok: boolean; remaining: number[] }> {
+  let remaining = [...nums];
+  for (let attempt = 0; attempt < 3 && remaining.length > 0; attempt++) {
+    const delRes: any = await PluginFileAPI.deleteElements(filePath, page, remaining);
+    if (!delRes?.success && isUnstableNoteError(delRes)) break; // note not stable — retrying won't help
+    await reloadFileWithTimeout(); // without this, this read can miss the delete having just landed
+    const chkRes: any = await PluginFileAPI.getElements(page, filePath);
+    const chk: any[] = chkRes?.success && Array.isArray(chkRes.result) ? chkRes.result : [];
+    const stillThere = new Set(chk.map((e: any) => e.numInPage));
+    remaining = remaining.filter((n) => stillThere.has(n));
+  }
+  return { ok: remaining.length === 0, remaining };
+}
+
 export async function writeSection(
   filePath: string,
   page: number,
