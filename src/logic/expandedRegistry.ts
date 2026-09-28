@@ -2,7 +2,10 @@ import { Rect } from 'sn-plugin-lib';
 
 export interface ExpandedEntry {
   iconRect: Rect; // last-known icon position, updated after each redraw
-  contentBBox: Rect; // absolute content bbox at last (re)expand
+  // CR-008: the section's current mask/border boundary (iconRect + relativeRect,
+  // in absolute page coords) — used to compute the resize handle's hit-zone.
+  // Replaces the old contentBBox field, which had no functional reader.
+  zoneRect: Rect;
   iconNum?: number; // the icon's numInPage, so recollapse can fetch it directly
 }
 
@@ -16,8 +19,8 @@ export interface ExpandedEntry {
 // expandOne) can use it without an import cycle.
 const expanded = new Map<string, ExpandedEntry>();
 
-export function noteSectionExpanded(id: string, iconRect: Rect, contentBBox: Rect, iconNum?: number): void {
-  expanded.set(id, { iconRect, contentBBox, iconNum });
+export function noteSectionExpanded(id: string, iconRect: Rect, zoneRect: Rect, iconNum?: number): void {
+  expanded.set(id, { iconRect, zoneRect, iconNum });
 }
 
 export function forgetSection(id: string): void {

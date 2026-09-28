@@ -17,6 +17,60 @@ Each entry should capture:
 
 ---
 
+## 2026-09-28 — Resize handle built as a persisted page element, not a plugin-view overlay (CR-008)
+
+**Decision.** The bottom-right resize handle is a real, persisted
+`CE_HANDLE:<id>` `TEXT` element on the page (same construction pattern
+as the section's own `+`/`-` icon), not a `PluginManager.showPluginView()`
+React overlay.
+
+**Alternatives considered.** A `showPluginView()` overlay drawn over the
+handle's position — rejected because that view is fully interactive and
+captures touch for itself while shown (SDK_DOC.md → "Non-blocking UI:
+only your own plugin view"). The handle has to stay visible for the
+entire time a section is expanded, not just for the duration of one
+operation — an overlay held open that long would block normal pen
+strokes anywhere else on the page for as long as any section stayed
+expanded, which is unacceptable.
+
+**Constraint.** `showPluginView()`'s touch-capturing behavior, as
+already documented in SDK_DOC.md.
+
+---
+
+## 2026-09-28 — Merged resize REQs across icon/handle triggers, against Quality Auditor's default (CR-008)
+
+**Decision.** REQ-230/240/250 (resize-behavior guarantees: never
+absorbs by itself, covered content stays visible, area never shrinks
+below full content containment) are worded generically over "resizing"
+regardless of which control triggers it (the icon, or CR-008's new
+bottom-right handle), rather than as two separate, fully-duplicated
+requirement sets — one per trigger.
+
+**Alternatives considered.** Separate per-trigger requirements (drafted
+initially as REQ-310/320/330 mirroring 230/240/250 for the handle) —
+this is `roles.md`'s Quality Auditor's stated default ("one requirement
+per distinct triggering cause"), specifically because this project's
+`TEST_CASES.md` traces tests to `REQ-NNN` by number, and two REQ
+numbers structurally guarantee at least two test cases get written
+(Test Engineer's mandate: every REQ traces to a test). One shared REQ
+has no such structural guarantee — it relies on whoever writes the
+tests remembering to cover both triggers.
+
+**Why the exception, explicitly.** The user judged that reliance
+acceptable given this project's scale and stakes — one author, one
+manual tester (the user themself), no separate audit, not
+safety-critical — and said so plainly: *"I will likely forget but tbh,
+this is not a safety critical system and the rules I've set up are a
+little bit too stringent, so we can afford to skip that here."*
+Recorded here specifically so a future reader doesn't mistake this for
+an oversight — it's a knowing trade-off, made once, for this
+requirement family. `roles.md`'s rule itself is unchanged; this is a
+one-off exception for CR-008, not a precedent silently generalized to
+every future requirement in this or other plugins.
+
+---
+
 ## 2026-09-28 — Expand self-heals stale leftovers instead of relying on a clean transaction (B-023)
 
 **Decision.** `expandOne` now deletes any pre-existing `CE_PART`/

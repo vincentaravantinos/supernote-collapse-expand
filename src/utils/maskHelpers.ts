@@ -1,6 +1,6 @@
 import { PluginCommAPI, PointUtils, Rect } from 'sn-plugin-lib';
-import { CE_FRAME_PREFIX, CE_MASK_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
-import { getRectPoints } from './geometryHelpers';
+import { CE_FRAME_PREFIX, CE_HANDLE_PREFIX, CE_MASK_PREFIX, ELEMENT_TYPES, HANDLE_FONT_SIZE, HANDLE_GLYPH, LOG } from '../constants';
+import { getRectPoints, handleRectForZone } from './geometryHelpers';
 import { PageSize } from './elementSerializer';
 
 // Fake filled rectangle hiding content under a section's expanded area: the SDK
@@ -141,4 +141,32 @@ export async function createMaskElements(
   const border = await createBorderRectangle(rect, page, sectionId, pageSize);
   if (border) result.push(border);
   return result;
+}
+
+// CR-008: resize handle — a small TEXT glyph (same construction as the
+// section's own icon), centered on the zone's bottom-right corner so it
+// straddles the border, visually marking the exact draggable point. A real,
+// persisted page element (not a plugin-view overlay) so it never blocks
+// normal pen input to the rest of the page — see DECISIONS.md 2026-09-28.
+export async function createHandleElement(zoneRect: Rect, page: number, sectionId: string): Promise<any | null> {
+  const res: any = await PluginCommAPI.createElement(ELEMENT_TYPES.TEXT);
+  if (!res?.success || !res.result) {
+    console.log(`${LOG} createHandleElement FAILED success=${res?.success} hasResult=${!!res?.result}`);
+    return null;
+  }
+  const el: any = res.result;
+  el.textBox = {
+    fontSize: HANDLE_FONT_SIZE,
+    textContentFull: HANDLE_GLYPH,
+    textRect: handleRectForZone(zoneRect),
+    textAlign: 0,
+    textBold: 0,
+    textItalics: 0,
+    textFrameWidthType: 0,
+    textFrameStyle: 0,
+    textEditable: 0,
+  };
+  el.pageNum = page;
+  el.userData = CE_HANDLE_PREFIX + sectionId;
+  return el;
 }

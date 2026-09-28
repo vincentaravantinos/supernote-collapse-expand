@@ -1,6 +1,6 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
-import { ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
-import { padded, projectIconOutsideZone, rectContains, rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
+import { HANDLE_HIT_PAD, ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
+import { growZoneToHandle, handleRectForZone, padded, projectIconOutsideZone, rectContains, rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
 import { readUserData, writeSection } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
@@ -16,8 +16,12 @@ import { getCurrentFileContext } from '../utils/currentFile';
 import { showBusyView, closeBusyView } from '../utils/busyView';
 import { reloadFileWithTimeout } from '../utils/reloadFile';
 
-// Section whose icon the current gesture grabbed (set on DOWN, consumed on UP).
+// CR-008: which of a section's two draggable controls a gesture grabbed.
+type DragKind = 'icon' | 'handle';
+
+// Section/control the current gesture grabbed (set on DOWN, consumed on UP).
 let dragCandidateId: string | null = null;
+let dragCandidateKind: DragKind | null = null;
 
 // The plugin host does NOT pump the JS event loop while idle — timers only fire
 // when a native event or an in-flight await ticks the runtime. So we can't defer
@@ -25,22 +29,26 @@ let dragCandidateId: string | null = null;
 // lifts); we run it directly from the UP event and coalesce rapid drags with the
 // busy guard + a re-run flag instead.
 let rerunId: string | null = null;
+let rerunKind: DragKind | null = null;
 
-async function kickRedraw(id: string): Promise<void> {
+async function kickRedraw(id: string, kind: DragKind): Promise<void> {
   if (!getExpandedEntry(id)) return;
   if (!acquireBusy()) {
     // A redraw or a button op is in flight; remember to redraw once it frees up.
     // The in-flight op's finally is on a pumped loop, so the re-run actually runs.
     rerunId = id;
+    rerunKind = kind;
     return;
   }
   try {
     do {
       const target = rerunId ?? id;
+      const targetKind = rerunId ? rerunKind! : kind;
       rerunId = null;
+      rerunKind = null;
       if (!getExpandedEntry(target)) continue;
       try {
-        await redrawSectionBox(target);
+        await redrawSectionBox(target, targetKind);
       } catch (e) {
         console.error(`${LOG} live redraw failed: ${e}`);
       }
@@ -51,34 +59,47 @@ async function kickRedraw(id: string): Promise<void> {
 }
 
 // ACTION_DOWN: in-memory gate (no SDK call) — did this touch start near one of
-// our expanded sections' icons? If not, the UP handler no-ops.
+// our expanded sections' icons or resize handles? If not, the UP handler no-ops.
 export function onMotionDown(x: number, y: number): void {
   dragCandidateId = null;
+  dragCandidateKind = null;
   noteGestureDown(x, y);
   if (expandedCount() === 0) return;
   for (const [id, e] of expandedEntries()) {
     if (rectContains(padded(e.iconRect, ICON_HIT_PAD), x, y)) {
       dragCandidateId = id;
+      dragCandidateKind = 'icon';
+      return;
+    }
+    if (rectContains(padded(handleRectForZone(e.zoneRect), HANDLE_HIT_PAD), x, y)) {
+      dragCandidateId = id;
+      dragCandidateKind = 'handle';
       return;
     }
   }
 }
 
-// ACTION_UP: if the gesture grabbed an expanded section's icon and the finger
-// actually moved (not a tap/select), redraw that section.
+// ACTION_UP: if the gesture grabbed an expanded section's icon or handle and
+// the finger actually moved (not a tap/select), redraw that section.
 export function onMotionUp(x: number, y: number): void {
   const id = dragCandidateId;
+  const kind = dragCandidateKind;
   dragCandidateId = null;
-  if (!id) return;
+  dragCandidateKind = null;
+  if (!id || !kind) return;
   if (isTapDistance(x, y)) return; // tap/select
   if (!getExpandedEntry(id)) return;
-  void kickRedraw(id);
+  void kickRedraw(id, kind);
 }
 
 // Full live redraw: re-fill the mask AND re-place the strokes at the stretched
 // zone. Re-serializes the on-page strokes per drag (rare op). Reuses expandOne so
-// z-order and stroke links match a normal expand.
-async function redrawSectionBox(id: string): Promise<void> {
+// z-order and stroke links match a normal expand. `trigger` says which control
+// was dragged — the icon (existing behavior) or the bottom-right resize handle
+// (CR-008): only the zone-computation step and the name-relocation step differ
+// between the two; everything else (B-020's absorb-or-protect scan, B-022's
+// containment clamp, the stash/delete/reinsert sequence) is shared.
+async function redrawSectionBox(id: string, trigger: DragKind): Promise<void> {
   const entry = getExpandedEntry(id);
   if (!entry) return;
 
@@ -107,6 +128,7 @@ async function redrawSectionBox(id: string): Promise<void> {
 
   let iconEl: any = null;
   let iconRect: Rect | null = null;
+  let handleRect: Rect | null = null;
   const partEls: any[] = [];
   const removeNums: number[] = [];
   for (const el of all) {
@@ -120,21 +142,29 @@ async function redrawSectionBox(id: string): Promise<void> {
       if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
     } else if ((ud.kind === 'mask' || ud.kind === 'frame') && ud.id === id && typeof el.numInPage === 'number') {
       removeNums.push(el.numInPage);
+    } else if (ud.kind === 'handle' && ud.id === id) {
+      if (el?.textBox?.textRect) handleRect = el.textBox.textRect;
+      if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
     }
   }
   const nameEls = findNameElements(all, id);
   if (!iconEl || !iconRect) return; // icon gone (recollapsed elsewhere)
 
-  // Did the icon actually move since we last drew the box? (sub-pixel = no)
-  const moved =
-    Math.abs(iconRect.left - entry.iconRect.left) > 1 ||
-    Math.abs(iconRect.top - entry.iconRect.top) > 1;
-  if (!moved) {
-    noteSectionExpanded(id, iconRect, entry.contentBBox);
-    return;
+  if (trigger === 'icon') {
+    // Did the icon actually move since we last drew the box? (sub-pixel = no)
+    const moved =
+      Math.abs(iconRect.left - entry.iconRect.left) > 1 ||
+      Math.abs(iconRect.top - entry.iconRect.top) > 1;
+    if (!moved) {
+      noteSectionExpanded(id, iconRect, entry.zoneRect);
+      return;
+    }
+  } else if (!handleRect) {
+    return; // handle gone (recollapsed elsewhere)
   }
 
-  // Confirmed move — NOW dismiss the selection (commit) before mutating.
+  // Confirmed drag (icon moved, or handle release reached here) — NOW dismiss
+  // the selection (commit) before mutating.
   const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
   if (!lassoRes?.success) console.error(`${LOG} live redraw setLassoBoxState res=${JSON.stringify(lassoRes)}`);
 
@@ -159,8 +189,9 @@ async function redrawSectionBox(id: string): Promise<void> {
     const base = existing?.kind === 'plug' ? existing.section : null;
 
     // The name (if any) rigidly follows the icon's own drag delta — the only
-    // way it ever moves programmatically.
-    if (nameEls.length > 0) {
+    // way it ever moves programmatically. The icon doesn't move under a
+    // handle-triggered resize, so the name doesn't either (unchanged spec).
+    if (trigger === 'icon' && nameEls.length > 0) {
       const nameDx = iconRect.left - entry.iconRect.left;
       const nameDy = iconRect.top - entry.iconRect.top;
       const serializedName: CollapsedElement[] = [];
@@ -208,10 +239,36 @@ async function redrawSectionBox(id: string): Promise<void> {
 
     const bbox = contentBoundingBox(fresh, pageSize);
     if (!bbox) { return; }
-    // shiftDx/shiftDy intentionally ignored here — a live redraw's content
-    // must stay exactly where it is (only the zone reshapes to reach a
-    // dragged icon), unlike Recollapse's icon-overlap-after-absorb case.
-    const { zone } = stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect);
+
+    // The zone/absorb logic below needs to know the section's shape *before*
+    // this redraw regardless of trigger — both as the growth basis for a
+    // handle-triggered resize, and to isolate what a resize newly covered
+    // (B-020, below) for either trigger.
+    const oldZone: Rect | null = base ? {
+      left: base.iconRect.left + base.relativeRect.left,
+      top: base.iconRect.top + base.relativeRect.top,
+      right: base.iconRect.left + base.relativeRect.left + base.relativeRect.width,
+      bottom: base.iconRect.top + base.relativeRect.top + base.relativeRect.height,
+    } : null;
+    if (trigger === 'handle' && !oldZone) {
+      console.error(`${LOG} live redraw (handle): no persisted zone found for section=${id} — aborting`);
+      return;
+    }
+
+    // Icon trigger: shiftDx/shiftDy intentionally ignored — a live redraw's
+    // content must stay exactly where it is (only the zone reshapes to reach
+    // a dragged icon), unlike Recollapse's icon-overlap-after-absorb case.
+    // Handle trigger (CR-008): the corner moves directly to wherever the
+    // handle was dropped — no analogous shift at all, since the handle
+    // always sits exactly at the corner it drags, nothing to avoid
+    // overlapping. `handleRect` is non-null here: the earlier `else if
+    // (!handleRect) return` guard already ensured that for this trigger.
+    const zone = trigger === 'icon'
+      ? stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect).zone
+      : growZoneToHandle(oldZone!, bbox, ZONE_MARGIN, {
+          x: (handleRect!.left + handleRect!.right) / 2,
+          y: (handleRect!.top + handleRect!.bottom) / 2,
+        });
 
     // CR-006/B-020: grow preservedNums with whatever's newly caught under the
     // stretched zone — but only content that overlaps the NEW zone and did
@@ -223,12 +280,6 @@ async function redrawSectionBox(id: string): Promise<void> {
     // Comparing against the old zone is what actually isolates the delta the
     // resize itself caused.
     const priorPreserved = new Set<number>(base?.preservedNums ?? []);
-    const oldZone: Rect | null = base ? {
-      left: base.iconRect.left + base.relativeRect.left,
-      top: base.iconRect.top + base.relativeRect.top,
-      right: base.iconRect.left + base.relativeRect.left + base.relativeRect.width,
-      bottom: base.iconRect.top + base.relativeRect.top + base.relativeRect.height,
-    } : null;
     const newlyCovered: number[] = [];
     // B-020: content already inside the zone before this resize (e.g. drawn
     // since Expand) isn't "newly covered" — it's eligible content the user put

@@ -1,4 +1,5 @@
 import { Point, Rect } from 'sn-plugin-lib';
+import { HANDLE_SIZE } from '../constants';
 
 // Overlap = shared area; touching edges don't count (strict inequalities).
 export function rectsOverlap(a: Rect, b: Rect): boolean {
@@ -113,4 +114,38 @@ export function projectIconOutsideZone(icon: Rect, zone: Rect, margin: number): 
     return { left: icon.left, top: zone.top - margin - h, right: icon.right, bottom: zone.top - margin };
   }
   return { left: icon.left, top: zone.bottom + margin, right: icon.right, bottom: zone.bottom + margin + h };
+}
+
+// CR-008: the resize handle's own rect, centered on the zone's bottom-right
+// corner — shared by both hit-testing (onMotionDown) and construction
+// (createHandleElement) so the two never drift apart.
+export function handleRectForZone(zone: Rect): Rect {
+  const half = HANDLE_SIZE / 2;
+  return {
+    left: zone.right - half,
+    top: zone.bottom - half,
+    right: zone.right + half,
+    bottom: zone.bottom + half,
+  };
+}
+
+// CR-008: the bottom-right resize handle drags that corner directly to
+// wherever it's released — simpler than stretchZoneToIcon, since the handle
+// always sits exactly at the corner it moves, so there's nothing to "avoid
+// overlapping" the way the icon can. The top-left corner is untouched.
+// Clamped the same way B-022 clamps the icon's shift: the corner never moves
+// in far enough to exclude the content bbox + margin — full containment
+// always wins over exactly matching the drop point.
+export function growZoneToHandle(
+  currentZone: Rect,
+  contentBBox: Rect,
+  margin: number,
+  handlePos: Point,
+): Rect {
+  return {
+    left: currentZone.left,
+    top: currentZone.top,
+    right: Math.max(handlePos.x, contentBBox.right + margin),
+    bottom: Math.max(handlePos.y, contentBBox.bottom + margin),
+  };
 }

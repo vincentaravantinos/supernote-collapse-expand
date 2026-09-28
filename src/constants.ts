@@ -38,6 +38,15 @@ export const CE_NAME_PREFIX = 'CE_NAME:';
 // plugin (re)writes the name (Name/Rename, or a live expanded icon-drag).
 export const CE_UNDERLINE_PREFIX = 'CE_UNDERLINE:';
 export const UNDERLINE_GAP = 8; // px between the name's bbox bottom and the line
+
+// CR-008: a second, persisted draggable marker at an expanded section's
+// bottom-right corner, alongside the icon — resizing the area doesn't have
+// to mean dragging the icon away from the direction you want to grow.
+export const CE_HANDLE_PREFIX = 'CE_HANDLE:';
+export const HANDLE_GLYPH = '◢'; // resize-grip-shaped, distinct from the icon's ⊕/⊖
+export const HANDLE_FONT_SIZE = 32;
+export const HANDLE_SIZE = 40; // px
+export const HANDLE_HIT_PAD = 30; // mirrors ICON_HIT_PAD
 // Max serialized section payload in the icon's userData. Measured safe: the
 // .note format persists a 425 KB single-element userData intact, well under the
 // ~1 MB binder transaction limit for insertElements.

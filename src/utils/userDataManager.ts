@@ -1,6 +1,7 @@
 import { PluginFileAPI } from 'sn-plugin-lib';
 import {
   CE_FRAME_PREFIX,
+  CE_HANDLE_PREFIX,
   CE_MASK_PREFIX,
   CE_NAME_PREFIX,
   CE_PART_PREFIX,
@@ -16,6 +17,7 @@ export type UserDataKind =
   | { kind: 'part'; id: string }
   | { kind: 'mask'; id: string }
   | { kind: 'frame'; id: string }
+  | { kind: 'handle'; id: string }
   | { kind: 'name'; id: string }
   | { kind: 'underline'; id: string }
   | null;
@@ -80,6 +82,10 @@ export function readUserData(element: any): UserDataKind {
 
   if (udata.startsWith(CE_FRAME_PREFIX)) {
     return { kind: 'frame', id: udata.substring(CE_FRAME_PREFIX.length) };
+  }
+
+  if (udata.startsWith(CE_HANDLE_PREFIX)) {
+    return { kind: 'handle', id: udata.substring(CE_HANDLE_PREFIX.length) };
   }
 
   if (udata.startsWith(CE_NAME_PREFIX)) {

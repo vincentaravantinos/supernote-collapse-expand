@@ -49,7 +49,7 @@ async function recollapseOne(
     for (const el of elements) {
       const ud = readUserData(el);
       if (!ud) continue;
-      if ((ud.kind === 'mask' || ud.kind === 'frame') && ud.id === section.id) masks.push(el);
+      if ((ud.kind === 'mask' || ud.kind === 'frame' || ud.kind === 'handle') && ud.id === section.id) masks.push(el);
       else if (ud.kind === 'part' && ud.id === section.id) parts.push(el);
     }
     return { masks, parts };

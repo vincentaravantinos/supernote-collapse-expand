@@ -147,24 +147,33 @@ its name** also recollapses it.
 - REQ-220: Any content that was already inside an expanded section's
   area at the moment it was expanded remains at its original position,
   untouched, when the section is recollapsed.
-- REQ-230: Dragging an expanded section's icon to reshape its area
-  never absorbs anything by itself. If the reshaped area ends up
-  covering content that wasn't drawn or moved there by the user, that
-  content is only visually hidden beneath the section for as long as
-  it stays covered — it is not pulled into the section's saved state,
-  even on a later recollapse, unless the user separately draws or
-  drags something into the area (REQ-200/REQ-210).
+- REQ-230: Resizing an expanded section's area — whether by dragging
+  its icon or the bottom-right handle (REQ-270) — never absorbs
+  anything by itself. If the reshaped area ends up covering content
+  that wasn't drawn or moved there by the user, that content is only
+  visually hidden beneath the section for as long as it stays covered
+  — it is not pulled into the section's saved state, even on a later
+  recollapse, unless the user separately draws or drags something into
+  the area (REQ-200/REQ-210).
 - REQ-240: Content covered by REQ-200 or REQ-210 stays visible through
-  a later icon-drag resize of the section — reshaping the area never
-  hides or disappears it, unlike content that only became covered
-  because the area grew (REQ-230).
-- REQ-250: Regardless of where an expanded section's icon is dragged,
-  every one of the section's own strokes stays fully inside the
-  redrawn area — the area never shrinks to a size that excludes any of
-  the section's own content.
+  a later resize of the section, however it's triggered — reshaping
+  the area never hides or disappears it, unlike content that only
+  became covered because the area grew (REQ-230).
+- REQ-250: Regardless of how an expanded section is resized, every one
+  of the section's own strokes stays fully inside the redrawn area —
+  the area never shrinks to a size that excludes any of the section's
+  own content.
 - REQ-260: If dragging the icon would otherwise leave it inside the
   redrawn area, the icon is repositioned to sit just outside the area
   instead — it never ends up hidden beneath the section.
+- REQ-270: While a section is expanded, a second handle at the
+  bottom-right corner of its area can also be dragged to resize it —
+  moving that corner to follow the drag, while the area's top-left
+  corner and the icon's own position stay fixed.
+- REQ-280: The bottom-right handle is only present while the section
+  is expanded — it disappears when the section is recollapsed, and
+  reappears (at the area's current bottom-right corner) the next time
+  the section is expanded.
 
 ## Busy feedback
 
@@ -287,8 +296,9 @@ button-driven operation that needs it (REQ-010, REQ-020).
 |---|---|---|
 | `CE_PLUG:<json>` | The section's `+` icon. Carries the `CollapseSection` JSON. While **collapsed** it includes the full `collapsedElements`; while **expanded** that array is dropped (the content is live on the page as `CE_PART`, and recollapse rebuilds it from there) to avoid rewriting the whole payload on every expand. | Created on collapse, updated on expand/recollapse, deleted only if the section is destroyed. |
 | `CE_PART:<id>` | A piece of the section's original content currently shown on the page (one per restored stroke / text / link / geometry). | Inserted on expand, deleted on recollapse. |
-| `CE_MASK:<id>` | A polygon ring used to fake a filled (white) rectangle that hides content behind the expanded section. | Inserted on expand, deleted on recollapse. |
-| `CE_FRAME:<id>` | The thin rectangle outline marking the section boundary. Tagged separately from the fill (kept distinct for clarity / future outline-only operations). | Inserted on expand, rebuilt on a live icon-drag redraw, deleted on recollapse. |
+| `CE_MASK:<id>` | A stroke ring used to fake a filled (white) rectangle that hides content behind the expanded section. | Inserted on expand, deleted on recollapse. |
+| `CE_FRAME:<id>` | The thin rectangle outline marking the section boundary. Tagged separately from the fill (kept distinct for clarity / future outline-only operations). | Inserted on expand, rebuilt on a live icon-drag or handle-drag redraw, deleted on recollapse. |
+| `CE_HANDLE:<id>` | A small glyph at the expanded section's bottom-right corner; dragging it resizes the area, independently of dragging the icon. | Inserted on expand, repositioned on a live icon-drag or handle-drag redraw, deleted on recollapse. |
 | `CE_NAME:<sectionId>` | One handwritten stroke of a section's optional name. Stays exactly where the user wrote it — never repositioned on creation. Always visible, independent of collapsed/expanded state — unlike `CE_PART`, never hidden. | Inserted when the user confirms a Name/Rename. Deleted and replaced wholesale on a confirmed rename. Translated only when the icon is dragged while the section is expanded (see Recollapse). Deleted only if the section is destroyed. |
 | `CE_UNDERLINE:<sectionId>` | A single geometry line spanning the name's current bounding box, drawn just beneath it. Not treated as part of the name's own content (a rename replaces it, doesn't fold it in). | Inserted/redrawn (delete + reinsert) whenever the plugin (re)writes the name: Name/Rename confirmation, and the live redraw that translates the name on an expanded icon-drag. Deleted only if the section is destroyed. |
 | (null) | Not ours — leave alone. The plugin must not claim or modify these. | — |

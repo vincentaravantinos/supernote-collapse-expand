@@ -2,7 +2,7 @@ import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 's
 import { CE_PART_PREFIX, dlog, ICON_GLYPH, ICON_GLYPH_EXPANDED, LOG } from '../constants';
 import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
 import { deleteElementsVerified, getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
-import { createMaskElements } from '../utils/maskHelpers';
+import { createHandleElement, createMaskElements } from '../utils/maskHelpers';
 import { rectsOverlap } from '../utils/geometryHelpers';
 import { ensureAllPermissions } from '../utils/permissions';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
@@ -29,10 +29,16 @@ export async function rehydrateExpandedRegistry(filePath: string, page: number):
     const icons = await buildIconCache(filePath, page);
     for (const icon of icons) {
       if (!icon.section.isExpanded) continue;
-      // contentBBox has no functional reader (redrawSectionBox always
-      // recomputes it fresh from the live CE_PART elements) — the icon's own
-      // rect is a cheap stand-in, overwritten on the next real redraw/expand.
-      noteSectionExpanded(icon.id, icon.rect, icon.rect, icon.iconEl?.numInPage);
+      // CR-008: zoneRect now drives the resize handle's hit-zone, so compute
+      // it properly (icon rect + the section's own relativeRect) rather than
+      // using the icon's rect as a stand-in — cheap, no extra I/O needed.
+      const zoneRect = {
+        left: icon.rect.left + icon.section.relativeRect.left,
+        top: icon.rect.top + icon.section.relativeRect.top,
+        right: icon.rect.left + icon.section.relativeRect.left + icon.section.relativeRect.width,
+        bottom: icon.rect.top + icon.section.relativeRect.top + icon.section.relativeRect.height,
+      };
+      noteSectionExpanded(icon.id, icon.rect, zoneRect, icon.iconEl?.numInPage);
     }
   } catch (e) {
     dlog(`${LOG} rehydrateExpandedRegistry failed: ${e}`);
@@ -157,16 +163,12 @@ export async function expandOne(
   // when the user explicitly drags the icon while expanded (iconMoveRedraw.ts).
   // A collapsed-icon move leaves the name exactly where it is.
 
-  // Register for live box redraw on icon drag. Content bbox shifted by (dx, dy)
-  // (the same delta strokes are built with) = its absolute on-page bbox.
+  // Register for live box redraw on icon/handle drag, and for the resize
+  // handle's own hit-zone (CR-008) — contentRect is the section's actual
+  // zone (mask/border boundary), already computed above.
   const baseBBox = contentBoundingBox(section.collapsedElements, pageSize);
   if (baseBBox) {
-    noteSectionExpanded(section.id, iconRectNow, {
-      left: baseBBox.left + dx,
-      top: baseBBox.top + dy,
-      right: baseBBox.right + dx,
-      bottom: baseBBox.bottom + dy,
-    }, freshIconEl?.numInPage ?? iconElement?.numInPage); // icon num lets recollapse fetch it without a full scan
+    noteSectionExpanded(section.id, iconRectNow, contentRect, freshIconEl?.numInPage ?? iconElement?.numInPage); // icon num lets recollapse fetch it without a full scan
   }
 
   // B-023: clean up any CE_PART/CE_MASK/CE_FRAME leftovers from a previous,
@@ -180,7 +182,7 @@ export async function expandOne(
     const staleNums = cleanupSource
       .filter((el) => {
         const ud = readUserData(el);
-        return ud != null && (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame') && ud.id === section.id;
+        return ud != null && (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame' || ud.kind === 'handle') && ud.id === section.id;
       })
       .map((el) => el.numInPage)
       .filter((n): n is number => typeof n === 'number');
@@ -196,8 +198,13 @@ export async function expandOne(
   const hasStrokeLinks = section.collapsedElements.some((ce) => ce.data.kind === 'link' && ce.data.category === 1);
 
   const tBuild = Date.now();
-  // Mask rings first so they sit below the collapsed content.
+  // Mask rings first so they sit below the collapsed content. The resize
+  // handle (CR-008) rides along in the same batch — both stroke-link and
+  // simple-batch insert paths already spread `maskElements` into their
+  // insert, so folding it in here covers both without touching either path.
   const maskElements = await createMaskElements(contentRect, page, section.id, pageSize);
+  const handleElement = await createHandleElement(contentRect, page, section.id);
+  if (handleElement) maskElements.push(handleElement);
 
   const otherElements: any[] = [];
   for (let i = 0; i < section.collapsedElements.length; i++) {
@@ -240,7 +247,7 @@ export async function expandOne(
           const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
           const landed = check.filter((el) => {
             const ud = readUserData(el);
-            return ud != null && (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame') && ud.id === section.id;
+            return ud != null && (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame' || ud.kind === 'handle') && ud.id === section.id;
           }).length;
           insertOk = landed >= batch.length;
           if (!insertOk) console.error(`${LOG} expand: insertElements reported success but only ${landed}/${batch.length} tagged elements found (read attempt ${readAttempt}) — re-reading`);
