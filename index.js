@@ -56,10 +56,10 @@ try {
     onMsg: m => {
       const a = m?.action;
       if (a === 0) {
-        onMotionDown(m?.x, m?.y);
+        onMotionDown(m?.x, m?.y, m?.toolType, m?.pointerCount);
         onTapDown(m?.x, m?.y, m?.toolType, m?.pointerCount);
       } else if (a === 1) {
-        onMotionUp(m?.x, m?.y);
+        onMotionUp(m?.x, m?.y, m?.toolType, m?.pointerCount);
         onTapUp(m?.x, m?.y, m?.toolType, m?.pointerCount);
       }
     },

@@ -46,8 +46,11 @@
   the **bottom-right corner** of its area, alongside the icon. Dragging
   it resizes the area the same way dragging the icon does, without
   having to move the icon itself away from the direction you actually
-  want to grow into. Handle drags only work with the pencil for now,
-  same as icon drags.
+  want to grow into.
+- Feature: resizing an expanded section — by dragging either the icon
+  or the bottom-right handle — now also works with a **finger**, not
+  just the pencil. Nothing visibly moves while your finger is down;
+  the resized area appears once you lift it.
 - Fix: dragging an expanded section's icon to resize it (when the section
   contains a handwritten link) could leave the section half-restored —
   some content back, some not — with no error, or in rarer cases get

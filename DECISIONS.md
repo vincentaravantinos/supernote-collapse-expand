@@ -17,6 +17,38 @@ Each entry should capture:
 
 ---
 
+## 2026-09-28 — Finger-drag resize synthesizes position from raw delta; page re-checked before the destructive write (CR-009)
+
+**Decision.** A finger drag on the icon or handle never reads a moved
+position back from the page (a finger doesn't relocate elements, unlike
+the pencil) — instead, the raw down-to-up touch delta is applied to the
+last-known rect once, immediately after it's read, so every downstream
+step (moved-check, name-relocation delta, zone geometry) operates on
+it exactly as it already does for a real pencil-driven move. The icon's
+synthesized position is now written back to the page unconditionally
+(previously only when B-022's containment projection fired), since
+`expandOne`'s own internal re-read of the icon's page position is what
+actually places the rebuilt zone — nothing else will ever commit a
+finger-synthesized position. Separately, `redrawSectionBox` re-checks
+the current page immediately before the destructive delete of the old
+mask/part/handle elements, aborting before deleting anything if it no
+longer matches the page the operation started on.
+
+**Alternatives considered.** A literal "page at raw finger-down vs raw
+finger-up" comparison — rejected: the SDK exposes no synchronous way to
+read the current page (every read is an async round-trip), so this
+would need an unawaited, fire-and-forget query launched at DOWN — not
+worth the complexity for the narrow residual gap it would close (the
+sub-second window between finger-lift and the redraw actually starting,
+on top of what the entry/pre-delete checks already cover).
+
+**Constraint.** No synchronous SDK read exists for "current page";
+`expandOne` always re-derives the icon's position from a fresh page
+read rather than trusting its caller's value, so any position the
+caller computed without a corresponding page write is invisible to it.
+
+---
+
 ## 2026-09-28 — Resize handle built as a persisted page element, not a plugin-view overlay (CR-008)
 
 **Decision.** The bottom-right resize handle is a real, persisted

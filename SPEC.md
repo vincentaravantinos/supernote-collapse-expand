@@ -174,6 +174,20 @@ its name** also recollapses it.
   is expanded — it disappears when the section is recollapsed, and
   reappears (at the area's current bottom-right corner) the next time
   the section is expanded.
+- REQ-290: A finger drag on an expanded section's icon resizes the
+  section's area the same way a pencil drag on the icon does.
+- REQ-310: A finger drag on an expanded section's bottom-right handle
+  resizes the section's area the same way a pencil drag on the handle
+  does.
+- REQ-320: During a finger-drag resize on the icon, nothing on the page
+  visibly follows the finger while it's still down — the resized result
+  only appears once the finger is lifted.
+- REQ-330: During a finger-drag resize on the bottom-right handle,
+  nothing on the page visibly follows the finger while it's still down
+  — the resized result only appears once the finger is lifted.
+- REQ-340: If the page changes during a finger drag on an expanded
+  section's icon or handle, the plugin does not attempt to resize
+  anything — the section is left exactly as it was.
 
 ## Busy feedback
 

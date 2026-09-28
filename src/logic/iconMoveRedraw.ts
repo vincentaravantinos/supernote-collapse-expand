@@ -10,18 +10,28 @@ import { expandOne } from './expandAction';
 import { createUnderlineElement, findNameElements, findUnderlineElements, rebuildNameElements } from './nameAction';
 import { acquireBusy, releaseBusy } from './busy';
 import { buildIconCache } from './iconPageCache';
-import { isTapDistance, noteGestureDown } from './tapGesture';
+import { gestureDelta, isTapDistance, noteGestureDown } from './tapGesture';
 import { ABSORBABLE_TYPES } from './recollapseAction';
-import { getCurrentFileContext } from '../utils/currentFile';
+import { getCurrentFileContext, getCurrentPageNumOrNull } from '../utils/currentFile';
 import { showBusyView, closeBusyView } from '../utils/busyView';
 import { reloadFileWithTimeout } from '../utils/reloadFile';
 
 // CR-008: which of a section's two draggable controls a gesture grabbed.
 type DragKind = 'icon' | 'handle';
 
+// CR-009: a finger never actually relocates a page element (unlike the
+// pencil), so a finger-triggered redraw carries the raw down-to-up delta and
+// synthesizes the intended new position from it instead of reading one back.
+type FingerDelta = { dx: number; dy: number };
+
+function isQualifyingFinger(toolType: number | undefined, pointerCount: number | undefined): boolean {
+  return toolType === 1 && pointerCount === 1;
+}
+
 // Section/control the current gesture grabbed (set on DOWN, consumed on UP).
 let dragCandidateId: string | null = null;
 let dragCandidateKind: DragKind | null = null;
+let dragCandidateIsFinger = false;
 
 // The plugin host does NOT pump the JS event loop while idle — timers only fire
 // when a native event or an in-flight await ticks the runtime. So we can't defer
@@ -30,25 +40,29 @@ let dragCandidateKind: DragKind | null = null;
 // busy guard + a re-run flag instead.
 let rerunId: string | null = null;
 let rerunKind: DragKind | null = null;
+let rerunFingerDelta: FingerDelta | undefined;
 
-async function kickRedraw(id: string, kind: DragKind): Promise<void> {
+async function kickRedraw(id: string, kind: DragKind, fingerDelta?: FingerDelta): Promise<void> {
   if (!getExpandedEntry(id)) return;
   if (!acquireBusy()) {
     // A redraw or a button op is in flight; remember to redraw once it frees up.
     // The in-flight op's finally is on a pumped loop, so the re-run actually runs.
     rerunId = id;
     rerunKind = kind;
+    rerunFingerDelta = fingerDelta;
     return;
   }
   try {
     do {
       const target = rerunId ?? id;
       const targetKind = rerunId ? rerunKind! : kind;
+      const targetFingerDelta = rerunId ? rerunFingerDelta : fingerDelta;
       rerunId = null;
       rerunKind = null;
+      rerunFingerDelta = undefined;
       if (!getExpandedEntry(target)) continue;
       try {
-        await redrawSectionBox(target, targetKind);
+        await redrawSectionBox(target, targetKind, targetFingerDelta);
       } catch (e) {
         console.error(`${LOG} live redraw failed: ${e}`);
       }
@@ -60,9 +74,10 @@ async function kickRedraw(id: string, kind: DragKind): Promise<void> {
 
 // ACTION_DOWN: in-memory gate (no SDK call) — did this touch start near one of
 // our expanded sections' icons or resize handles? If not, the UP handler no-ops.
-export function onMotionDown(x: number, y: number): void {
+export function onMotionDown(x: number, y: number, toolType?: number, pointerCount?: number): void {
   dragCandidateId = null;
   dragCandidateKind = null;
+  dragCandidateIsFinger = isQualifyingFinger(toolType, pointerCount);
   noteGestureDown(x, y);
   if (expandedCount() === 0) return;
   for (const [id, e] of expandedEntries()) {
@@ -80,16 +95,23 @@ export function onMotionDown(x: number, y: number): void {
 }
 
 // ACTION_UP: if the gesture grabbed an expanded section's icon or handle and
-// the finger actually moved (not a tap/select), redraw that section.
-export function onMotionUp(x: number, y: number): void {
+// actually moved (not a tap/select), redraw that section. CR-009: re-qualify
+// finger-ness at UP too — if DOWN and UP disagree (e.g. a second finger joined
+// mid-gesture), the gesture isn't trustworthy enough to synthesize a delta
+// from, so drop it entirely rather than guess.
+export function onMotionUp(x: number, y: number, toolType?: number, pointerCount?: number): void {
   const id = dragCandidateId;
   const kind = dragCandidateKind;
+  const wasFinger = dragCandidateIsFinger;
   dragCandidateId = null;
   dragCandidateKind = null;
+  dragCandidateIsFinger = false;
   if (!id || !kind) return;
   if (isTapDistance(x, y)) return; // tap/select
   if (!getExpandedEntry(id)) return;
-  void kickRedraw(id, kind);
+  const isFinger = isQualifyingFinger(toolType, pointerCount);
+  if (wasFinger !== isFinger) return; // inconsistent gesture — don't guess
+  void kickRedraw(id, kind, wasFinger ? gestureDelta(x, y) : undefined);
 }
 
 // Full live redraw: re-fill the mask AND re-place the strokes at the stretched
@@ -98,8 +120,13 @@ export function onMotionUp(x: number, y: number): void {
 // was dragged — the icon (existing behavior) or the bottom-right resize handle
 // (CR-008): only the zone-computation step and the name-relocation step differ
 // between the two; everything else (B-020's absorb-or-protect scan, B-022's
-// containment clamp, the stash/delete/reinsert sequence) is shared.
-async function redrawSectionBox(id: string, trigger: DragKind): Promise<void> {
+// containment clamp, the stash/delete/reinsert sequence) is shared. `fingerDelta`
+// (CR-009), when present, means the dragged control's page position never
+// actually changed (a finger doesn't relocate elements) — the freshly-read
+// rect is overwritten by translating it by this delta right after it's read,
+// so everything downstream (moved-check, name delta, zone geometry) operates
+// on the synthesized position exactly as it already does for a real move.
+async function redrawSectionBox(id: string, trigger: DragKind, fingerDelta?: FingerDelta): Promise<void> {
   const entry = getExpandedEntry(id);
   if (!entry) return;
 
@@ -149,9 +176,34 @@ async function redrawSectionBox(id: string, trigger: DragKind): Promise<void> {
   }
   const nameEls = findNameElements(all, id);
   if (!iconEl || !iconRect) return; // icon gone (recollapsed elsewhere)
+  if (trigger === 'handle' && !handleRect) return; // handle gone (recollapsed elsewhere)
+
+  // CR-009: synthesize the moved-to position from the raw finger delta instead
+  // of trusting the freshly-read (unchanged) page rect — see this function's
+  // own doc comment above.
+  if (fingerDelta) {
+    if (trigger === 'icon') {
+      iconRect = {
+        left: iconRect.left + fingerDelta.dx,
+        top: iconRect.top + fingerDelta.dy,
+        right: iconRect.right + fingerDelta.dx,
+        bottom: iconRect.bottom + fingerDelta.dy,
+      };
+    } else {
+      handleRect = {
+        left: handleRect!.left + fingerDelta.dx,
+        top: handleRect!.top + fingerDelta.dy,
+        right: handleRect!.right + fingerDelta.dx,
+        bottom: handleRect!.bottom + fingerDelta.dy,
+      };
+    }
+  }
 
   if (trigger === 'icon') {
     // Did the icon actually move since we last drew the box? (sub-pixel = no)
+    // For a finger trigger this is never true by construction — iconRect was
+    // just translated by a delta onMotionUp already confirmed exceeds the tap
+    // threshold — but the check is harmless to leave in place either way.
     const moved =
       Math.abs(iconRect.left - entry.iconRect.left) > 1 ||
       Math.abs(iconRect.top - entry.iconRect.top) > 1;
@@ -159,8 +211,6 @@ async function redrawSectionBox(id: string, trigger: DragKind): Promise<void> {
       noteSectionExpanded(id, iconRect, entry.zoneRect);
       return;
     }
-  } else if (!handleRect) {
-    return; // handle gone (recollapsed elsewhere)
   }
 
   // Confirmed drag (icon moved, or handle release reached here) — NOW dismiss
@@ -261,8 +311,9 @@ async function redrawSectionBox(id: string, trigger: DragKind): Promise<void> {
     // Handle trigger (CR-008): the corner moves directly to wherever the
     // handle was dropped — no analogous shift at all, since the handle
     // always sits exactly at the corner it drags, nothing to avoid
-    // overlapping. `handleRect` is non-null here: the earlier `else if
-    // (!handleRect) return` guard already ensured that for this trigger.
+    // overlapping. `handleRect` is non-null here: the earlier
+    // `if (trigger === 'handle' && !handleRect) return` guard already
+    // ensured that for this trigger.
     const zone = trigger === 'icon'
       ? stretchZoneToIcon(bbox, ZONE_MARGIN, iconRect).zone
       : growZoneToHandle(oldZone!, bbox, ZONE_MARGIN, {
@@ -309,9 +360,7 @@ async function redrawSectionBox(id: string, trigger: DragKind): Promise<void> {
     // B-022: content-containment clamping in stretchZoneToIcon can leave the
     // icon overlapping the zone (the guarantee that used to keep it clear was
     // traded away in favor of never excluding content). Project it to just
-    // outside the zone's nearest edge and write that back to the actual page
-    // element, so it never ends up hidden underneath the mask.
-    const iconWasOverlapping = rectsOverlap(iconRect, zone);
+    // outside the zone's nearest edge.
     const projectedIcon = projectIconOutsideZone(iconRect, zone, ZONE_MARGIN);
     const iconR: Rect = {
       left: Math.round(projectedIcon.left),
@@ -319,7 +368,13 @@ async function redrawSectionBox(id: string, trigger: DragKind): Promise<void> {
       right: Math.round(projectedIcon.right),
       bottom: Math.round(projectedIcon.bottom),
     };
-    if (iconWasOverlapping && iconEl?.textBox) {
+    // CR-009: write back unconditionally, not just when projection actually
+    // moved it — expandOne's own internal re-read of the icon's page position
+    // is what actually places the rebuilt zone, so a finger-synthesized
+    // position (never independently written to the page by anything else)
+    // has to be committed here regardless of whether B-022's projection fired.
+    // Harmless no-op for a pencil drag, where this was already correct.
+    if (iconEl?.textBox) {
       iconEl.textBox.textRect = iconR;
     }
     const temp: CollapseSection = {
@@ -347,6 +402,22 @@ async function redrawSectionBox(id: string, trigger: DragKind): Promise<void> {
     const { ok: stashOk } = await writeSection(filePath, page, iconEl, temp, iconEl);
     if (!stashOk) {
       console.error(`${LOG} live redraw failed to stash content before delete — aborting, parts left in place`);
+      return;
+    }
+
+    // REQ-340/CR-009: re-verify we're still on the page this whole operation
+    // has assumed throughout (captured once, at entry, as `page`) before the
+    // point of no return — a page-turn firing mid-operation (most plausible
+    // via a finger gesture also being read as a native swipe) would otherwise
+    // have every write below still explicitly targeting the old page number
+    // while the native app's own state has moved on, which is exactly the
+    // kind of interleaving this SDK has shown itself unstable under. Applied
+    // unconditionally (pencil included) — cheap, and closes the same
+    // theoretical gap there too. Abort before deleting anything: the section
+    // is left exactly as it was, nothing to recover from.
+    const pageNow = await getCurrentPageNumOrNull();
+    if (pageNow !== page) {
+      console.error(`${LOG} live redraw: page changed mid-operation (was ${page}, now ${pageNow}) — aborting before delete`);
       return;
     }
 

@@ -16,3 +16,9 @@ export function noteGestureDown(x: number, y: number): void {
 export function isTapDistance(x: number, y: number): boolean {
   return Math.abs(x - downX) < TAP_MAX_PX && Math.abs(y - downY) < TAP_MAX_PX;
 }
+
+// CR-009: the raw down-to-up delta, for a finger drag that needs to synthesize
+// a moved position itself (a finger never actually relocates a page element).
+export function gestureDelta(x: number, y: number): { dx: number; dy: number } {
+  return { dx: x - downX, dy: y - downY };
+}
