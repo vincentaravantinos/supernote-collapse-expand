@@ -4,7 +4,6 @@ import { deleteElementsVerified, getPageElements, readUserData, writeSection } f
 import { elementsBBox, getPageSize } from '../utils/elementSerializer';
 import { findNameElements, findUnderlineElements } from './nameAction';
 import { generateSectionId } from './collapseAction';
-import { acquireBusy, releaseBusy } from './busy';
 import { CollapseSection } from '../model/types';
 
 // Every CE_PLUG icon (collapsed or expanded) on one page, for cheap tap
@@ -30,26 +29,16 @@ export function getCachedIcons(page: number): PageIconEntry[] | null {
   return cachedPage === page ? cachedIcons : null;
 }
 
-// Runs a page repair under the busy guard: directly if the caller already
-// holds it (runExclusive's post-operation rebuild), otherwise only if it's
-// free — skipped silently, and tried again next call, if an operation is in
-// flight.
-async function underGuard(locked: boolean, repair: () => Promise<void>): Promise<void> {
-  if (locked) return repair();
-  if (!acquireBusy()) return;
-  try {
-    await repair();
-  } finally {
-    releaseBusy();
-  }
-}
-
+// `repair`: also fix the page (duplicate ids, orphaned underlines). Only
+// runExclusive's post-operation rebuild passes it — it holds the busy guard,
+// and the change then always follows something the user just did, never a
+// silent write at startup or on a plain tap-cache lookup.
 export async function buildIconCache(
   filePath: string,
   page: number,
-  opts: { locked?: boolean } = {},
+  opts: { repair?: boolean } = {},
 ): Promise<PageIconEntry[]> {
-  const locked = opts.locked ?? false;
+  const repair = opts.repair ?? false;
   const all = await getPageElements(filePath, page);
 
   const icons: PageIconEntry[] = [];
@@ -74,25 +63,22 @@ export async function buildIconCache(
   // have duplicated in the first place. (Narrow, accepted exception: a
   // deliberate copy-paste of the icon *together with* its name would leave
   // the pasted name cosmetically orphaned from the healed duplicate — no
-  // data loss, just not picked up as that icon's name anymore.) Runs under
-  // the busy guard (see underGuard), never concurrently with an operation.
+  // data loss, just not picked up as that icon's name anymore.)
   const seenIds = new Set<string>();
   for (const icon of icons) {
     if (!seenIds.has(icon.id)) {
       seenIds.add(icon.id);
       continue;
     }
-    if (icon.section.isExpanded) continue;
-    await underGuard(locked, async () => {
-      const healedSection: CollapseSection = { ...icon.section, id: generateSectionId() };
-      const { ok } = await writeSection(filePath, page, icon.iconEl, healedSection, icon.iconEl);
-      if (ok) {
-        icon.id = healedSection.id;
-        icon.section = healedSection;
-      } else {
-        console.error(`${LOG} self-heal: failed to write regenerated id for a duplicated section`);
-      }
-    });
+    if (!repair || icon.section.isExpanded) continue;
+    const healedSection: CollapseSection = { ...icon.section, id: generateSectionId() };
+    const { ok } = await writeSection(filePath, page, icon.iconEl, healedSection, icon.iconEl);
+    if (ok) {
+      icon.id = healedSection.id;
+      icon.section = healedSection;
+    } else {
+      console.error(`${LOG} self-heal: failed to write regenerated id for a duplicated section`);
+    }
   }
 
   // REQ-660: an underline whose name was erased entirely has nothing left to
@@ -109,11 +95,9 @@ export async function buildIconCache(
       if (typeof el.numInPage === 'number') orphanNums.push(el.numInPage);
     }
   }
-  if (orphanNums.length > 0) {
-    await underGuard(locked, async () => {
-      const { ok, remaining } = await deleteElementsVerified(filePath, page, orphanNums);
-      if (!ok) console.error(`${LOG} orphaned underline cleanup: ${remaining.length} element(s) never removed`);
-    });
+  if (repair && orphanNums.length > 0) {
+    const { ok, remaining } = await deleteElementsVerified(filePath, page, orphanNums);
+    if (!ok) console.error(`${LOG} orphaned underline cleanup: ${remaining.length} element(s) never removed`);
   }
 
   if (icons.length > 0) {

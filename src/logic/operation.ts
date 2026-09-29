@@ -91,7 +91,7 @@ export async function runExclusive(
     if (opts.errorAlert) await op.alert(opts.errorAlert);
   } finally {
     try {
-      if (op.touchedPage) await buildIconCache(op.touchedPage.filePath, op.touchedPage.page, { locked: true });
+      if (op.touchedPage) await buildIconCache(op.touchedPage.filePath, op.touchedPage.page, { repair: true });
     } catch (e) {
       console.error(`${LOG} ${context} icon cache rebuild failed: ${e}`);
     }

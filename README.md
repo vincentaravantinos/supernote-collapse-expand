@@ -11,23 +11,29 @@ and tap **Install**.
 
 ![Demo](assets/demo.gif)
 
-Collapse / Expand lets you hide a region of your handwriting behind a small `+`
-icon, bring it back when you need it, and tuck it away again when you're done.
-The rest of the page stays fully usable the whole time — you can keep writing,
-panning, and selecting around a collapsed region.
+Collapse / Expand lets you hide a region of your handwriting behind a small
+`⊕` icon, bring it back when you need it, and tuck it away again when you're
+done. The rest of the page stays fully usable the whole time — you can keep
+writing, panning, and selecting around a collapsed region.
 
-All actions use the **Collapse / Expand** button in the lasso menu: make a
-selection with the lasso, then tap the button.
+## How you use it
 
-**Shortcut**: a single tap of your **finger** directly on a `+` icon (or a
-section's name, if it has one) expands or recollapses it on the spot — no
-lasso or button needed. (A pen tap just draws, as usual.)
+- **Tap an icon with your finger** to expand or collapse that section. This
+  is the everyday gesture. Tapping the section's name works too. (A pen tap
+  just draws, as usual.)
+- **Lasso + the Collapse / Expand button** (in the lasso menu) for everything
+  else: collapsing new content, naming a section, and acting on several
+  sections at once. The button does the one thing that makes sense for your
+  selection straight away, and only asks when there's a real choice. If
+  there's nothing it can do — for example you lassoed a single icon — it
+  reminds you to tap the icon instead.
+
+The plugin's questions and messages appear in a small card titled
+**Collapse / Expand**.
 
 ---
 
-## The three actions
-
-### Collapse — hide a region
+## Collapse — hide a region
 
 1. Lasso the handwriting you want to hide.
 2. Tap **Collapse / Expand**.
@@ -36,79 +42,81 @@ The selected content disappears and a small `⊕` icon appears just above and to
 the left of where it was. The icon holds everything needed to bring the content
 back later.
 
-Pictures and titles inside the lasso are left in place — they aren't collapsed.
+Only handwriting, shapes and links can be collapsed. **Pictures, titles and
+typed text boxes stay on the page.** If your lasso mixes them with
+handwriting, you're warned first and can choose **Collapse anyway** or
+**Cancel**.
 
-### Expand — bring it back
+## Expand and collapse — tap the icon
 
-1. Lasso the `+` icon.
-2. Tap **Collapse / Expand**.
-
-The content reappears where it was, the icon switches to `⊖`, and a white area
-with a thin outline marks the section's boundary, so you can see exactly what
-belongs to it.
-
-### Recollapse — put it away again
-
-1. Lasso the `+` icon **or** any of the restored content, or the white area
-   itself.
-2. Tap **Collapse / Expand**.
-
-The content hides again, the white area disappears, and the icon switches back
-to `⊕`. The icon stays right where it is.
+- **Tap a `⊕` icon** with your finger: the content reappears where it was, the
+  icon switches to `⊖`, and a white area with a thin outline marks the
+  section's boundary, so you can see exactly what belongs to it.
+- **Tap a `⊖` icon**: the content hides again, the white area disappears, and
+  the icon switches back to `⊕`. The icon stays right where it is.
 
 ---
 
 ## Working with several sections at once
 
-- **Expand many at once** — lasso several `+` icons together and tap the button;
-  they all expand in one go. Any other handwriting in the lasso is left alone.
-- **Recollapse many at once** — one lasso that covers several expanded sections
-  recollapses all of them at once.
-- **Mixed selections** — if a single lasso covers both an expanded section and a
-  collapsed `+` icon, recollapsing takes priority: the expanded section(s) are
-  put away, and the collapse/expand is ignored for that tap.
+Lasso several sections (their icons, or an expanded section's content) and tap
+**Collapse / Expand**:
+
+- **All collapsed** — they all expand in one go.
+- **All expanded** — they all collapse in one go.
+- **A mix** — you're asked: **Expand all sections**, **Collapse all
+  sections**, or **Cancel**.
+
+Any other handwriting in the lasso is left alone.
 
 ---
 
-## How to resize an existing section or move the anchor position
+## Resizing or moving a section
 
-You reshape or relocate a section by **dragging its `+` icon** — and it behaves
-differently depending on whether the section is collapsed or expanded:
-
-- **While collapsed** — dragging the icon moves the **whole section**. When you
+- **Drag the icon while collapsed** to move the **whole section**. When you
   expand it again, the content reappears at the icon's new spot.
-- **While expanded** — dragging the icon **reshapes the section's area** instead.
-  The restored content stays where it is, and the white area stretches so the
-  icon sits at its edge. Drag the icon a little to fine-tune the boundary, or
-  drag it far away to turn the section into a large, mostly-empty area.
+- **Drag the icon while expanded** to **reshape the section's area**. The
+  content stays where it is, and the white area stretches so the icon sits at
+  its edge. Drag it far away to make a large, mostly-empty area. If you drop
+  the icon inside the area, it's placed just outside the nearest edge.
+- **Drag the small `◢` handle** at the bottom-right corner of an expanded
+  section to resize it from that corner, without moving the icon.
 
-  When you release the icon while expanded, the section redraws at its new shape.
-  This takes a moment longer than an ordinary page pan, so it's meant for the
-  occasional adjustment rather than continuous dragging.
+You can drag with the **pen or a finger**. With a finger, nothing moves while
+your finger is down — the new shape appears when you lift it. Each resize
+redraws the section, which takes a moment, so it's meant for the occasional
+adjustment rather than continuous dragging.
 
 ---
 
 ## Naming a section
 
-You can give a collapsed section a handwritten name so you can tell sections
-apart at a glance:
+Give a section a handwritten name so you can tell sections apart at a glance.
+It works whether the section is collapsed or expanded.
 
-1. Write the name on the page.
-2. Lasso it together with the section's `+` icon.
-3. Tap **Collapse / Expand** — you'll be asked to confirm before the name is
-   set (or replaced, if the section already has one).
+1. Write the name on the page, next to the icon.
+2. Lasso it together with the section's icon.
+3. Tap **Collapse / Expand** and confirm with **Set as name**.
 
-The name appears next to the icon with a thin underline beneath it, and stays
-visible whether the section is collapsed or expanded. It only moves when you
-drag the icon while the section is expanded (it follows rigidly) — nothing
-else repositions it.
+The name gets a thin underline and stays visible whether the section is
+collapsed or expanded. It only moves when you drag the icon of an expanded
+section — it follows the icon.
+
+- **Renaming** works the same way. You're asked to confirm, because the old
+  name is replaced.
+- **Fixing the underline** — if you erase part of a name, lasso what's left
+  together with the icon and tap the button: the underline is redrawn to fit.
+- **Erasing a name completely** also removes its underline, the next time you
+  use the plugin on that page.
+- **Write the name outside the section's white area.** A name written inside
+  it ends up hidden under the white area the next time the section expands.
 
 ---
 
-## Modifying the content of an existing section
+## Adding to a section
 
-You can add to a section while it's expanded. Any new strokes you write on top of
-an expanded section are folded into it when you recollapse — so they come back
+You can add to a section while it's expanded. Anything new you write on top of
+an expanded section is folded into it when you collapse it — so it comes back
 the next time you expand.
 
 Handwriting that was already on the page underneath the section (before you
@@ -119,34 +127,28 @@ expanded it) is left exactly where it is and is **not** pulled into the section.
 ## Good to know
 
 - **First use asks for permission.** The first time you use the plugin
-  in any way (button, tap-shortcut, or dragging an icon), Supernote
-  will ask you to allow it to read and change the page — this is
-  required for the plugin to work at all. If you decline, that
-  particular action is cancelled with the page left unchanged, and
-  you'll be asked again the next time you try.
+  in any way (button, tap, or dragging an icon), Supernote will ask you to
+  allow it to read and change the page — this is required for the plugin to
+  work at all. If you decline, that particular action is cancelled with the
+  page left unchanged, and you'll be asked again the next time you try.
 - **It's safe to power off.** Sections are remembered across turning the device
-  off, app restarts, and page reloads. You can always perform the next action on
-  any section after powering back on.
+  off, app restarts, and page reloads.
 - **One page at a time.** A section lives on a single page; it doesn't span pages.
 - **Don't overlap or nest sections.** Collapsing a region that contains another
   section's icon isn't supported.
 - **Very large selections.** If a selection is too big to store, the plugin
   declines with a message rather than collapsing it partially — just collapse a
   smaller region.
-- **Slower on busy pages.** Collapse, expand and recollapse get slower the more
-  handwriting the page holds (not just what you selected) — on a very dense page
-  an operation can take several seconds. The "working" indicator shows while it
-  runs; just wait for it to finish.
+- **Slower on busy pages.** Operations get slower the more handwriting the page
+  holds (not just what you selected) — on a very dense page one can take
+  several seconds. The "Working…" card shows while it runs; just wait for it
+  to finish.
 - **Dragging an expanded section's icon after a device reboot.** If a
   section is still expanded when you **reboot the device** (not just switch
-  apps), dragging its icon to reshape it won't do anything until you either
-  recollapse and re-expand the section, or reboot a second time. Tapping the
-  icon to collapse or expand it works normally the whole time — only the
-  live drag-to-reshape is affected.
-- **Typed text boxes are hidden when expanded.** If your selection includes a
-  typed **text box**, it still collapses and is preserved, but when you expand the
-  section the text box is covered by the section's white area and won't be
-  visible. This is a Supernote limitation, not the plugin: the device always draws
-  text boxes *beneath* handwriting and shapes, so the section's mask sits on top of
-  them. Handwriting (including recognized handwriting) is unaffected — avoid
-  collapsing typed text boxes for now.
+  apps), dragging its icon to reshape it won't do anything until you collapse
+  and re-expand the section, or reboot a second time. Tapping the icon works
+  normally the whole time.
+- **Older sections with text boxes.** A section collapsed with an earlier
+  version may contain a typed text box. It still comes back, but stays hidden
+  under the section's white area while expanded — Supernote always draws text
+  boxes beneath handwriting.

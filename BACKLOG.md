@@ -40,6 +40,8 @@ an item once the user confirms it's done.
 | B-014 | A stroke link's visual indicator was once seen not surviving Collapse/Expand (functionality — tap-to-navigate — still did). Parked — could not reproduce across several attempts with instrumentation in place. See `BUGS/B-014.md`. |
 | B-019 | Dragging native/untracked content (esp. links) into an expanded section: one strand (Recollapse orphaning a dragged-in link) fixed and confirmed; the other (page -1 + app-wide corruption after icon-drag redraw) parked — not reproducible after extensive retesting. See `BUGS/B-019.md`. |
 | B-025 | A live redraw left a second, collapsed (⊕) copy of an expanded section next to it. The trigger (a redraw running when the handle was only selected) is fixed; how a redraw can create the duplicate is parked, not reproducible. See `BUGS/B-025.md`. |
+| B-029 | Tapping a button in a plugin dialog once left a stroke on the page. Parked — not reproducible on retry. See `BUGS/B-029.md`. |
+| B-030 | Erased a section's name, then tapped the icon: the underline went but the name reappeared. Parked — only seen while reloadFile was timing out; 4 clean runs after a restart. See `BUGS/B-030.md`. |
 ## Closed bugs
 | ID | Symptom |
 |---|---|

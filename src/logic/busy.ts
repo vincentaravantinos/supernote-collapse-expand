@@ -2,9 +2,8 @@ import { LOG } from '../constants';
 import { closeBusyView } from '../utils/busyView';
 
 // Single-flight guard shared by every note-mutating entry point (see
-// runExclusive) plus the tap cache's duplicate-id self-heal. All of them mutate
-// the note; running two sequences concurrently interleaves their writes and
-// corrupts the note. Whoever holds the guard runs; others back off.
+// runExclusive). All of them mutate the note; running two sequences
+// concurrently interleaves their writes and corrupts the note. Whoever holds the guard runs; others back off.
 //
 // Self-healing: a crash mid-operation never runs the `finally` that releases the
 // guard, and runExclusive's setTimeout watchdog doesn't fire while the host
