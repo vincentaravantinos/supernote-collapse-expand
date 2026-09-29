@@ -1,6 +1,7 @@
 import { PluginCommAPI } from 'sn-plugin-lib';
 import { BUILD_TAG, dlog, ELEMENT_TYPES, LOG } from './constants';
-import { readUserData } from './utils/userDataManager';
+import { isSectionBody, readUserData } from './utils/userDataManager';
+import { recycleAll } from './utils/elementSerializer';
 import { summarizeElements } from './utils/diagnostics';
 import { collapseAction } from './logic/collapseAction';
 import { expandSections } from './logic/expandAction';
@@ -31,7 +32,7 @@ export async function handleMainAction() {
     const elementsRes: any = await PluginCommAPI.getLassoElements();
     const elements: any[] = elementsRes?.success ? (elementsRes.result ?? []) : [];
     if (elements.length === 0) {
-      alert('Please make a selection first.');
+      await op.ask('Please make a selection first.', [{ id: 'ok', label: 'OK' }]);
       return;
     }
 
@@ -59,7 +60,7 @@ export async function handleMainAction() {
       }
       if (ud.kind === 'name') {
         nameTaggedInLasso.push(el);
-      } else if (ud.kind === 'part' || ud.kind === 'mask') {
+      } else if (isSectionBody(ud)) {
         expandedIds.add(ud.id);
       } else if (ud.kind === 'plug' && !iconsById.has(ud.section.id)) {
         iconsById.set(ud.section.id, { section: ud.section, icon: el });
@@ -111,9 +112,7 @@ export async function handleMainAction() {
         await collapseAction(op, filePath, page, elements);
       }
     } finally {
-      for (const el of elements) {
-        try { el.recycle?.(); } catch { /* ignore */ }
-      }
+      recycleAll(elements);
     }
   }, {
     // The button shares a single-flight guard with the live redraw and the

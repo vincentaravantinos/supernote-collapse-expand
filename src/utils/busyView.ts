@@ -2,14 +2,22 @@ import { PluginManager } from 'sn-plugin-lib';
 import { LOG, dlog } from '../constants';
 import { notifyShown } from '../logic/workingViewStore';
 
+// The single record of whether the plugin view is up, so every show/close/
+// alert path agrees — an alert closes it from deep inside an action, and a
+// later dialog must know it has to reopen it.
+let shown = false;
+
+export function isBusyViewShown(): boolean {
+  return shown;
+}
+
 // Show the plugin's own "working" overlay (see App.tsx) — the SDK has no
 // non-blocking busy primitive, every native dialog is a blocking modal.
 // Best-effort: a failure here degrades to no visual feedback, not a broken
 // operation, so it's only logged, never thrown onward. Returns whether it's
-// now actually shown — the caller must only call closeBusyView if this
-// returned true, or it may report a spurious close failure for a view that
-// was never up.
+// now actually shown. A no-op if it already is.
 export async function showBusyView(context: string): Promise<boolean> {
+  if (shown) return true;
   try {
     // showPluginView()/closePluginView() resolve to a plain boolean, NOT
     // {success, result} like every other SDK call — confirmed against
@@ -17,6 +25,7 @@ export async function showBusyView(context: string): Promise<boolean> {
     // it is always undefined, silently miscategorizing every call.
     const ok = await PluginManager.showPluginView();
     if (!ok) { console.error(`${LOG} ${context} showPluginView returned false`); return false; }
+    shown = true;
     notifyShown();
     return true;
   } catch (e) {
@@ -25,10 +34,12 @@ export async function showBusyView(context: string): Promise<boolean> {
   }
 }
 
-// Close it. Logs a false result, not just a thrown exception — a silent
-// failure here (as opposed to a thrown error) would leave the "working"
-// card stuck with no trace of why.
+// Close it (a no-op if it isn't up). Logs a false result, not just a thrown
+// exception — a silent failure here (as opposed to a thrown error) would
+// leave the "working" card stuck with no trace of why.
 export async function closeBusyView(context: string): Promise<void> {
+  if (!shown) return;
+  shown = false;
   try {
     const ok = await PluginManager.closePluginView();
     if (!ok) console.error(`${LOG} ${context} closePluginView returned false`);

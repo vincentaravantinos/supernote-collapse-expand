@@ -10,12 +10,6 @@
   (e.g. a mix of collapsed and expanded sections: expand all or collapse
   all). Lassoing a single section and pressing the button now just
   reminds you to tap its icon.
-- Feature: a section can now be **named while it's expanded**, not only
-  while collapsed. Lasso the icon with your handwriting and press the
-  button; you're asked to confirm before a name is set or replaced.
-- Feature: after erasing part of a name, lasso what's left with the icon
-  and press the button to redraw its underline to fit. A name erased
-  completely no longer leaves its underline behind.
 - Change: **text boxes are no longer collapsed** (like pictures and
   titles). If your selection mixes them with handwriting, you're warned
   before anything is collapsed and can cancel.
@@ -29,6 +23,12 @@
 - Feature: resizing an expanded section (by its icon or its handle) now
   also works with a **finger**, not just the pencil. Nothing moves
   while your finger is down; the resized area appears when you lift it.
+- Feature: a section can now be **named while it's expanded**, not only
+  while collapsed. Lasso the icon with your handwriting and press the
+  button; you're asked to confirm before a name is set or replaced.
+- Feature: after erasing part of a name, lasso what's left with the icon
+  and press the button to redraw its underline to fit. A name erased
+  completely no longer leaves its underline behind.
 - Fix: copy-pasting a collapsed section's icon made two icons that
   silently shared one identity, so using one could affect the other.
   The copy now gets its own identity, and both behave as separate

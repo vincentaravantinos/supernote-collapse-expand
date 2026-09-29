@@ -37,10 +37,6 @@ export function setAwaitingUser(waiting: boolean): void {
   if (!waiting && busySince !== null) busySince = Date.now(); // the wait doesn't count toward staleness
 }
 
-export function isBusy(): boolean {
-  return busySince !== null;
-}
-
 // User-triggered escape hatch for a stuck "working" card: an operation whose
 // foreground app switched away mid-flight can leave the view stuck with
 // nothing left running to close it. Best-effort force-close + unconditional

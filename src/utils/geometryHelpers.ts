@@ -1,5 +1,24 @@
 import { Point, Rect } from 'sn-plugin-lib';
 import { HANDLE_SIZE } from '../constants';
+import { RelativeRect } from '../model/types';
+
+// A section's area on the page: its saved offset/size from the icon's
+// top-left corner, placed at `iconRect`.
+export function sectionZone(iconRect: Rect, rel: RelativeRect): Rect {
+  const left = iconRect.left + rel.left;
+  const top = iconRect.top + rel.top;
+  return { left, top, right: left + rel.width, bottom: top + rel.height };
+}
+
+// The reverse of sectionZone, rounded to whole pixels.
+export function relativeRectFor(iconRect: Rect, zone: Rect): RelativeRect {
+  return {
+    left: Math.round(zone.left) - iconRect.left,
+    top: Math.round(zone.top) - iconRect.top,
+    width: Math.round(zone.right - zone.left),
+    height: Math.round(zone.bottom - zone.top),
+  };
+}
 
 // Overlap = shared area; touching edges don't count (strict inequalities).
 export function rectsOverlap(a: Rect, b: Rect): boolean {
@@ -132,9 +151,9 @@ export function handleRectForZone(zone: Rect): Rect {
 // wherever it's released — simpler than stretchZoneToIcon, since the handle
 // always sits exactly at the corner it moves, so there's nothing to "avoid
 // overlapping" the way the icon can. The top-left corner is untouched.
-// Clamped the same way stretchZoneToIcon clamps the icon's shift: the corner never moves
-// in far enough to exclude the content bbox + margin — full containment
-// always wins over exactly matching the drop point.
+// Clamped the same way stretchZoneToIcon clamps the icon's shift: the corner
+// never moves in far enough to exclude the content bbox + margin — full
+// containment always wins over exactly matching the drop point.
 export function growZoneToHandle(
   currentZone: Rect,
   contentBBox: Rect,

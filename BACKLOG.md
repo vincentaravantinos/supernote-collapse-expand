@@ -43,6 +43,7 @@ an item once the user confirms it's done.
 ## Closed bugs
 | ID | Symptom |
 |---|---|
+| B-026 | Naming showed "Couldn't set the section name" although it was set (stale verification read after a reloadFile timeout). Fixed — the check now re-reads up to 3 times; confirmed on-device. |
 | B-015 | Permission gate (CR-002) silently let an operation proceed unpermitted — fixed by dropping the `hasPermission` pre-check and trusting only `requestPermission`'s documented result. See `BUGS/B-015.md`. |
 | B-016 | External SDK bug: `userData` never survived a round trip on Chauvet 2.26.40/3.29.43 — fixed by Ratta in 3.29.44/2.26.41, confirmed on-device. See `BUGS/B-016.md`. |
 | B-017 | `PluginCommAPI.reloadFile()` could hang indefinitely — removed from 5 of 6 call sites (confirmed unneeded on this SDK build), timeout-guarded at the 1 remaining one. See `BUGS/B-017.md`. |

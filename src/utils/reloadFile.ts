@@ -3,8 +3,8 @@ import { LOG } from '../constants';
 
 // PluginCommAPI.reloadFile() can hang indefinitely. It's not needed to
 // surface a write for the NEXT user-triggered action (real-world time has
-// passed by then), but it IS needed before a same-turn verification read right after a
-// write — without it, getElements() can return a stale pre-write snapshot
+// passed by then), but it IS needed before a same-turn verification read
+// right after a write — without it, getElements() can return a stale pre-write snapshot
 // even a beat later, producing a false "the write didn't land" verdict.
 // Use this before any such read; never call reloadFile() directly.
 const RELOAD_TIMEOUT_MS = 5000;

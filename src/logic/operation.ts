@@ -2,7 +2,7 @@ import { LOG } from '../constants';
 import { acquireBusy, releaseBusy, setAwaitingUser } from './busy';
 import { buildIconCache } from './iconPageCache';
 import { answerDialog, askInView, DialogButton, notifyShown } from './workingViewStore';
-import { alertOverBusyView, closeBusyView, showBusyView } from '../utils/busyView';
+import { alertOverBusyView, closeBusyView, isBusyViewShown, showBusyView } from '../utils/busyView';
 
 // Watchdog: if an SDK call truly hangs, the finally never runs and the guard
 // would wedge every entry point forever. Release it after a timeout. Must
@@ -14,7 +14,6 @@ const WATCHDOG_MS = 60000;
 // it changed. Each entry point decides WHEN to show the card (e.g. the live
 // redraw only once a real drag is confirmed); runExclusive always closes it.
 export class Operation {
-  private viewShown = false;
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   touchedPage: { filePath: string; page: number } | null = null;
 
@@ -34,17 +33,14 @@ export class Operation {
   }
 
   async showView(): Promise<void> {
-    if (!this.viewShown) this.viewShown = await showBusyView(this.context);
+    await showBusyView(this.context);
   }
 
   async closeView(): Promise<void> {
-    if (!this.viewShown) return;
-    this.viewShown = false;
     await closeBusyView(this.context);
   }
 
   async alert(message: string): Promise<void> {
-    this.viewShown = false;
     await alertOverBusyView(this.context, message);
   }
 
@@ -57,7 +53,7 @@ export class Operation {
     setAwaitingUser(true);
     try {
       await this.showView();
-      if (!this.viewShown) { answerDialog('cancel'); } // no view, no way to answer
+      if (!isBusyViewShown()) answerDialog('cancel'); // no view, no way to answer
       return await answer;
     } finally {
       setAwaitingUser(false);

@@ -6,7 +6,7 @@ import { expandSections } from './expandAction';
 import { recollapseSections } from './recollapseAction';
 import { buildIconCache, getCachedIcons, PageIconEntry } from './iconPageCache';
 import { ensureAllPermissions } from '../utils/permissions';
-import { isTapDistance, noteGestureDown } from './tapGesture';
+import { isSingleFinger, isTapDistance, noteGestureDown } from './tapGesture';
 import { getCurrentFilePathOrNull, getCurrentPageNumOrNull } from '../utils/currentFile';
 
 // SPEC.md REQ-090/100/110: requested once, on the first qualifying tap of
@@ -32,20 +32,16 @@ async function ensureTapPermissions(): Promise<void> {
 // draw ink, so reacting to them would fight the user's drawing.
 let downQualifies = false;
 
-function isQualifying(toolType: number | undefined, pointerCount: number | undefined): boolean {
-  return toolType === 1 && pointerCount === 1;
-}
-
 // ACTION_DOWN: in-memory only, record the start point for the tap test on UP.
 export function onTapDown(x: number, y: number, toolType: number | undefined, pointerCount: number | undefined): void {
   noteGestureDown(x, y);
-  downQualifies = isQualifying(toolType, pointerCount);
+  downQualifies = isSingleFinger(toolType, pointerCount);
 }
 
 // ACTION_UP: if this was a single-finger tap (not a drag, not a pen stroke),
 // look for a + icon under the point and toggle it.
 export function onTapUp(x: number, y: number, toolType: number | undefined, pointerCount: number | undefined): void {
-  const qualifies = downQualifies && isQualifying(toolType, pointerCount);
+  const qualifies = downQualifies && isSingleFinger(toolType, pointerCount);
   downQualifies = false;
   if (!qualifies) return;
   if (!isTapDistance(x, y)) return; // drag, not a tap

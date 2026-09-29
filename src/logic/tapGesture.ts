@@ -8,6 +8,11 @@ import { TAP_MAX_PX } from '../constants';
 let downX = 0;
 let downY = 0;
 
+// A lone finger (not the pen, not a multi-finger gesture).
+export function isSingleFinger(toolType: number | undefined, pointerCount: number | undefined): boolean {
+  return toolType === 1 && pointerCount === 1;
+}
+
 export function noteGestureDown(x: number, y: number): void {
   downX = x;
   downY = y;

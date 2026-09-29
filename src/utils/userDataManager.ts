@@ -22,6 +22,22 @@ export type UserDataKind =
   | { kind: 'underline'; id: string }
   | null;
 
+// Every element on a page, or [] if the read failed.
+export async function getPageElements(filePath: string, page: number): Promise<any[]> {
+  const res: any = await PluginFileAPI.getElements(page, filePath);
+  return res?.success && Array.isArray(res.result) ? res.result : [];
+}
+
+type SectionBodyKind = Extract<UserDataKind, { kind: 'part' | 'mask' | 'frame' | 'handle' }>;
+
+// Part of an expanded section's on-page body: restored content, background,
+// border or resize handle (optionally: of section `id`).
+export function isSectionBody(ud: UserDataKind, id?: string): ud is SectionBodyKind {
+  return ud != null &&
+    (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame' || ud.kind === 'handle') &&
+    (id === undefined || ud.id === id);
+}
+
 // The icon's CURRENT rect (textBox.textRect) from an already-fetched element
 // list. A getLassoElements element reports a stale rect after a move, so prefer
 // the getElements match by section id, then the lassoed element, then the saved
@@ -106,8 +122,7 @@ export async function findSectionIcons(
   filePath: string,
   page: number,
 ): Promise<Map<string, any>> {
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  const all = await getPageElements(filePath, page);
   const byId = new Map<string, any>();
   for (const el of all) {
     const ud = readUserData(el);
@@ -148,8 +163,7 @@ export async function deleteElementsVerified(
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, remaining);
     if (!delRes?.success && isUnstableNoteError(delRes)) { unstableNote = true; break; } // note not stable — retrying won't help
     await reloadFileWithTimeout(); // without this, this read can miss the delete having just landed
-    const chkRes: any = await PluginFileAPI.getElements(page, filePath);
-    const chk: any[] = chkRes?.success && Array.isArray(chkRes.result) ? chkRes.result : [];
+    const chk = await getPageElements(filePath, page);
     const stillThere = new Set(chk.map((e: any) => e.numInPage));
     remaining = remaining.filter((n) => stillThere.has(n));
   }

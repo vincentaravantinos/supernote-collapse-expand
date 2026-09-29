@@ -1,7 +1,7 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Point, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_NAME_PREFIX, CE_UNDERLINE_PREFIX, ELEMENT_TYPES, LOG, UNDERLINE_GAP } from '../constants';
-import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
-import { deleteElementsVerified, isUnstableNoteError, readUserData } from '../utils/userDataManager';
+import { buildElement, contentBoundingBox, elementsBBox, getPageSize, recycleAll, serializeAll } from '../utils/elementSerializer';
+import { deleteElementsVerified, getPageElements, isUnstableNoteError, readUserData } from '../utils/userDataManager';
 import { reloadFileWithTimeout } from '../utils/reloadFile';
 import { ensureAllPermissions } from '../utils/permissions';
 import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
@@ -95,20 +95,11 @@ export type NameOutcome = 'done' | 'cancel' | 'nothing';
 // separately, so they can round a pixel or two apart.
 const UNDERLINE_TOLERANCE_PX = 6;
 
-async function bboxOf(els: any[], pageSize: { width: number; height: number }): Promise<Rect | null> {
-  const serialized: CollapsedElement[] = [];
-  for (const el of els) {
-    const data = await serializeElement(el);
-    if (data) serialized.push({ numInPage: el.numInPage, data });
-  }
-  return contentBoundingBox(serialized, pageSize);
-}
-
 // Does the section's underline still span its name (REQ-630/632/635)?
 async function underlineMatches(nameEls: any[], underlineEls: any[], pageSize: { width: number; height: number }): Promise<boolean> {
   if (underlineEls.length !== 1) return false;
-  const name = await bboxOf(nameEls, pageSize);
-  const line = await bboxOf(underlineEls, pageSize);
+  const name = await elementsBBox(nameEls, pageSize);
+  const line = await elementsBBox(underlineEls, pageSize);
   if (!name || !line) return false;
   const near = (a: number, b: number) => Math.abs(a - b) <= UNDERLINE_TOLERANCE_PX;
   return near(line.left, name.left) && near(line.right, name.right) && near(line.top, name.bottom + UNDERLINE_GAP);
@@ -155,8 +146,7 @@ export async function handleNameAction(
   // pattern as collapseAction.ts / expandSections / recollapseSections.
   await PluginNoteAPI.saveCurrentNote();
 
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  const all = await getPageElements(filePath, page);
   const existingNameEls = findNameElements(all, target.section.id);
   const lassoedOwn = new Set<number>(keptOldNameEls.map((el) => el.numInPage));
   const dropsExisting = existingNameEls.some((el) => !lassoedOwn.has(el.numInPage));
@@ -183,11 +173,7 @@ export async function handleNameAction(
     if (choice !== 'rename') return 'cancel';
   }
 
-  const serialized: CollapsedElement[] = [];
-  for (const el of allNameCandidates) {
-    const data = await serializeElement(el);
-    if (data) serialized.push({ numInPage: el.numInPage, data });
-  }
+  const serialized = await serializeAll(allNameCandidates);
   if (serialized.length === 0) {
     await op.alert('Nothing nameable in selection.');
     return 'done';
@@ -218,15 +204,19 @@ export async function handleNameAction(
   // are still present on the page (recoverable), never neither. insertElements
   // can report success without landing, so count this section's name strokes
   // on a re-read (old ones are still there, the new ones must be on top).
+  // Only the read is retried — the reload before it can time out and leave a
+  // stale snapshot; re-inserting after a reported success could duplicate a
+  // partial land.
   const insertRes: any = await PluginFileAPI.insertElements(filePath, page, insertBatch);
+  const expected = existingNameEls.length + newNameEls.length;
   let nameLanded = false;
-  if (insertRes?.success) {
+  for (let readAttempt = 0; insertRes?.success && readAttempt < 3 && !nameLanded; readAttempt++) {
     await reloadFileWithTimeout(); // without this, the read below can miss a just-landed insert
-    const checkRes: any = await PluginFileAPI.getElements(page, filePath);
-    const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
-    nameLanded = findNameElements(check, target.section.id).length >= existingNameEls.length + newNameEls.length;
+    const found = findNameElements(await getPageElements(filePath, page), target.section.id).length;
+    nameLanded = found >= expected;
+    if (!nameLanded) console.error(`${LOG} name: found ${found}/${expected} name strokes (read attempt ${readAttempt}) — re-reading`);
   }
-  for (const el of insertBatch) { try { el.recycle?.(); } catch { /* ignore */ } }
+  recycleAll(insertBatch);
   if (!nameLanded) {
     console.error(`${LOG} name insert didn't land res=${JSON.stringify(insertRes)} — nothing deleted`);
     if (!isUnstableNoteError(insertRes)) await op.alert("Couldn't set the section name — please try again.");

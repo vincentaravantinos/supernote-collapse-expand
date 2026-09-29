@@ -9,8 +9,8 @@ import {
   ZONE_MARGIN,
 } from '../constants';
 import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
-import { rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
-import { deleteElementsVerified, getIconByNum, iconRectFromElements, readUserData, writeSection } from '../utils/userDataManager';
+import { rectsOverlap, relativeRectFor, sectionZone, stretchZoneToIcon } from '../utils/geometryHelpers';
+import { deleteElementsVerified, getIconByNum, getPageElements, iconRectFromElements, isSectionBody, readUserData, writeSection } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
 import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
 import { alertOverBusyView } from '../utils/busyView';
@@ -48,25 +48,24 @@ async function recollapseOne(
     const parts: any[] = [];
     for (const el of elements) {
       const ud = readUserData(el);
-      if (!ud) continue;
-      if ((ud.kind === 'mask' || ud.kind === 'frame' || ud.kind === 'handle') && ud.id === section.id) masks.push(el);
-      else if (ud.kind === 'part' && ud.id === section.id) parts.push(el);
+      if (!isSectionBody(ud, section.id)) continue;
+      if (ud.kind === 'part') parts.push(el);
+      else masks.push(el);
     }
     return { masks, parts };
   };
 
   let { masks: maskEls, parts: partEls } = classify(all);
 
-  // An expanded section should always have at least a mask/frame on
-  // the page — finding literally nothing tagged for it is a strong signal
-  // the element list this was called with (often the "fast path"'s narrower
-  // candidate scan) is stale/incomplete, not that there's genuinely nothing
-  // to recollapse (it would otherwise silently no-op). Re-fetch the whole page fresh before accepting "nothing found".
+  // An expanded section should always have at least a mask/frame on the
+  // page — finding nothing tagged for it means the element list this was
+  // called with (often the fast path's narrower scan) is stale, not that
+  // there's nothing to recollapse (it would otherwise silently no-op).
+  // Re-fetch the whole page before accepting "nothing found".
   if (maskEls.length === 0 && partEls.length === 0) {
     console.error(`${LOG} recollapse: no tagged elements found for id=${section.id} in the given list (${all.length} el) — re-fetching full page`);
     await reloadFileWithTimeout(); // without this, this read can miss a recent write too
-    const freshRes: any = await PluginFileAPI.getElements(page, filePath);
-    const fresh: any[] = freshRes?.success && Array.isArray(freshRes.result) ? freshRes.result : [];
+    const fresh = await getPageElements(filePath, page);
     const reclassified = classify(fresh);
     maskEls = reclassified.masks;
     partEls = reclassified.parts;
@@ -101,12 +100,7 @@ async function recollapseOne(
   // section area. The num-check skips pre-existing content cheaply, so only the
   // few real candidates get a bbox. Content elsewhere stays in place.
   const preservedSet = new Set<number>(section.preservedNums ?? []);
-  const absorbRect: Rect = {
-    left: section.iconRect.left + section.relativeRect.left,
-    top: section.iconRect.top + section.relativeRect.top,
-    right: section.iconRect.left + section.relativeRect.left + section.relativeRect.width,
-    bottom: section.iconRect.top + section.relativeRect.top + section.relativeRect.height,
-  };
+  const absorbRect: Rect = sectionZone(section.iconRect, section.relativeRect);
   let absorbed = 0;
   let drained = 0;
   const tAbsorb = Date.now();
@@ -150,12 +144,7 @@ async function recollapseOne(
       right: Math.round(iconNow.right),
       bottom: Math.round(iconNow.bottom),
     };
-    relativeRect = {
-      left: Math.round(zone.left) - iconRect.left,
-      top: Math.round(zone.top) - iconRect.top,
-      width: Math.round(zone.right - zone.left),
-      height: Math.round(zone.bottom - zone.top),
-    };
+    relativeRect = relativeRectFor(iconRect, zone);
     // The zone had to move to stop covering the icon — carry the same
     // rigid shift over to the actual content strokes at the next Expand
     // (not the icon-relative position, which isn't meaningful here; see
@@ -299,8 +288,7 @@ export async function recollapseSections(
     forgetSection(sectionIds[0]);
   } else {
     const tGE = Date.now();
-    const allRes: any = await PluginFileAPI.getElements(page, filePath);
-    const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+    const all = await getPageElements(filePath, page);
     dlog(`${LOG} PERF recollapse getElements(full)=${Date.now() - tGE}ms total=${all.length} el`);
 
     const iconById = new Map<string, any>();

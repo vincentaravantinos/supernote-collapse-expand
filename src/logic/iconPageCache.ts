@@ -1,11 +1,11 @@
-import { PluginFileAPI, Rect } from 'sn-plugin-lib';
+import { Rect } from 'sn-plugin-lib';
 import { LOG } from '../constants';
-import { deleteElementsVerified, readUserData, writeSection } from '../utils/userDataManager';
-import { contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
+import { deleteElementsVerified, getPageElements, readUserData, writeSection } from '../utils/userDataManager';
+import { elementsBBox, getPageSize } from '../utils/elementSerializer';
 import { findNameElements, findUnderlineElements } from './nameAction';
 import { generateSectionId } from './collapseAction';
 import { acquireBusy, releaseBusy } from './busy';
-import { CollapsedElement, CollapseSection } from '../model/types';
+import { CollapseSection } from '../model/types';
 
 // Every CE_PLUG icon (collapsed or expanded) on one page, for cheap tap
 // hit-testing (see iconTapToggle). `iconEl` is the raw element, ready to pass
@@ -50,8 +50,7 @@ export async function buildIconCache(
   opts: { locked?: boolean } = {},
 ): Promise<PageIconEntry[]> {
   const locked = opts.locked ?? false;
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  const all = await getPageElements(filePath, page);
 
   const icons: PageIconEntry[] = [];
   for (const el of all) {
@@ -122,12 +121,7 @@ export async function buildIconCache(
     for (const icon of icons) {
       const nameEls = findNameElements(all, icon.id);
       if (nameEls.length === 0) continue;
-      const serialized: CollapsedElement[] = [];
-      for (const el of nameEls) {
-        const data = await serializeElement(el);
-        if (data) serialized.push({ numInPage: el.numInPage, data });
-      }
-      const bbox = contentBoundingBox(serialized, pageSize);
+      const bbox = await elementsBBox(nameEls, pageSize);
       if (bbox) icon.nameRect = bbox;
     }
   }

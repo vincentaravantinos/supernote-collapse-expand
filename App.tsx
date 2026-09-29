@@ -52,8 +52,8 @@ function App(): React.JSX.Element {
           <Text style={styles.title}>Collapse / Expand</Text>
           <Text style={styles.sub}>{dialog.message}</Text>
           {dialog.buttons.map(b => (
-            <TouchableOpacity key={b.id} style={styles.cancelButton} onPress={() => answerDialog(b.id)}>
-              <Text style={styles.cancelText}>{b.label}</Text>
+            <TouchableOpacity key={b.id} style={styles.button} onPress={() => answerDialog(b.id)}>
+              <Text style={styles.buttonText}>{b.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -78,8 +78,8 @@ function App(): React.JSX.Element {
               duplicated content that you'll need to clean up manually.
               Nothing will be lost.
             </Text>
-            <TouchableOpacity style={styles.cancelButton} onPress={cancelStuckOperation}>
-              <Text style={styles.cancelText}>Cancel</Text>
+            <TouchableOpacity style={styles.button} onPress={cancelStuckOperation}>
+              <Text style={styles.buttonText}>Cancel</Text>
             </TouchableOpacity>
           </>
         )}
@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
   sub: {fontSize: 15, color: '#000000'},
   notice: {fontSize: 14, fontWeight: '600', color: '#000000', marginTop: 16},
   warning: {fontSize: 13, color: '#000000', marginTop: 8},
-  cancelButton: {
+  button: {
     marginTop: 12,
     paddingVertical: 10,
     borderRadius: 8,
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     borderColor: '#000000',
     alignItems: 'center',
   },
-  cancelText: {fontSize: 15, fontWeight: '700', color: '#000000'},
+  buttonText: {fontSize: 15, fontWeight: '700', color: '#000000'},
 });
 
 export default App;

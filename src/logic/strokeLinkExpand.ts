@@ -1,6 +1,7 @@
 import { PluginFileAPI, Point, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, ELEMENT_TYPES, LOG } from '../constants';
-import { buildElement, buildStrokeLink } from '../utils/elementSerializer';
+import { buildElement, buildStrokeLink, recycleAll } from '../utils/elementSerializer';
+import { getPageElements } from '../utils/userDataManager';
 import { reloadFileWithTimeout } from '../utils/reloadFile';
 import { CollapsedElement, SerializedLink } from '../model/types';
 
@@ -42,7 +43,7 @@ async function insertBatch(filePath: string, page: number, batch: any[]): Promis
   if (batch.length === 0) return true;
   const ins: any = await PluginFileAPI.insertElements(filePath, page, batch);
   if (!ins?.success) console.error(`${LOG} insertElements failed res=${JSON.stringify(ins)}`);
-  for (const el of batch) { try { el.recycle?.(); } catch { /* ignore */ } }
+  recycleAll(batch);
   return !!ins?.success;
 }
 
@@ -58,8 +59,8 @@ async function insertBatch(filePath: string, page: number, batch: any[]): Promis
 // page, since the caller deferred its inserts here), bundle masks with the first
 // link's members (masks first → underneath), and defer all other content + the
 // links to one final batch — visible directly, without needing a reload of its
-// own. One reload per stroke link (for the
-// member-num recovery above). Returns true iff every insert succeeded.
+// own. One reload per stroke link (for the member-num recovery above). Returns
+// true iff every insert succeeded.
 export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<boolean> {
   const { filePath, page, collapsedElements, sectionId, emrDelta, pageMaxX, pageMaxY, dx, dy, maskElements, otherElements } = ctx;
   const tag = CE_PART_PREFIX + sectionId;
@@ -109,8 +110,7 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
     let els: any[] = [];
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) await reloadFileWithTimeout();
-      const chk: any = await PluginFileAPI.getElements(page, filePath);
-      els = chk?.success && Array.isArray(chk.result) ? chk.result : [];
+      els = await getPageElements(filePath, page);
       memberNums = els
         .filter((e) => e?.type === ELEMENT_TYPES.STROKE && typeof e?.userData === 'string' && e.userData.startsWith(tag) && !knownNums.has(e.numInPage))
         .map((e) => e.numInPage);

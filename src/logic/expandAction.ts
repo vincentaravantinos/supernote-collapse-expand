@@ -1,9 +1,9 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { CE_PART_PREFIX, dlog, ICON_GLYPH, ICON_GLYPH_EXPANDED, LOG } from '../constants';
-import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
-import { deleteElementsVerified, getIconByNum, iconRectFromElements, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
+import { buildElement, contentBoundingBox, elementsBBox, getPageSize, recycleAll } from '../utils/elementSerializer';
+import { deleteElementsVerified, getIconByNum, getPageElements, iconRectFromElements, isSectionBody, isUnstableNoteError, readUserData, writeSection } from '../utils/userDataManager';
 import { createHandleElement, createMaskElements } from '../utils/maskHelpers';
-import { rectsOverlap } from '../utils/geometryHelpers';
+import { rectsOverlap, sectionZone } from '../utils/geometryHelpers';
 import { ensureAllPermissions } from '../utils/permissions';
 import { rebuildStrokeLinks, strokeLinkMemberIndices } from './strokeLinkExpand';
 import { forgetSection, noteSectionExpanded } from './expandedRegistry';
@@ -29,13 +29,7 @@ export async function rehydrateExpandedRegistry(filePath: string, page: number):
     for (const icon of icons) {
       if (!icon.section.isExpanded) continue;
       // zoneRect drives the resize handle's hit-zone.
-      const zoneRect = {
-        left: icon.rect.left + icon.section.relativeRect.left,
-        top: icon.rect.top + icon.section.relativeRect.top,
-        right: icon.rect.left + icon.section.relativeRect.left + icon.section.relativeRect.width,
-        bottom: icon.rect.top + icon.section.relativeRect.top + icon.section.relativeRect.height,
-      };
-      noteSectionExpanded(icon.id, icon.rect, zoneRect, icon.iconEl?.numInPage);
+      noteSectionExpanded(icon.id, icon.rect, sectionZone(icon.rect, icon.section.relativeRect), icon.iconEl?.numInPage);
     }
   } catch (e) {
     dlog(`${LOG} rehydrateExpandedRegistry failed: ${e}`);
@@ -78,22 +72,20 @@ export async function expandOne(
   const tGE = Date.now();
   let iconRectNow: any;
   let freshIconEl: any;
-  let preservedCandidates: any[] | undefined; // untagged elements, filtered by zone overlap below — only gathered when capturePreserved
-  let rawAll: any[] | undefined; // full page list, whenever this call happens to fetch one — reused below for the stale-leftover cleanup scan
+  let preservedCandidates: any[] | undefined; // untagged elements (only when capturePreserved), filtered by zone below
+  let rawAll: any[] | undefined; // full page list, if fetched — reused for the stale-leftover cleanup
   const fastIcon = await getIconByNum(filePath, page, iconElement?.numInPage, section.id);
   if (fastIcon) {
     freshIconEl = fastIcon;
     iconRectNow = fastIcon.textBox?.textRect ?? section.iconRect;
     if (capturePreserved) {
-      const preservedRes: any = await PluginFileAPI.getElements(page, filePath);
-      const preservedAll: any[] = preservedRes?.success && Array.isArray(preservedRes.result) ? preservedRes.result : [];
+      const preservedAll = await getPageElements(filePath, page);
       rawAll = preservedAll;
       preservedCandidates = preservedAll.filter((el) => readUserData(el) == null && typeof el.numInPage === 'number');
     }
     dlog(`${LOG} PERF expand read(fast getElement+numList)=${Date.now() - tGE}ms`);
   } else {
-    const allAtExpandRes: any = await PluginFileAPI.getElements(page, filePath);
-    const allAtExpand: any[] = allAtExpandRes?.success && Array.isArray(allAtExpandRes.result) ? allAtExpandRes.result : [];
+    const allAtExpand = await getPageElements(filePath, page);
     rawAll = allAtExpand;
     iconRectNow = iconRectFromElements(allAtExpand, section, iconElement);
     freshIconEl = allAtExpand.find((el) => {
@@ -105,12 +97,7 @@ export async function expandOne(
     }
     dlog(`${LOG} PERF expand read(fallback full getElements)=${Date.now() - tGE}ms total=${allAtExpand.length} el`);
   }
-  const contentRect: Rect = {
-    left: iconRectNow.left + section.relativeRect.left,
-    top: iconRectNow.top + section.relativeRect.top,
-    right: iconRectNow.left + section.relativeRect.left + section.relativeRect.width,
-    bottom: iconRectNow.top + section.relativeRect.top + section.relativeRect.height,
-  };
+  const contentRect: Rect = sectionZone(iconRectNow, section.relativeRect);
 
   const pageSize = await getPageSize(filePath, page);
 
@@ -124,9 +111,7 @@ export async function expandOne(
     const tPreserve = Date.now();
     preservedNums = [];
     for (const el of preservedCandidates ?? []) {
-      const data = await serializeElement(el);
-      if (!data) continue;
-      const bbox = contentBoundingBox([{ numInPage: el.numInPage, data }], pageSize);
+      const bbox = await elementsBBox([el], pageSize);
       if (bbox && rectsOverlap(bbox, contentRect)) preservedNums.push(el.numInPage);
     }
     dlog(`${LOG} PERF expand preserve-scan=${Date.now() - tPreserve}ms candidates=${preservedCandidates?.length ?? 0} preserved=${preservedNums.length}`);
@@ -135,10 +120,9 @@ export async function expandOne(
   }
 
   // Content moves by the icon's own movement, plus a one-time extra shift a
-  // prior Recollapse may have queued (CollapseSection.contentShift). Both apply uniformly to every restored
-  // element, so their relative layout to each other never changes — only
-  // their position relative to the icon does, which is fine here since the
-  // user didn't move the icon to cause this.
+  // prior Recollapse may have queued (CollapseSection.contentShift). Both
+  // apply uniformly to every restored element, so their layout relative to
+  // each other never changes.
   const shiftDx = section.contentShift?.dx ?? 0;
   const shiftDy = section.contentShift?.dy ?? 0;
   const dx = (iconRectNow.left - section.iconRect.left) + shiftDx;
@@ -176,10 +160,7 @@ export async function expandOne(
   const cleanupSource = rawAll ?? knownElements;
   if (cleanupSource) {
     const staleNums = cleanupSource
-      .filter((el) => {
-        const ud = readUserData(el);
-        return ud != null && (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame' || ud.kind === 'handle') && ud.id === section.id;
-      })
+      .filter((el) => isSectionBody(readUserData(el), section.id))
       .map((el) => el.numInPage)
       .filter((n): n is number => typeof n === 'number');
     if (staleNums.length > 0) {
@@ -239,18 +220,14 @@ export async function expandOne(
         }
         for (let readAttempt = 0; readAttempt < 3 && !insertOk; readAttempt++) {
           await reloadFileWithTimeout(); // without this, the read below can miss a just-landed insert
-          const checkRes: any = await PluginFileAPI.getElements(page, filePath);
-          const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
-          const landed = check.filter((el) => {
-            const ud = readUserData(el);
-            return ud != null && (ud.kind === 'part' || ud.kind === 'mask' || ud.kind === 'frame' || ud.kind === 'handle') && ud.id === section.id;
-          }).length;
+          const check = await getPageElements(filePath, page);
+          const landed = check.filter((el) => isSectionBody(readUserData(el), section.id)).length;
           insertOk = landed >= batch.length;
           if (!insertOk) console.error(`${LOG} expand: insertElements reported success but only ${landed}/${batch.length} tagged elements found (read attempt ${readAttempt}) — re-reading`);
         }
         break; // don't re-insert after a reported success either way — avoid duplicating a partial land
       }
-      for (const el of batch) { try { el.recycle?.(); } catch { /* ignore */ } }
+      recycleAll(batch);
     }
   } else {
     // rebuildStrokeLinks owns the whole insert sequence (it needs a reload per
@@ -264,11 +241,11 @@ export async function expandOne(
   dlog(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
 
   // No saveCurrentNote (would clobber the inserts with the stale cached copy) —
-  // the inserts are already visible without an explicit reload. While expanded the content lives on the page as
-  // CE_PART and recollapse rebuilds the payload from it, so drop
-  // collapsedElements from userData — but only if the insert succeeded,
-  // keeping exactly one durable copy (userData while collapsed, page while
-  // expanded).
+  // the inserts are already visible without an explicit reload. While
+  // expanded the content lives on the page as CE_PART and recollapse rebuilds
+  // the payload from it, so drop collapsedElements from userData — but only
+  // if the insert succeeded, keeping exactly one durable copy (userData while
+  // collapsed, page while expanded).
   // On failure, revert to the pre-expand state in full: "expanded" with the
   // backup still intact would route the next tap to a Recollapse of content
   // that may never have landed. Only iconRect (the icon's own real position)

@@ -11,8 +11,9 @@ import {
   SCHEMA_VERSION,
   ZONE_MARGIN,
 } from '../constants';
-import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
-import { deleteElementsVerified, isUnstableNoteError, readUserData } from '../utils/userDataManager';
+import { contentBoundingBox, getPageSize, recycleAll, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
+import { deleteElementsVerified, getPageElements, isUnstableNoteError, readUserData } from '../utils/userDataManager';
+import { relativeRectFor } from '../utils/geometryHelpers';
 import { ensureAllPermissions } from '../utils/permissions';
 import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
 import { alertOverBusyView } from '../utils/busyView';
@@ -28,7 +29,6 @@ const NOT_COLLAPSIBLE = new Set<number>([
   ELEMENT_TYPES.TEXT_DIGEST_QUOTE,
   ELEMENT_TYPES.TEXT_DIGEST_CREATE,
 ]);
-const ONLY_COLLAPSIBLE_MSG = 'Only handwriting, shapes and links can be collapsed';
 
 // Exported for iconPageCache.ts's self-heal of a duplicated id.
 export function generateSectionId(): string {
@@ -65,7 +65,7 @@ export async function collapseAction(op: Operation, filePath: string, page: numb
   collapsed = await resolveLinkMemberIndices(collapsed);
 
   if (collapsed.length === 0) {
-    await op.ask(`${ONLY_COLLAPSIBLE_MSG} — this selection has none.`, [{ id: 'ok', label: 'OK' }]);
+    await op.ask('Only handwriting, shapes and links can be collapsed — this selection has none.', [{ id: 'ok', label: 'OK' }]);
     await PluginCommAPI.setLassoBoxState(2);
     return;
   }
@@ -107,13 +107,7 @@ export async function collapseAction(op: Operation, filePath: string, page: numb
     schemaVersion: SCHEMA_VERSION,
     id: generateSectionId(),
     iconRect,
-    relativeRect: {
-      // Offset from the icon's top-left to the zone's top-left.
-      left: zoneLeft - iconLeft,
-      top: zoneTop - iconTop,
-      width: zone.right - zone.left,
-      height: zone.bottom - zone.top,
-    },
+    relativeRect: relativeRectFor(iconRect, zone),
     collapsedElements: collapsed,
     isExpanded: false,
   };
@@ -181,15 +175,14 @@ export async function collapseAction(op: Operation, filePath: string, page: numb
       continue;
     }
     await reloadFileWithTimeout(); // without this, the read below can miss a just-landed insert
-    const checkRes: any = await PluginFileAPI.getElements(page, filePath);
-    const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
+    const check = await getPageElements(filePath, page);
     iconLanded = check.some((el) => el.userData === payload);
     if (!iconLanded) console.error(`${LOG} collapse: icon insert reported success but wasn't found on re-read (attempt ${attempt}) — retrying`);
   }
   if (!iconLanded) {
     // Nothing deleted yet — the page is exactly as it was, no data lost.
     if (!isUnstableNoteError(insertRes)) await alertOverBusyView('collapse', "Supernote couldn't complete the collapse — please try again.");
-    try { iconEl.recycle?.(); } catch { /* ignore */ }
+    recycleAll([iconEl]);
     return;
   }
   dlog(`${LOG} PERF collapse create+insert=${Date.now() - tIns}ms`);

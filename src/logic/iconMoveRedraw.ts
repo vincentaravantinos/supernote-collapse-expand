@@ -1,15 +1,15 @@
 import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, PointUtils, Rect } from 'sn-plugin-lib';
 import { HANDLE_HIT_PAD, ICON_GLYPH, ICON_HIT_PAD, LOG, SCHEMA_VERSION, ZONE_MARGIN, dlog } from '../constants';
-import { growZoneToHandle, handleRectForZone, padded, projectIconOutsideZone, rectContains, rectsOverlap, stretchZoneToIcon } from '../utils/geometryHelpers';
-import { contentBoundingBox, getPageSize, resolveLinkMemberIndices, serializeElement } from '../utils/elementSerializer';
-import { deleteElementsVerified, readUserData, writeSection } from '../utils/userDataManager';
+import { growZoneToHandle, handleRectForZone, padded, projectIconOutsideZone, rectContains, rectsOverlap, relativeRectFor, sectionZone, stretchZoneToIcon } from '../utils/geometryHelpers';
+import { contentBoundingBox, getPageSize, recycleAll, resolveLinkMemberIndices, serializeAll, serializeElement } from '../utils/elementSerializer';
+import { deleteElementsVerified, getPageElements, isSectionBody, readUserData, writeSection } from '../utils/userDataManager';
 import { ensureAllPermissions } from '../utils/permissions';
-import { CollapseSection, CollapsedElement } from '../model/types';
+import { CollapseSection } from '../model/types';
 import { expandedCount, expandedEntries, forgetSection, getExpandedEntry, noteSectionExpanded } from './expandedRegistry';
 import { expandOne } from './expandAction';
 import { createUnderlineElement, findNameElements, findUnderlineElements, rebuildNameElements } from './nameAction';
 import { Operation, runExclusive } from './operation';
-import { gestureDelta, isTapDistance, noteGestureDown } from './tapGesture';
+import { gestureDelta, isSingleFinger, isTapDistance, noteGestureDown } from './tapGesture';
 import { ABSORBABLE_TYPES } from './recollapseAction';
 import { getCurrentFileContext, getCurrentPageNumOrNull } from '../utils/currentFile';
 import { alertOverBusyView } from '../utils/busyView';
@@ -22,10 +22,6 @@ type DragKind = 'icon' | 'handle';
 // pencil), so a finger-triggered redraw carries the raw down-to-up delta and
 // synthesizes the intended new position from it instead of reading one back.
 type FingerDelta = { dx: number; dy: number };
-
-function isQualifyingFinger(toolType: number | undefined, pointerCount: number | undefined): boolean {
-  return toolType === 1 && pointerCount === 1;
-}
 
 // Section/control the current gesture grabbed (set on DOWN, consumed on UP).
 let dragCandidateId: string | null = null;
@@ -74,7 +70,7 @@ async function kickRedraw(id: string, kind: DragKind, fingerDelta?: FingerDelta)
 export function onMotionDown(x: number, y: number, toolType?: number, pointerCount?: number): void {
   dragCandidateId = null;
   dragCandidateKind = null;
-  dragCandidateIsFinger = isQualifyingFinger(toolType, pointerCount);
+  dragCandidateIsFinger = isSingleFinger(toolType, pointerCount);
   noteGestureDown(x, y);
   if (expandedCount() === 0) return;
   for (const [id, e] of expandedEntries()) {
@@ -106,7 +102,7 @@ export function onMotionUp(x: number, y: number, toolType?: number, pointerCount
   if (!id || !kind) return;
   if (isTapDistance(x, y)) return; // tap/select
   if (!getExpandedEntry(id)) return;
-  const isFinger = isQualifyingFinger(toolType, pointerCount);
+  const isFinger = isSingleFinger(toolType, pointerCount);
   if (wasFinger !== isFinger) return; // inconsistent gesture — don't guess
   void kickRedraw(id, kind, wasFinger ? gestureDelta(x, y) : undefined);
 }
@@ -147,8 +143,7 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
   // coexist — the gate alone can't tell them apart.
   await PluginNoteAPI.saveCurrentNote();
 
-  const allRes: any = await PluginFileAPI.getElements(page, filePath);
-  const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
+  const all = await getPageElements(filePath, page);
 
   let iconEl: any = null;
   let iconRect: Rect | null = null;
@@ -161,14 +156,10 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
     if (ud.kind === 'plug' && ud.section?.id === id) {
       iconEl = el;
       if (el?.textBox?.textRect) iconRect = el.textBox.textRect;
-    } else if (ud.kind === 'part' && ud.id === id) {
-      partEls.push(el);
+    } else if (isSectionBody(ud, id)) {
       if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
-    } else if ((ud.kind === 'mask' || ud.kind === 'frame') && ud.id === id && typeof el.numInPage === 'number') {
-      removeNums.push(el.numInPage);
-    } else if (ud.kind === 'handle' && ud.id === id) {
-      if (el?.textBox?.textRect) handleRect = el.textBox.textRect;
-      if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
+      if (ud.kind === 'part') partEls.push(el);
+      else if (ud.kind === 'handle' && el?.textBox?.textRect) handleRect = el.textBox.textRect;
     }
   }
   const nameEls = findNameElements(all, id);
@@ -233,11 +224,7 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
   // Re-serialize the current on-page content so we can rebuild it above a fresh
   // fill. Stroke links are resolved later, once any newly-absorbed content
   // (below) is merged in too.
-  let fresh: CollapsedElement[] = [];
-  for (const el of partEls) {
-    const data = await serializeElement(el);
-    if (data) fresh.push({ numInPage: el.numInPage, data });
-  }
+  let fresh = await serializeAll(partEls);
   if (fresh.length === 0) { return; }
 
   const pageSize = await getPageSize(filePath, page);
@@ -247,15 +234,11 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
 
   // The name (if any) rigidly follows the icon's own drag delta — the only
   // way it ever moves programmatically. The icon doesn't move under a
-  // handle-triggered resize, so the name doesn't either (unchanged spec).
+  // handle-triggered resize, so the name doesn't either.
   if (trigger === 'icon' && nameEls.length > 0) {
     const nameDx = iconRect.left - entry.iconRect.left;
     const nameDy = iconRect.top - entry.iconRect.top;
-    const serializedName: CollapsedElement[] = [];
-    for (const el of nameEls) {
-      const data = await serializeElement(el);
-      if (data) serializedName.push({ numInPage: el.numInPage, data });
-    }
+    const serializedName = await serializeAll(nameEls);
     // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
     // (current) icon points independently, then subtract. See
     // rebuildNameElements's doc comment for why converting a bare delta
@@ -290,7 +273,7 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
       } else {
         console.error(`${LOG} live redraw: failed to relocate section name res=${JSON.stringify(insName)}`);
       }
-      for (const el of nameInsertBatch) { try { el.recycle?.(); } catch { /* ignore */ } }
+      recycleAll(nameInsertBatch);
     }
   }
 
@@ -301,12 +284,7 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
   // this redraw regardless of trigger — both as the growth basis for a
   // handle-triggered resize, and to isolate what a resize newly covered
   // (below) for either trigger.
-  const oldZone: Rect | null = base ? {
-    left: base.iconRect.left + base.relativeRect.left,
-    top: base.iconRect.top + base.relativeRect.top,
-    right: base.iconRect.left + base.relativeRect.left + base.relativeRect.width,
-    bottom: base.iconRect.top + base.relativeRect.top + base.relativeRect.height,
-  } : null;
+  const oldZone: Rect | null = base ? sectionZone(base.iconRect, base.relativeRect) : null;
   if (trigger === 'handle' && !oldZone) {
     console.error(`${LOG} live redraw (handle): no persisted zone found for section=${id} — aborting`);
     return;
@@ -364,10 +342,8 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
   fresh = await resolveLinkMemberIndices(fresh);
   const preservedNums = newlyCovered.length > 0 ? [...priorPreserved, ...newlyCovered] : base?.preservedNums;
 
-  // Content-containment clamping in stretchZoneToIcon can leave the
-  // icon overlapping the zone (the guarantee that used to keep it clear was
-  // traded away in favor of never excluding content). Project it to just
-  // outside the zone's nearest edge.
+  // Content-containment clamping in stretchZoneToIcon can leave the icon
+  // overlapping the zone. Project it to just outside the zone's nearest edge.
   const projectedIcon = projectIconOutsideZone(iconRect, zone, ZONE_MARGIN);
   const iconR: Rect = {
     left: Math.round(projectedIcon.left),
@@ -386,12 +362,7 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
     schemaVersion: base?.schemaVersion ?? SCHEMA_VERSION,
     id,
     iconRect: iconR,
-    relativeRect: {
-      left: Math.round(zone.left) - iconR.left,
-      top: Math.round(zone.top) - iconR.top,
-      width: Math.round(zone.right - zone.left),
-      height: Math.round(zone.bottom - zone.top),
-    },
+    relativeRect: relativeRectFor(iconR, zone),
     collapsedElements: fresh,
     isExpanded: true,
     // Carry preservedNums forward (grown above with anything newly covered
@@ -410,16 +381,11 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
     return;
   }
 
-  // REQ-340: re-verify we're still on the page this whole operation
-  // has assumed throughout (captured once, at entry, as `page`) before the
-  // point of no return — a page-turn firing mid-operation (most plausible
-  // via a finger gesture also being read as a native swipe) would otherwise
-  // have every write below still explicitly targeting the old page number
-  // while the native app's own state has moved on, which is exactly the
-  // kind of interleaving this SDK has shown itself unstable under. Applied
-  // unconditionally (pencil included) — cheap, and closes the same
-  // theoretical gap there too. Abort before deleting anything: the section
-  // is left exactly as it was, nothing to recover from.
+  // REQ-340: re-verify we're still on the page captured at entry before the
+  // point of no return — a page-turn mid-operation (e.g. a finger drag also
+  // read as a native swipe) would leave every write below targeting the old
+  // page while the note has moved on. Abort before deleting anything: the
+  // section is left exactly as it was.
   const pageNow = await getCurrentPageNumOrNull();
   if (pageNow !== page) {
     console.error(`${LOG} live redraw: page changed mid-operation (was ${page}, now ${pageNow}) — aborting before delete`);

@@ -45,6 +45,28 @@ export async function getPageSize(filePath: string, page: number): Promise<PageS
     : FALLBACK_PAGE_SIZE;
 }
 
+// Serialize page elements, skipping any the serializer can't handle.
+export async function serializeAll(els: any[]): Promise<CollapsedElement[]> {
+  const out: CollapsedElement[] = [];
+  for (const el of els) {
+    const data = await serializeElement(el);
+    if (data) out.push({ numInPage: el.numInPage, data });
+  }
+  return out;
+}
+
+// Bounding box (android page coords) of page elements, or null if none serialize.
+export async function elementsBBox(els: any[], pageSize: { width: number; height: number }): Promise<Rect | null> {
+  return contentBoundingBox(await serializeAll(els), pageSize);
+}
+
+// Free the native side of SDK element objects we're done with.
+export function recycleAll(els: any[]): void {
+  for (const el of els) {
+    try { el?.recycle?.(); } catch { /* ignore */ }
+  }
+}
+
 // Bounding box (android page coords) of serialized elements. Strokes are stored
 // in EMR space, so convert to android the same way buildStroke positions them;
 // text/link/geometry are already android. Used to define a section's zone from
