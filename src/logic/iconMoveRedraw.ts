@@ -211,9 +211,18 @@ async function redrawSectionBox(id: string, trigger: DragKind, fingerDelta?: Fin
       noteSectionExpanded(id, iconRect, entry.zoneRect);
       return;
     }
+  } else {
+    // B-025: same check for the handle, against where the last-drawn zone
+    // put it. Without it, any far-away UP (e.g. a resting palm lifting) on a
+    // merely-selected handle ran a full redraw for nothing.
+    const drawn = handleRectForZone(entry.zoneRect);
+    const moved =
+      Math.abs(handleRect!.left - drawn.left) > 1 ||
+      Math.abs(handleRect!.top - drawn.top) > 1;
+    if (!moved) return;
   }
 
-  // Confirmed drag (icon moved, or handle release reached here) — NOW dismiss
+  // Confirmed drag (icon or handle moved) — NOW dismiss
   // the selection (commit) before mutating.
   const lassoRes: any = await PluginCommAPI.setLassoBoxState(2);
   if (!lassoRes?.success) console.error(`${LOG} live redraw setLassoBoxState res=${JSON.stringify(lassoRes)}`);

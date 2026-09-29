@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix: just selecting an expanded section's resize handle with the pen
+  (without dragging it) could sometimes redraw the whole section anyway,
+  and in one case left a second copy of the section behind. Selecting
+  the handle without moving it now does nothing.
 - Fix: recovering from a rare Expand-time failure alert could take
   several rounds of Collapse/Expand or Recollapse/Expand before things
   looked normal again — because a failed attempt's leftover content
