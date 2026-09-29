@@ -43,6 +43,8 @@ an item once the user confirms it's done.
 ## Closed bugs
 | ID | Symptom |
 |---|---|
+| B-028 | After dragging a named, expanded section's icon inward, the name ended up under the content. Fixed — name follows the icon's final position; confirmed on-device. |
+| B-027 | Resize/expand ended in "couldn't complete the expand" although it worked (icon write judged failed on stale read-backs after reloadFile timeouts). Fixed — read-back retried before re-sending; confirmed on-device. |
 | B-026 | Naming showed "Couldn't set the section name" although it was set (stale verification read after a reloadFile timeout). Fixed — the check now re-reads up to 3 times; confirmed on-device. |
 | B-015 | Permission gate (CR-002) silently let an operation proceed unpermitted — fixed by dropping the `hasPermission` pre-check and trusting only `requestPermission`'s documented result. See `BUGS/B-015.md`. |
 | B-016 | External SDK bug: `userData` never survived a round trip on Chauvet 2.26.40/3.29.43 — fixed by Ratta in 3.29.44/2.26.41, confirmed on-device. See `BUGS/B-016.md`. |

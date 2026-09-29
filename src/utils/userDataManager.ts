@@ -205,10 +205,14 @@ export async function writeSection(
         console.error(`${LOG} modifyElements res=${JSON.stringify(res)}`);
         break; // a reported failure is trustworthy either way — don't spin on it
       }
-      await reloadFileWithTimeout(); // without this, the read below can miss the write having just landed
-      const checkRes: any = await PluginFileAPI.getElement(filePath, page, target.numInPage);
-      confirmed = checkRes?.success && checkRes.result?.userData === wantedUserData;
-      if (!confirmed) console.error(`${LOG} writeSection attempt ${attempt}: userData didn't stick — retrying`);
+      // Re-read before re-sending: the reload can time out and leave a stale
+      // snapshot, which would make a landed write look lost.
+      for (let readAttempt = 0; readAttempt < 3 && !confirmed; readAttempt++) {
+        await reloadFileWithTimeout(); // without this, the read below can miss the write having just landed
+        const checkRes: any = await PluginFileAPI.getElement(filePath, page, target.numInPage);
+        confirmed = checkRes?.success && checkRes.result?.userData === wantedUserData;
+      }
+      if (!confirmed) console.error(`${LOG} writeSection attempt ${attempt}: userData didn't stick after 3 reads — re-sending`);
     }
     if (!confirmed && res?.success) console.error(`${LOG} writeSection gave up: userData never confirmed after retries`);
     return { ok: !!res?.success && confirmed, unstableNote: isUnstableNoteError(res) };

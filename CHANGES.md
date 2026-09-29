@@ -29,6 +29,11 @@
 - Feature: after erasing part of a name, lasso what's left with the icon
   and press the button to redraw its underline to fit. A name erased
   completely no longer leaves its underline behind.
+- Fix: resizing or expanding a section could end with "Supernote
+  couldn't complete the expand" even though it had worked — sometimes
+  leaving the section marked collapsed with its content still showing.
+  This happened when Supernote was slow to refresh the page; the plugin
+  now double-checks patiently instead of giving up too early.
 - Fix: copy-pasting a collapsed section's icon made two icons that
   silently shared one identity, so using one could affect the other.
   The copy now gets its own identity, and both behave as separate

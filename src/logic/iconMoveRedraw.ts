@@ -232,51 +232,6 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
   const existing = readUserData(iconEl);
   const base = existing?.kind === 'plug' ? existing.section : null;
 
-  // The name (if any) rigidly follows the icon's own drag delta — the only
-  // way it ever moves programmatically. The icon doesn't move under a
-  // handle-triggered resize, so the name doesn't either.
-  if (trigger === 'icon' && nameEls.length > 0) {
-    const nameDx = iconRect.left - entry.iconRect.left;
-    const nameDy = iconRect.top - entry.iconRect.top;
-    const serializedName = await serializeAll(nameEls);
-    // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
-    // (current) icon points independently, then subtract. See
-    // rebuildNameElements's doc comment for why converting a bare delta
-    // directly would be wrong.
-    const nameEmrFrom = PointUtils.androidPoint2Emr({ x: entry.iconRect.left, y: entry.iconRect.top }, pageSize);
-    const nameEmrTo = PointUtils.androidPoint2Emr({ x: iconRect.left, y: iconRect.top }, pageSize);
-    const nameEmrDelta = { x: nameEmrTo.x - nameEmrFrom.x, y: nameEmrTo.y - nameEmrFrom.y };
-    const namePageMaxX = PointUtils.getRealMaxX(pageSize);
-    const namePageMaxY = PointUtils.getRealMaxY(pageSize);
-    const rebuiltName = await rebuildNameElements(serializedName, id, page, nameDx, nameDy, nameEmrDelta, namePageMaxX, namePageMaxY);
-    if (rebuiltName.length > 0) {
-      // Underline follows the same shift — inserted in the same batch as
-      // the name.
-      const oldNameBBox = contentBoundingBox(serializedName, pageSize);
-      const underlineEl = oldNameBBox
-        ? await createUnderlineElement({
-            left: oldNameBBox.left + nameDx,
-            top: oldNameBBox.top + nameDy,
-            right: oldNameBBox.right + nameDx,
-            bottom: oldNameBBox.bottom + nameDy,
-          }, page, id)
-        : null;
-      const nameInsertBatch = underlineEl ? [...rebuiltName, underlineEl] : rebuiltName;
-      const insName: any = await PluginFileAPI.insertElements(filePath, page, nameInsertBatch);
-      if (insName?.success) {
-        for (const el of nameEls) {
-          if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
-        }
-        for (const el of findUnderlineElements(all, id)) {
-          if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
-        }
-      } else {
-        console.error(`${LOG} live redraw: failed to relocate section name res=${JSON.stringify(insName)}`);
-      }
-      recycleAll(nameInsertBatch);
-    }
-  }
-
   const bbox = contentBoundingBox(fresh, pageSize);
   if (!bbox) { return; }
 
@@ -390,6 +345,54 @@ async function redrawSectionBox(op: Operation, id: string, trigger: DragKind, fi
   if (pageNow !== page) {
     console.error(`${LOG} live redraw: page changed mid-operation (was ${page}, now ${pageNow}) — aborting before delete`);
     return;
+  }
+
+  // The name (if any) rigidly follows the icon's own drag delta — the only
+  // way it ever moves programmatically. Done only now, past every early exit,
+  // so an abort above never leaves a moved copy next to the old name. The icon doesn't move under a
+  // handle-triggered resize, so the name doesn't either.
+  if (trigger === 'icon' && nameEls.length > 0) {
+    // From the icon's final (possibly projected) position, not the raw drop
+    // point — the name keeps its place relative to where the icon ends up.
+    const nameDx = iconR.left - entry.iconRect.left;
+    const nameDy = iconR.top - entry.iconRect.top;
+    const serializedName = await serializeAll(nameEls);
+    // Safe two-point EMR delta — convert the "from" (last-drawn) and "to"
+    // (current) icon points independently, then subtract. See
+    // rebuildNameElements's doc comment for why converting a bare delta
+    // directly would be wrong.
+    const nameEmrFrom = PointUtils.androidPoint2Emr({ x: entry.iconRect.left, y: entry.iconRect.top }, pageSize);
+    const nameEmrTo = PointUtils.androidPoint2Emr({ x: iconR.left, y: iconR.top }, pageSize);
+    const nameEmrDelta = { x: nameEmrTo.x - nameEmrFrom.x, y: nameEmrTo.y - nameEmrFrom.y };
+    const namePageMaxX = PointUtils.getRealMaxX(pageSize);
+    const namePageMaxY = PointUtils.getRealMaxY(pageSize);
+    const rebuiltName = await rebuildNameElements(serializedName, id, page, nameDx, nameDy, nameEmrDelta, namePageMaxX, namePageMaxY);
+    if (rebuiltName.length > 0) {
+      // Underline follows the same shift — inserted in the same batch as
+      // the name.
+      const oldNameBBox = contentBoundingBox(serializedName, pageSize);
+      const underlineEl = oldNameBBox
+        ? await createUnderlineElement({
+            left: oldNameBBox.left + nameDx,
+            top: oldNameBBox.top + nameDy,
+            right: oldNameBBox.right + nameDx,
+            bottom: oldNameBBox.bottom + nameDy,
+          }, page, id)
+        : null;
+      const nameInsertBatch = underlineEl ? [...rebuiltName, underlineEl] : rebuiltName;
+      const insName: any = await PluginFileAPI.insertElements(filePath, page, nameInsertBatch);
+      if (insName?.success) {
+        for (const el of nameEls) {
+          if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
+        }
+        for (const el of findUnderlineElements(all, id)) {
+          if (typeof el.numInPage === 'number') removeNums.push(el.numInPage);
+        }
+      } else {
+        console.error(`${LOG} live redraw: failed to relocate section name res=${JSON.stringify(insName)}`);
+      }
+      recycleAll(nameInsertBatch);
+    }
   }
 
   // Delete the old content + fill + outline, then re-expand in place. The temp
