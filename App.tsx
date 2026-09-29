@@ -1,7 +1,8 @@
 /**
  * Collapse / Expand — plugin view
  *
- * Shown while a slow operation runs (showPluginView called by an action).
+ * Shown while a slow operation runs (showPluginView called by an action), or
+ * as the plugin's own choice dialog when one is pending (workingViewStore).
  * Static "Working…" card — no spinner (e-ink). The backdrop is transparent
  * so the page stays visible around the card. After CANCEL_DELAY_MS with the
  * card still up, a Cancel button appears: an operation whose foreground app
@@ -13,7 +14,7 @@
 
 import React, {useEffect, useRef, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import {getGeneration} from './src/logic/workingViewStore';
+import {answerDialog, getDialog, getGeneration, subscribe} from './src/logic/workingViewStore';
 import {cancelStuckOperation} from './src/logic/busy';
 
 const CANCEL_DELAY_MS = 7000;
@@ -21,6 +22,7 @@ const POLL_MS = 300;
 
 function App(): React.JSX.Element {
   const [showCancel, setShowCancel] = useState(false);
+  const [dialog, setDialog] = useState(getDialog());
   const lastGenRef = useRef(-1);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -39,6 +41,25 @@ function App(): React.JSX.Element {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
+
+  useEffect(() => subscribe(() => setDialog(getDialog())), []);
+
+  if (dialog) {
+    return (
+      <View style={styles.backdrop}>
+        <View style={styles.card}>
+          <Text style={styles.glyph}>⊕</Text>
+          <Text style={styles.title}>Collapse / Expand</Text>
+          <Text style={styles.sub}>{dialog.message}</Text>
+          {dialog.buttons.map(b => (
+            <TouchableOpacity key={b.id} style={styles.cancelButton} onPress={() => answerDialog(b.id)}>
+              <Text style={styles.cancelText}>{b.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.backdrop}>

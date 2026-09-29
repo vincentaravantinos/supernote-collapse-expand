@@ -2,73 +2,70 @@
 
 ## Unreleased
 
-- Fix: just selecting an expanded section's resize handle with the pen
-  (without dragging it) could sometimes redraw the whole section anyway,
-  and in one case left a second copy of the section behind. Selecting
-  the handle without moving it now does nothing.
-- Fix: recovering from a rare Expand-time failure alert could take
-  several rounds of Collapse/Expand or Recollapse/Expand before things
-  looked normal again — because a failed attempt's leftover content
-  was never cleaned up, and a later retry could be wrongly convinced it
-  had succeeded by counting that leftover content as its own. A retry
-  now cleans up after any earlier failed attempt first, so it succeeds
-  (or genuinely fails) in one try, with no leftover duplicates either way.
-- Fix: dragging an expanded section's icon to a position deep inside
-  its own content could shrink the redrawn area small enough that some
-  of the section's own strokes ended up outside it, and could leave
-  the icon itself hidden underneath the section. The area now always
-  stays large enough to contain every stroke, and the icon is nudged
-  to sit just outside it instead of disappearing beneath it.
-- Fix: content drawn on an expanded section after it was expanded
-  could get permanently excluded from the section (never absorbed on
-  Recollapse) if the icon was resized in between — it would sit there
-  looking normal but silently never become part of the section. It's
-  now correctly absorbed regardless of any resize in between, and no
-  longer briefly disappears from view when a resize happens right
-  after drawing it.
-- Fix: while a section was expanded, lassoing even a small piece of its
-  content also selected the section's own visual mask/boundary,
-  making it effectively impossible to select anything specific inside
-  an expanded section. The mask and boundary are now built as a
-  different kind of element that a lasso can't pick up at all — same
-  look, but content inside an expanded section can now be selected
-  normally, exactly as if the section weren't there.
-- Fix: dragging a native handwritten link into an expanded section's
-  area and then recollapsing could leave the link's annotation behind
-  on the page, empty and broken (its strokes correctly folded into the
-  section, but the link itself orphaned). The link is now absorbed
-  along with its strokes, same as any other dragged-in content.
-- Fix: resizing an expanded section by dragging its icon could
-  permanently absorb pre-existing content the new shape happened to
-  cover, even though the user never touched that content. Resizing now
-  only ever visually hides pre-existing content beneath the section —
-  it's never pulled into the section's saved data unless the user
-  actually draws or drags something into the area, which is still
-  correctly absorbed on the next Recollapse (including pre-existing
-  content, e.g. a native link, dragged in from elsewhere on the page).
-- Feature: an expanded section now also shows a small resize handle at
-  the **bottom-right corner** of its area, alongside the icon. Dragging
-  it resizes the area the same way dragging the icon does, without
-  having to move the icon itself away from the direction you actually
-  want to grow into.
-- Feature: resizing an expanded section — by dragging either the icon
-  or the bottom-right handle — now also works with a **finger**, not
-  just the pencil. Nothing visibly moves while your finger is down;
-  the resized area appears once you lift it.
-- Fix: copy-pasting a collapsed section's icon produced two icons that
-  silently shared the same identity — interacting with either one
-  could affect both. The plugin now detects this and gives the copy a
-  new, independent identity the next time it notices, so both behave
-  as fully separate sections.
-- Fix: dragging an expanded section's icon to resize it (when the section
-  contains a handwritten link) could leave the section half-restored —
-  some content back, some not — with no error, or in rarer cases get
-  stuck needing a manual screen refresh to show correctly. Several SDK
-  write calls involved in this path could report success without the
-  change actually taking effect; the plugin now double-checks the ones
-  that matter and retries or cleanly reverts when needed, the same
-  fix already shipped in 1.2.0 for the button/tap-shortcut paths,
-  extended to cover the icon-drag path as well.
+- Change: a **finger tap** on a section's icon is now *the* way to expand
+  or collapse a single section. The lasso menu's Collapse / Expand button
+  is for everything else — collapsing new content, naming, and acting on
+  several sections at once. It does the only thing that makes sense for
+  your selection straight away, and asks only when there's a real choice
+  (e.g. a mix of collapsed and expanded sections: expand all or collapse
+  all). Lassoing a single section and pressing the button now just
+  reminds you to tap its icon.
+- Feature: a section can now be **named while it's expanded**, not only
+  while collapsed. Lasso the icon with your handwriting and press the
+  button; you're asked to confirm before a name is set or replaced.
+- Feature: after erasing part of a name, lasso what's left with the icon
+  and press the button to redraw its underline to fit. A name erased
+  completely no longer leaves its underline behind.
+- Change: **text boxes are no longer collapsed** (like pictures and
+  titles). If your selection mixes them with handwriting, you're warned
+  before anything is collapsed and can cancel.
+- Change: the plugin's questions and messages now appear in its own
+  "Collapse / Expand" card instead of a generic "Prompt" dialog, so it's
+  clear where they come from.
+- Feature: an expanded section now has a small **resize handle** at the
+  bottom-right corner of its area. Dragging it resizes the area like
+  dragging the icon does, without having to move the icon away from
+  the direction you want to grow into.
+- Feature: resizing an expanded section (by its icon or its handle) now
+  also works with a **finger**, not just the pencil. Nothing moves
+  while your finger is down; the resized area appears when you lift it.
+- Fix: copy-pasting a collapsed section's icon made two icons that
+  silently shared one identity, so using one could affect the other.
+  The copy now gets its own identity, and both behave as separate
+  sections.
+- Fix: just selecting the resize handle with the pen, without dragging
+  it, could redraw the whole section anyway, and once left a second
+  copy of the section behind. It now does nothing.
+- Fix: if Supernote fails to remove the old content during a resize,
+  the section is now cleanly collapsed (with a message asking you to
+  expand it again) instead of risking a duplicate copy.
+- Fix: resizing a section by its icon could permanently pull in
+  pre-existing content the new area happened to cover. Resizing now
+  only hides such content under the section; only content you
+  actually draw or drag into the area joins it on the next Recollapse.
+- Fix: content drawn on an expanded section could be permanently left
+  out of it on Recollapse if the section was resized in between. It's
+  now always included, and no longer briefly disappears when you
+  resize right after drawing it.
+- Fix: dragging the icon deep inside the section's own content could
+  shrink the area so some strokes fell outside it, and hide the icon
+  underneath. The area now always contains every stroke, and the icon
+  is nudged to sit just outside it.
+- Fix: lassoing anything inside an expanded section also selected the
+  section's background and border, making precise selection
+  impossible. Content inside an expanded section now selects normally.
+- Fix: dragging a handwritten link into an expanded section and then
+  recollapsing could leave the link behind on the page, empty and
+  broken. The link is now folded in along with its strokes.
+- Fix: resizing a section containing a handwritten link by dragging its
+  icon could leave it half-restored, or need a manual screen refresh
+  to display correctly. The plugin now double-checks the note actually
+  took each change, and retries or cleanly reverts when needed (as
+  1.2.0 already did for the button and tap shortcut).
+- Fix: after a rare Expand failure alert, it could take several rounds
+  of Collapse/Expand to get back to normal, sometimes leaving duplicate
+  content. A retry now cleans up the failed attempt first and succeeds
+  in one go.
 
 ## 1.2.0
 

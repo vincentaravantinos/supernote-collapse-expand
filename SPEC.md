@@ -13,10 +13,25 @@ keeps full control of the surrounding canvas while a region is collapsed.
 
 ## Core operations
 
-The plugin exposes a **single button** ("Collapse / Expand") on the lasso
-menu. Every operation below is triggered by pressing that same button; which
-one happens is inferred entirely from what's currently lassoed. There is no
-per-operation button.
+The main way to expand or recollapse a section is a single **finger** tap
+on its icon or name. The plugin also exposes a **single button**
+("Collapse / Expand") on the lasso menu, for everything else — the initial
+Collapse, naming, and multi-section actions. Which actions apply is
+inferred entirely from what's currently lassoed; there is no per-operation
+button.
+
+- REQ-700: If exactly one action applies to the lassoed selection,
+  pressing the button runs it straight away, with no dialog.
+- REQ-710: If several actions apply to the lassoed selection, pressing the
+  button opens a dialog listing them, plus "Cancel".
+- REQ-720: Every dialog asking the user to choose, and every message
+  about what a selection can or can't do, is titled "Collapse / Expand",
+  so the user can tell it comes from this plugin.
+- REQ-730: Choosing "Cancel" in any plugin dialog leaves the page exactly
+  as it was.
+- REQ-740: If no action applies to the lassoed selection, pressing the
+  button shows a message saying that a section is expanded or collapsed by
+  tapping its icon with a finger.
 
 ### Collapse
 **Trigger**: user lassoes some content on the page and presses the plugin
@@ -32,33 +47,63 @@ button.
   expanded-drag redraw, which keeps it "⊖").
 - The icon carries enough state to reproduce the original content
   (positions, ink properties, layer, …) on a later expand.
-- Pictures and titles in the lasso are left in place (not collapsable).
+- REQ-800: Pictures in the lasso are left in place.
+- REQ-810: Titles in the lasso are left in place.
+- REQ-820: Typed text boxes in the lasso are left in place.
+- REQ-830: If the lasso mixes content that can be collapsed with
+  pictures, titles or text boxes, a dialog warns, before anything is
+  collapsed, that only handwriting, shapes and links will be collapsed,
+  offering "Collapse anyway" and "Cancel".
+- REQ-835: Choosing "Collapse anyway" collapses the handwriting, shapes
+  and links in the lasso.
+- REQ-840: If the lasso holds only pictures, titles or text boxes, a
+  message says that only handwriting, shapes and links can be collapsed.
 
 ### Name / Rename (optional)
-**Trigger**: user writes a name somewhere on the page in their own
-handwriting, lassoes it **together with exactly one collapsed section's
-icon** (no other icons, no restored/expanded content), and presses the
-plugin button.
+**Trigger**: user lassoes **exactly one section's icon** (collapsed or
+expanded; no other section) together with handwriting, and presses the
+plugin button. Naming is then the only action that applies, so it runs
+straight away (REQ-700), except for the confirmation below.
+
+- REQ-610: Lassoing a section's icon together with handwriting that
+  belongs to no section sets that handwriting (plus any of the section's
+  current name also in the lasso) as the section's name.
+- REQ-620: Lassoing a section's icon together with part of that section's
+  name sets the lassoed part as the section's name.
+- REQ-630: Lassoing a section's icon together with that section's whole
+  name sets it as the name again when its underline no longer matches the
+  name's width and position (e.g. after part of the name was erased).
+- REQ-632: Lassoing a section's icon together with that section's whole
+  name sets it as the name again when the name has no underline.
+- REQ-635: Lassoing a section's icon together with that section's whole
+  name, whose underline still matches it, is handled as if the icon were
+  lassoed alone.
+- REQ-640: Handwriting that was already on the page under an expanded
+  section's area before it was expanded (and is hidden by it) never
+  counts as handwriting for naming.
+- REQ-670: If naming would remove any stroke of the section's current
+  name that isn't in the lasso, a dialog asks for confirmation first,
+  offering "Rename" and "Cancel".
+- REQ-675: If the section has no name yet, a dialog asks for
+  confirmation before setting one, offering "Set as name" and "Cancel".
+- REQ-650: After a name is set, its underline spans the new name exactly.
+- REQ-660: If every stroke of a section's name has been erased, its
+  leftover underline disappears the next time the plugin runs any
+  operation on that page.
 
 **Outcome**:
-- A blocking confirmation dialog asks the user to confirm: "Set this
-  section's name to the selected handwriting?" (or "Replace..." if the
-  section already has a name).
-  - **Confirmed**: the lassoed name strokes stay exactly where the user
-    wrote them (no repositioning), tagged as the section's name, and remain
-    permanently visible regardless of whether the section is collapsed or
-    expanded. If a name already existed, its old strokes are deleted first.
-  - **Declined**: nothing about the name changes; the press falls through
-    to a normal Expand instead, with the name-candidate ink left in place
-    untouched — i.e. exactly today's behaviour when unrelated content
-    happens to share a lasso with a collapsed icon.
-- Available any time a section is collapsed — not limited to right after
-  its own Collapse. Naming an already-expanded section is out of scope for
-  v1 (lasso the icon while it's still collapsed).
-- If the lasso contains untagged ink alongside **more than one** collapsed
-  icon, the target is ambiguous: no naming/confirmation is offered, and the
-  press is treated as a normal multi-section Expand instead (ink left in
-  place).
+- REQ-530: The lassoed handwriting becomes the section's name.
+- REQ-540: The section's previous name, if any, is removed.
+- REQ-550: The section stays collapsed or expanded, as it was.
+- The name's strokes stay exactly where the user wrote them (no
+  repositioning) and remain permanently visible regardless of whether the
+  section is collapsed or expanded.
+- Available any time, whether the section is collapsed or expanded — not
+  limited to right after its own Collapse.
+- If the lasso contains untagged ink alongside **more than one** section,
+  the naming target is ambiguous: no naming is offered, and the press is
+  handled as a multi-section selection instead (see Expand / Recollapse),
+  with the ink left in place unless a Recollapse absorbs it.
 - The name never moves programmatically except when the user drags the
   icon **while the section is expanded** — in that case it's translated
   live, rigidly, by the icon's exact drag delta on each drag-release
@@ -84,11 +129,12 @@ plugin button.
   stays gone until then.
 
 ### Expand
-**Trigger**: user lassoes the "+" icon of one or more collapsed sections
-(optionally together with other content) and presses the plugin button. As a
-shortcut, a single **finger** tap directly on a collapsed section's icon **or
-its name** (if it has one) also expands it (a pen tap draws ink as normal and
-is ignored).
+**Trigger**: a single **finger** tap directly on a collapsed section's icon
+**or its name** (if it has one); a pen tap draws ink as normal and is
+ignored. Via the button: lassoing the icons of several collapsed sections
+(optionally with other content) expands them all — the only action that
+applies, so no dialog. Lassoing a single collapsed section alone has no
+button action (REQ-740): tap it instead.
 
 **Outcome**:
 - The original content reappears at its location (translated if the icon
@@ -103,13 +149,24 @@ is ignored).
   expansion (see Recollapse).
 
 ### Recollapse
-**Trigger**: user lassoes the "+" icon **or any restored content / mask** of an
-expanded section and presses the plugin button. If the selection spans multiple
-expanded sections, all of them are recollapsed in one press. (Recollapse takes
-priority: a selection that mixes an expanded section with a collapsed icon
-recollapses the expanded one(s) and ignores the collapse/expand that press.) As
-a shortcut, a single **finger** tap directly on an expanded section's icon **or
-its name** also recollapses it.
+**Trigger**: a single **finger** tap directly on an expanded section's icon
+**or its name**. Via the button: lassoing the icon **or any restored
+content** of several expanded sections recollapses them all in one press —
+the only action that applies, so no dialog. Lassoing a single expanded
+section (its icon or content) has no button action (REQ-740): tap it
+instead. For one section's icon plus handwriting, see Name / Rename.
+
+- REQ-350: Lassoing both collapsed and expanded sections and pressing the
+  button opens a dialog offering "Expand all sections", "Collapse all
+  sections", and "Cancel".
+- REQ-360: Choosing "Expand all sections" expands every selected
+  collapsed section.
+- REQ-370: Choosing "Expand all sections" leaves every selected expanded
+  section expanded.
+- REQ-380: Choosing "Collapse all sections" recollapses every selected
+  expanded section.
+- REQ-390: Choosing "Collapse all sections" leaves every selected
+  collapsed section collapsed.
 
 **Outcome**:
 - The "+" icon stays where it is.

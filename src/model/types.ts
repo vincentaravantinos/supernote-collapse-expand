@@ -91,7 +91,7 @@ export interface CollapseSection {
   preservedNums?: number[];
   // Extra shift (beyond the icon's own movement) to apply to the restored
   // content at the next Expand only. Set by Recollapse when the section's
-  // area had to be moved to stop covering the icon (see BUGS/B-011.md) —
+  // area had to be moved to stop covering the icon —
   // content strokes move as one rigid group, preserving their layout
   // relative to each other; only their position relative to the icon
   // changes, which is fine since the user didn't drag the icon to cause

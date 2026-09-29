@@ -21,17 +21,14 @@ import { reloadFileWithTimeout } from '../utils/reloadFile';
 // time — a section expanded on a different page stays dormant until
 // visited, same limitation the tap cache already has.
 //
-// Known limitation (B-013): reliable after a plain process restart
-// (force-stop), but not after a full device reboot — see BUGS/B-013.md.
-// Investigated and not fixed; documented in CHANGES.md / README.md instead.
+// Known limitation: reliable after a plain process restart (force-stop),
+// but not after a full device reboot.
 export async function rehydrateExpandedRegistry(filePath: string, page: number): Promise<void> {
   try {
     const icons = await buildIconCache(filePath, page);
     for (const icon of icons) {
       if (!icon.section.isExpanded) continue;
-      // CR-008: zoneRect now drives the resize handle's hit-zone, so compute
-      // it properly (icon rect + the section's own relativeRect) rather than
-      // using the icon's rect as a stand-in — cheap, no extra I/O needed.
+      // zoneRect drives the resize handle's hit-zone.
       const zoneRect = {
         left: icon.rect.left + icon.section.relativeRect.left,
         top: icon.rect.top + icon.section.relativeRect.top,
@@ -55,7 +52,7 @@ export async function expandOne(
   filePath: string,
   page: number,
   capturePreserved: boolean = false,
-  // B-023: a full element list the caller already has in hand, used only to
+  // A full element list the caller already has in hand, used only to
   // scan for stale leftovers (below) when this call's own fast path doesn't
   // fetch one itself. Currently only iconMoveRedraw.ts's live-redraw call
   // passes this (it already does its own full fetch for unrelated reasons).
@@ -117,7 +114,7 @@ export async function expandOne(
 
   const pageSize = await getPageSize(filePath, page);
 
-  // CR-006: zone-scoped, not whole-page — only untagged content actually
+  // Zone-scoped, not whole-page — only untagged content actually
   // positioned inside the zone at expand time is protected from Recollapse's
   // absorb-scan (REQ-220). Content elsewhere on the page that the user later
   // drags in stays unprotected, so a later Recollapse absorbs it (REQ-210).
@@ -138,8 +135,7 @@ export async function expandOne(
   }
 
   // Content moves by the icon's own movement, plus a one-time extra shift a
-  // prior Recollapse may have queued (contentShift — see BUGS/B-011.md /
-  // CollapseSection.contentShift). Both apply uniformly to every restored
+  // prior Recollapse may have queued (CollapseSection.contentShift). Both apply uniformly to every restored
   // element, so their relative layout to each other never changes — only
   // their position relative to the icon does, which is fine here since the
   // user didn't move the icon to cause this.
@@ -164,14 +160,14 @@ export async function expandOne(
   // A collapsed-icon move leaves the name exactly where it is.
 
   // Register for live box redraw on icon/handle drag, and for the resize
-  // handle's own hit-zone (CR-008) — contentRect is the section's actual
+  // handle's own hit-zone — contentRect is the section's actual
   // zone (mask/border boundary), already computed above.
   const baseBBox = contentBoundingBox(section.collapsedElements, pageSize);
   if (baseBBox) {
     noteSectionExpanded(section.id, iconRectNow, contentRect, freshIconEl?.numInPage ?? iconElement?.numInPage); // icon num lets recollapse fetch it without a full scan
   }
 
-  // B-023: clean up any CE_PART/CE_MASK/CE_FRAME leftovers from a previous,
+  // Clean up any CE_PART/CE_MASK/CE_FRAME/CE_HANDLE leftovers from a previous,
   // separately-triggered Expand attempt that failed partway — before this
   // attempt's own insert-verification below, which would otherwise count
   // such leftovers as if they were its own and could pass on a lie. Safe to
@@ -199,7 +195,7 @@ export async function expandOne(
 
   const tBuild = Date.now();
   // Mask rings first so they sit below the collapsed content. The resize
-  // handle (CR-008) rides along in the same batch — both stroke-link and
+  // handle rides along in the same batch — both stroke-link and
   // simple-batch insert paths already spread `maskElements` into their
   // insert, so folding it in here covers both without touching either path.
   const maskElements = await createMaskElements(contentRect, page, section.id, pageSize);
@@ -222,7 +218,7 @@ export async function expandOne(
   if (!hasStrokeLinks) {
     const batch = [...maskElements, ...otherElements];
     if (batch.length > 0) {
-      // B-018: insertElements can report success without the elements
+      // insertElements can report success without the elements
       // actually landing. The very next step clears the icon's
       // collapsedElements backup based on `insertOk` alone — if that trusts
       // a lie, the content is gone from both the page and the backup. Verify
@@ -242,7 +238,7 @@ export async function expandOne(
           continue; // nothing landed — safe to retry the insert itself
         }
         for (let readAttempt = 0; readAttempt < 3 && !insertOk; readAttempt++) {
-          await reloadFileWithTimeout(); // B-018: without this, the read below can miss a just-landed insert
+          await reloadFileWithTimeout(); // without this, the read below can miss a just-landed insert
           const checkRes: any = await PluginFileAPI.getElements(page, filePath);
           const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
           const landed = check.filter((el) => {
@@ -268,20 +264,15 @@ export async function expandOne(
   dlog(`${LOG} PERF expand insertElements=${Date.now() - tIns}ms`);
 
   // No saveCurrentNote (would clobber the inserts with the stale cached copy) —
-  // the inserts are already visible without an explicit reload on this SDK
-  // build (see BUGS/B-017.md). While expanded the content lives on the page as
+  // the inserts are already visible without an explicit reload. While expanded the content lives on the page as
   // CE_PART and recollapse rebuilds the payload from it, so drop
   // collapsedElements from userData — but only if the insert succeeded,
   // keeping exactly one durable copy (userData while collapsed, page while
   // expanded).
-  // B-018: isExpanded used to be set to `true` unconditionally here, even
-  // when insertOk is false — leaving the icon claiming "expanded" while
-  // simultaneously keeping the pre-expand backup (collapsedElements) intact.
-  // That combination is itself an inconsistent, hard-to-recover state: the
-  // very next tap reads isExpanded and tries to Recollapse a section whose
-  // content may never have actually landed on the page. On failure, revert
-  // to the pre-expand state in full instead — only iconRect (the icon's own
-  // real position) is trustworthy regardless of insertOk.
+  // On failure, revert to the pre-expand state in full: "expanded" with the
+  // backup still intact would route the next tap to a Recollapse of content
+  // that may never have landed. Only iconRect (the icon's own real position)
+  // is trustworthy regardless of insertOk.
   const expandedState: CollapseSection = insertOk
     ? {
         ...section,
@@ -351,8 +342,4 @@ export async function expandSections(
     await expandOne(t.section, t.icon, filePath, page, true); // capture preservedNums
   }
 
-  // B-017: reloadFile() removed — see collapseAction.ts's identical comment
-  // and BUGS/B-017.md. Terminal call here too, nothing reads afterward.
-  const tReload = Date.now();
-  dlog(`${LOG} PERF expand reload=${Date.now() - tReload}ms`);
 }

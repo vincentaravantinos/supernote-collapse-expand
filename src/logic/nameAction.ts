@@ -1,10 +1,12 @@
-import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, NativeUIUtils, Point, PointUtils, Rect } from 'sn-plugin-lib';
-import { CE_NAME_PREFIX, CE_UNDERLINE_PREFIX, dlog, ELEMENT_TYPES, LOG, UNDERLINE_GAP } from '../constants';
+import { PluginCommAPI, PluginFileAPI, PluginNoteAPI, Point, PointUtils, Rect } from 'sn-plugin-lib';
+import { CE_NAME_PREFIX, CE_UNDERLINE_PREFIX, ELEMENT_TYPES, LOG, UNDERLINE_GAP } from '../constants';
 import { buildElement, contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
-import { isUnstableNoteError, readUserData } from '../utils/userDataManager';
+import { deleteElementsVerified, isUnstableNoteError, readUserData } from '../utils/userDataManager';
+import { reloadFileWithTimeout } from '../utils/reloadFile';
 import { ensureAllPermissions } from '../utils/permissions';
 import { dismissLassoAfterDelete } from '../utils/lassoHelpers';
 import { CollapsedElement, CollapseSection } from '../model/types';
+import type { Operation } from './operation';
 
 // Elements tagged as a given section's name (there is no per-element id — every
 // name stroke shares the same CE_NAME:<sectionId> tag, same convention as
@@ -82,25 +84,52 @@ export async function rebuildNameElements(
   return built;
 }
 
-// Confirm + set/replace a section's name from `nameCandidates` (untagged
-// STROKE elements from the lasso) plus any of this section's own existing
-// name strokes re-selected in the same lasso (`nameTaggedInLasso` — lets
-// writing new ink in among an existing name, e.g. "Name" -> "Name 2", keep
-// the old ink instead of dropping it). Returns true if
-// the caller should fall through to a normal Expand instead (user declined,
-// or nothing usable was selected) — the busy plugin view must be closed by
-// the caller before this runs (showRattaDialog is a blocking native modal,
-// same suppression risk as alert() while showPluginView is active) and
-// reopened after it returns.
+// What the caller does after naming: nothing more ('done' — named, or failed
+// with its own alert), dismiss the lasso ('cancel' — the user declined the
+// rename confirmation), or show the "no action applies" message ('nothing' —
+// the lasso only re-selected an intact name, REQ-635).
+export type NameOutcome = 'done' | 'cancel' | 'nothing';
+
+// Drift allowed between a name and its underline before the underline counts
+// as no longer matching: dragging an expanded section's icon rebuilds the two
+// separately, so they can round a pixel or two apart.
+const UNDERLINE_TOLERANCE_PX = 6;
+
+async function bboxOf(els: any[], pageSize: { width: number; height: number }): Promise<Rect | null> {
+  const serialized: CollapsedElement[] = [];
+  for (const el of els) {
+    const data = await serializeElement(el);
+    if (data) serialized.push({ numInPage: el.numInPage, data });
+  }
+  return contentBoundingBox(serialized, pageSize);
+}
+
+// Does the section's underline still span its name (REQ-630/632/635)?
+async function underlineMatches(nameEls: any[], underlineEls: any[], pageSize: { width: number; height: number }): Promise<boolean> {
+  if (underlineEls.length !== 1) return false;
+  const name = await bboxOf(nameEls, pageSize);
+  const line = await bboxOf(underlineEls, pageSize);
+  if (!name || !line) return false;
+  const near = (a: number, b: number) => Math.abs(a - b) <= UNDERLINE_TOLERANCE_PX;
+  return near(line.left, name.left) && near(line.right, name.right) && near(line.top, name.bottom + UNDERLINE_GAP);
+}
+
+// Set/replace a section's name from `nameCandidates` (untagged STROKE
+// elements from the lasso) plus any of this section's own existing name
+// strokes re-selected in the same lasso (`nameTaggedInLasso` — lets writing
+// new ink in among an existing name, e.g. "Name" -> "Name 2", keep the old
+// ink instead of dropping it). Works on a collapsed or an expanded section
+// alike. Asks first when setting a first name (REQ-675), or when a rename
+// would drop existing name strokes the user didn't lasso (REQ-670).
 export async function handleNameAction(
+  op: Operation,
   target: { section: CollapseSection; icon: any },
   nameCandidates: any[],
   nameTaggedInLasso: any[],
   filePath: string,
   page: number,
-): Promise<boolean> {
+): Promise<NameOutcome> {
   const strokeCandidates = nameCandidates.filter((el) => el.type === ELEMENT_TYPES.STROKE);
-  if (strokeCandidates.length === 0) return true;
 
   // Old name strokes belonging to *this* section, re-selected in the same
   // lasso — keep their content instead of silently dropping it. Strokes
@@ -109,19 +138,16 @@ export async function handleNameAction(
     const ud = readUserData(el);
     return ud?.kind === 'name' && ud.id === target.section.id;
   });
+  if (strokeCandidates.length === 0 && keptOldNameEls.length === 0) return 'nothing';
   const allNameCandidates = [...strokeCandidates, ...keptOldNameEls];
 
-  // Asked upfront, before the confirm dialog: READ is needed just to know
-  // whether this is a Set or a Replace (existingNameEls) before the dialog
-  // can even be worded, and asking for everything now (rather than READ
-  // here + WRITE/DELETE after confirm) means one prompt instead of two.
-  // Denial here means false, not true: this is a real rename attempt (the
-  // user already lassoed a name + a collapsed icon), not "nothing to
-  // rename," so it must not silently fall back to Expand.
+  // Asked upfront: READ is needed to compare against the section's existing
+  // name before deciding anything, and asking for everything now means one
+  // prompt instead of two.
   const permitted = await ensureAllPermissions(
     'Collapse/Expand needs permission to read and change the page to set this name.',
   );
-  if (!permitted) return false;
+  if (!permitted) return 'done';
 
   // Flush pending interactive edits (a draw or an erase lives only in the
   // cached copy until saved) before reading state or mutating — otherwise
@@ -132,12 +158,30 @@ export async function handleNameAction(
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
   const existingNameEls = findNameElements(all, target.section.id);
+  const lassoedOwn = new Set<number>(keptOldNameEls.map((el) => el.numInPage));
+  const dropsExisting = existingNameEls.some((el) => !lassoedOwn.has(el.numInPage));
 
-  const message = existingNameEls.length > 0
-    ? "Replace this section's name with the selected handwriting?"
-    : "Set this section's name to the selected handwriting?";
-  const confirmRes = await NativeUIUtils.showRattaDialog(message, 'Cancel', 'Confirm', true);
-  if (!confirmRes) return true;
+  // Only the intact, still-underlined name re-selected: renaming would change
+  // nothing (REQ-635). A drifted or missing underline is what makes a
+  // re-selection of the whole name worth redoing (REQ-630/632).
+  if (strokeCandidates.length === 0 && !dropsExisting) {
+    const pageSizeNow = await getPageSize(filePath, page);
+    if (await underlineMatches(existingNameEls, findUnderlineElements(all, target.section.id), pageSizeNow)) return 'nothing';
+  }
+
+  if (existingNameEls.length === 0) {
+    const choice = await op.ask(
+      "Set this handwriting as the section's name? It stays next to the icon, whether the section is collapsed or expanded.",
+      [{ id: 'name', label: 'Set as name' }, { id: 'cancel', label: 'Cancel' }],
+    ); // REQ-675
+    if (choice !== 'name') return 'cancel';
+  } else if (dropsExisting) {
+    const choice = await op.ask(
+      "This replaces the section's current name — any part of it you didn't select will be removed.",
+      [{ id: 'rename', label: 'Rename' }, { id: 'cancel', label: 'Cancel' }],
+    ); // REQ-670
+    if (choice !== 'rename') return 'cancel';
+  }
 
   const serialized: CollapsedElement[] = [];
   for (const el of allNameCandidates) {
@@ -145,8 +189,8 @@ export async function handleNameAction(
     if (data) serialized.push({ numInPage: el.numInPage, data });
   }
   if (serialized.length === 0) {
-    alert('Nothing nameable in selection.');
-    return false;
+    await op.alert('Nothing nameable in selection.');
+    return 'done';
   }
 
   const pageSize = await getPageSize(filePath, page);
@@ -159,8 +203,8 @@ export async function handleNameAction(
 
   const newNameEls = await rebuildNameElements(serialized, target.section.id, page, 0, 0, { x: 0, y: 0 }, pageMaxX, pageMaxY);
   if (newNameEls.length === 0) {
-    alert('Failed to set the section name — please try again.');
-    return false;
+    await op.alert('Failed to set the section name — please try again.');
+    return 'done';
   }
 
   // Underline spans the new name's bbox — inserted in the same batch as the
@@ -171,13 +215,22 @@ export async function handleNameAction(
 
   // CRASH-SAFETY: insert the new name before deleting the old candidate strokes
   // and any previous name/underline — until the insert lands, both old copies
-  // are still present on the page (recoverable), never neither.
+  // are still present on the page (recoverable), never neither. insertElements
+  // can report success without landing, so count this section's name strokes
+  // on a re-read (old ones are still there, the new ones must be on top).
   const insertRes: any = await PluginFileAPI.insertElements(filePath, page, insertBatch);
-  if (!insertRes?.success) {
-    console.error(`${LOG} name insertElements failed res=${JSON.stringify(insertRes)}`);
-    if (!isUnstableNoteError(insertRes)) alert("Couldn't set the section name — please try again.");
-    for (const el of insertBatch) { try { el.recycle?.(); } catch { /* ignore */ } }
-    return false;
+  let nameLanded = false;
+  if (insertRes?.success) {
+    await reloadFileWithTimeout(); // without this, the read below can miss a just-landed insert
+    const checkRes: any = await PluginFileAPI.getElements(page, filePath);
+    const check: any[] = checkRes?.success && Array.isArray(checkRes.result) ? checkRes.result : [];
+    nameLanded = findNameElements(check, target.section.id).length >= existingNameEls.length + newNameEls.length;
+  }
+  for (const el of insertBatch) { try { el.recycle?.(); } catch { /* ignore */ } }
+  if (!nameLanded) {
+    console.error(`${LOG} name insert didn't land res=${JSON.stringify(insertRes)} — nothing deleted`);
+    if (!isUnstableNoteError(insertRes)) await op.alert("Couldn't set the section name — please try again.");
+    return 'done';
   }
 
   const existingUnderlineEls = findUnderlineElements(all, target.section.id);
@@ -187,15 +240,13 @@ export async function handleNameAction(
     ...existingUnderlineEls.map((el) => el.numInPage),
   ].filter((n): n is number => typeof n === 'number');
   if (numsToDelete.length > 0) {
-    const delRes: any = await PluginFileAPI.deleteElements(filePath, page, numsToDelete);
-    if (!delRes?.success) {
-      console.error(`${LOG} name deleteElements failed res=${JSON.stringify(delRes)}`);
-      if (!isUnstableNoteError(delRes)) alert('Named, but the old strokes could not be removed — please retry.');
+    const { ok: deleteOk, remaining, unstableNote } = await deleteElementsVerified(filePath, page, numsToDelete);
+    if (!deleteOk) {
+      console.error(`${LOG} name: ${remaining.length} old element(s) never removed: ${JSON.stringify(remaining)}`);
+      if (!unstableNote) await op.alert('Named, but the old strokes could not be removed — please retry.');
     }
   }
 
   await dismissLassoAfterDelete('name');
-  // B-017: reloadFile() removed — see collapseAction.ts's identical comment
-  // and BUGS/B-017.md. Terminal call here too, nothing reads afterward.
-  return false;
+  return 'done';
 }

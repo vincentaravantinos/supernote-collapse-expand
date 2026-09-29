@@ -29,6 +29,9 @@ an item once the user confirms it's done.
 | CR-008 | Bottom-right resize handle for expanded sections (was BACKLOG item 5) | Done — persisted `CE_HANDLE` element with its own resize geometry; confirmed on-device |
 | CR-009 | Finger-drag support for icon/handle resize (was BACKLOG item 6) | Done — synthesizes position from the raw touch delta; confirmed on-device |
 | CR-010 | Self-heal a duplicated section id, collapsed case (BACKLOG item 4) | Done — regenerates the colliding id via the existing icon-cache scan; confirmed on-device |
+| CR-011 | Name confirmation dialog titled "Collapse / Expand" instead of the SDK's "Prompt" | Done — plugin-view dialog; confirmed on-device |
+| CR-012 | Name a section while it's expanded (icon + loose strokes = name) | Done — plus underline refit and orphan cleanup; confirmed on-device |
+| CR-013 | Menu button = secondary actions; run the only applicable action directly, ask when several apply | Done — confirmed on-device |
 
 ## Open bugs
 | ID | Symptom |

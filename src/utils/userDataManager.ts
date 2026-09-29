@@ -133,7 +133,7 @@ export function isUnstableNoteError(res: any): boolean {
   return res?.error?.code === 102;
 }
 
-// Delete by numInPage, don't trust a bare success flag (B-018: deleteElements
+// Delete by numInPage, don't trust a bare success flag (deleteElements
 // can report success while leaving some targets behind) — re-read and retry
 // whatever's still actually there, up to 3 attempts. Mechanical only; callers
 // own their own logging/alerting on a non-empty `remaining`.
@@ -141,18 +141,19 @@ export async function deleteElementsVerified(
   filePath: string,
   page: number,
   nums: number[],
-): Promise<{ ok: boolean; remaining: number[] }> {
+): Promise<{ ok: boolean; remaining: number[]; unstableNote: boolean }> {
   let remaining = [...nums];
+  let unstableNote = false;
   for (let attempt = 0; attempt < 3 && remaining.length > 0; attempt++) {
     const delRes: any = await PluginFileAPI.deleteElements(filePath, page, remaining);
-    if (!delRes?.success && isUnstableNoteError(delRes)) break; // note not stable — retrying won't help
+    if (!delRes?.success && isUnstableNoteError(delRes)) { unstableNote = true; break; } // note not stable — retrying won't help
     await reloadFileWithTimeout(); // without this, this read can miss the delete having just landed
     const chkRes: any = await PluginFileAPI.getElements(page, filePath);
     const chk: any[] = chkRes?.success && Array.isArray(chkRes.result) ? chkRes.result : [];
     const stillThere = new Set(chk.map((e: any) => e.numInPage));
     remaining = remaining.filter((n) => stillThere.has(n));
   }
-  return { ok: remaining.length === 0, remaining };
+  return { ok: remaining.length === 0, remaining, unstableNote };
 }
 
 export async function writeSection(
@@ -172,15 +173,14 @@ export async function writeSection(
     target.userData = CE_PLUG_PREFIX + JSON.stringify(section);
     target.pageNum = page;
 
-    // B-018: modifyElements can report success without the write actually
+    // modifyElements can report success without the write actually
     // landing. Verify by reading the icon back and comparing its raw
     // userData string against exactly what we just set — not just one field
     // parsed out of it (e.g. isExpanded alone), which stays unchanged and
     // therefore "matches" trivially on calls that only change other fields
     // (e.g. iconMoveRedraw's stash, which rewrites collapsedElements while
-    // isExpanded stays true throughout) — confirmed on-device: that gap let
-    // a failed content stash look "confirmed", and the caller went on to
-    // delete the only real copy of the content, permanently losing it.
+    // isExpanded stays true throughout) — a failed content stash would look
+    // "confirmed" and the caller would delete the only real copy of the content.
     // Retry the write itself (up to 3 attempts) if the string doesn't match.
     const wantedUserData = target.userData;
     let res: any;
@@ -191,7 +191,7 @@ export async function writeSection(
         console.error(`${LOG} modifyElements res=${JSON.stringify(res)}`);
         break; // a reported failure is trustworthy either way — don't spin on it
       }
-      await reloadFileWithTimeout(); // B-018: without this, the read below can miss the write having just landed
+      await reloadFileWithTimeout(); // without this, the read below can miss the write having just landed
       const checkRes: any = await PluginFileAPI.getElement(filePath, page, target.numInPage);
       confirmed = checkRes?.success && checkRes.result?.userData === wantedUserData;
       if (!confirmed) console.error(`${LOG} writeSection attempt ${attempt}: userData didn't stick — retrying`);

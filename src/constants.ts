@@ -9,7 +9,7 @@ export function dlog(...args: any[]): void {
 
 // Logged at each action start to confirm which build is actually live: pushing a
 // new .snplg doesn't always replace the running one. Bump per deploy.
-export const BUILD_TAG = 'r130-b14-parked-clean';
+export const BUILD_TAG = '1.3.0';
 
 export const ICON_SIZE = 50; // px
 // A gesture whose finger moved less than this is a tap/select, not a drag.
@@ -39,7 +39,7 @@ export const CE_NAME_PREFIX = 'CE_NAME:';
 export const CE_UNDERLINE_PREFIX = 'CE_UNDERLINE:';
 export const UNDERLINE_GAP = 8; // px between the name's bbox bottom and the line
 
-// CR-008: a second, persisted draggable marker at an expanded section's
+// A second, persisted draggable marker at an expanded section's
 // bottom-right corner, alongside the icon — resizing the area doesn't have
 // to mean dragging the icon away from the direction you want to grow.
 export const CE_HANDLE_PREFIX = 'CE_HANDLE:';

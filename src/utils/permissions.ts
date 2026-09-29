@@ -1,10 +1,10 @@
 import { PluginManager } from 'sn-plugin-lib';
-import { dlog, LOG, PERM_FILE_READ, PERM_FILE_WRITE } from '../constants';
+import { LOG, PERM_FILE_READ, PERM_FILE_WRITE } from '../constants';
 import { alertOverBusyView } from './busyView';
 
 // Grants only — never denials. This is what makes "ask again next time"
 // (SPEC.md REQ-040) correct by construction: a decline just isn't cached,
-// so the next call re-checks hasPermission / re-prompts.
+// so the next call re-prompts.
 const GRANTED = new Set<string>();
 
 // Shown as the native dialog's own description (and on the Settings
@@ -25,7 +25,7 @@ const PERMISSION_DESCRIPTIONS: Record<string, string> = {
 };
 
 // Deliberately does NOT call PluginManager.hasPermission as a pre-check:
-// its return shape is undocumented, and (B-015) it was observed treating
+// its return shape is undocumented, and it was observed treating
 // an already-revoked permission as granted — every other SDK call in this
 // codebase resolves to a {success,result} object, and `if (hasRes)` on an
 // object is always truthy regardless of the real state. requestPermission's
@@ -38,16 +38,10 @@ export async function ensurePermissions(
   message: string,
   opts: { silent?: boolean } = {},
 ): Promise<boolean> {
-  dlog(`${LOG} B-016-PROBE ensurePermissions ENTER names=${JSON.stringify(names)} granted=${JSON.stringify([...GRANTED])}`);
   for (const name of names) {
-    if (GRANTED.has(name)) {
-      dlog(`${LOG} B-016-PROBE ${name} already cached granted, skipping`);
-      continue;
-    }
+    if (GRANTED.has(name)) continue;
     try {
-      dlog(`${LOG} B-016-PROBE requestPermission CALL ${name} t=${Date.now()}`);
       const reqRes: any = await PluginManager.requestPermission(name, PERMISSION_DESCRIPTIONS[name] ?? message);
-      dlog(`${LOG} B-016-PROBE requestPermission RETURNED ${name} reqRes=${JSON.stringify(reqRes)} t=${Date.now()}`);
       if (reqRes === 1 || reqRes === 2) {
         GRANTED.add(name);
         continue;
@@ -57,10 +51,8 @@ export async function ensurePermissions(
       console.error(`${LOG} permission request threw for ${name}: ${e}`);
     }
     if (!opts.silent) await alertOverBusyView('permission', message);
-    dlog(`${LOG} B-016-PROBE ensurePermissions EXIT false`);
     return false;
   }
-  dlog(`${LOG} B-016-PROBE ensurePermissions EXIT true`);
   return true;
 }
 

@@ -11,12 +11,13 @@ import {onTapDown, onTapUp} from './src/logic/iconTapToggle';
 import {rehydrateExpandedRegistry} from './src/logic/expandAction';
 import {getCurrentFileContext} from './src/utils/currentFile';
 import {PluginManager} from 'sn-plugin-lib';
-import {BUILD_TAG, LOG, PLUGIN_BUTTON_NAME, PLUGIN_MENU_ID} from './src/constants';
+import {BUILD_TAG, dlog, LOG, PLUGIN_BUTTON_NAME, PLUGIN_MENU_ID} from './src/constants';
 
 AppRegistry.registerComponent(appName, () => App);
 
 PluginManager.init();
-console.log(`${LOG} PluginManager.init() called`);
+// Always logged: confirms which build is actually live after an install.
+console.log(`${LOG} init build=${BUILD_TAG}`);
 
 // type 2 = lasso menu.
 PluginManager.registerButton(2, ['NOTE'], {
@@ -29,24 +30,18 @@ PluginManager.registerButton(2, ['NOTE'], {
   editDataTypes: [0, 1, 2, 3, 4, 5],
   showType: 0,
 }).then(
-  res => console.log(`${LOG} registerButton resolved:`, res),
-  err => console.log(`${LOG} registerButton rejected:`, err),
+  res => dlog(`${LOG} registerButton resolved:`, res),
+  err => console.error(`${LOG} registerButton rejected:`, err),
 );
 
 PluginManager.registerButtonListener({
   onButtonPress: event => {
-    console.log(
-      `${LOG} onButtonPress fired. event=${JSON.stringify(event)}`,
-    );
+    dlog(`${LOG} onButtonPress fired. event=${JSON.stringify(event)}`);
     if (event?.id === PLUGIN_MENU_ID && event?.name === PLUGIN_BUTTON_NAME) {
-      console.log(`${LOG} match -> calling handleMainAction`);
       handleMainAction();
-    } else {
-      console.log(`${LOG} event did not match any handler, ignoring`);
     }
   },
 });
-console.log(`${LOG} registerButtonListener called`);
 
 // Live-redraw a section when its + icon is dragged (iconMoveRedraw), and toggle
 // a section when its + icon is tapped (iconTapToggle). Only DOWN (0) and UP (1)
@@ -64,9 +59,8 @@ try {
       }
     },
   });
-  console.log(`${LOG} registerMotionListener (live redraw + tap toggle) called build=${BUILD_TAG}`);
 } catch (e) {
-  console.log(`${LOG} registerMotionListener threw: ${e}`);
+  console.error(`${LOG} registerMotionListener threw: ${e}`);
 }
 
 // Best-effort warm-up so live icon-drag redraw survives a restart: seed
@@ -77,9 +71,9 @@ try {
     const ctx = await getCurrentFileContext();
     if (ctx) {
       await rehydrateExpandedRegistry(ctx.filePath, ctx.page);
-      console.log(`${LOG} rehydrateExpandedRegistry done for page=${ctx.page}`);
+      dlog(`${LOG} rehydrateExpandedRegistry done for page=${ctx.page}`);
     }
   } catch (e) {
-    console.log(`${LOG} rehydrateExpandedRegistry threw: ${e}`);
+    console.error(`${LOG} rehydrateExpandedRegistry threw: ${e}`);
   }
 })();

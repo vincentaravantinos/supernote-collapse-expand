@@ -37,7 +37,7 @@ export function getRectPoints(rect: Rect): Point[] {
 // still fully contains the content, unlike moving just the near edge,
 // which would shrink and clip it). `shiftDx`/`shiftDy` report that delta
 // (0/0 if no shift was needed) so the caller can move the actual content
-// strokes by the same amount — see BUGS/B-011.md / CollapseSection.contentShift.
+// strokes by the same amount (CollapseSection.contentShift).
 export function stretchZoneToIcon(
   contentBBox: Rect,
   margin: number,
@@ -62,7 +62,7 @@ export function stretchZoneToIcon(
     const iconCy = (icon.top + icon.bottom) / 2;
     const zoneCx = (zone.left + zone.right) / 2;
     const zoneCy = (zone.top + zone.bottom) / 2;
-    // B-022: clamp the shift so it can never push a zone edge past the
+    // Clamp the shift so it can never push a zone edge past the
     // content bbox's own edge (r) — containment of the content always wins
     // over fully clearing the icon. zone.left <= r.left and zone.right >=
     // r.right always hold here (symmetric for top/bottom), so these bounds
@@ -88,9 +88,8 @@ export function stretchZoneToIcon(
   return { zone, shiftDx, shiftDy };
 }
 
-// B-022: when the zone's own shift was clamped to protect content containment,
-// the icon can still end up overlapping the zone (the guarantee that used to
-// keep it clear was traded away in favor of never excluding content). Project
+// When the zone's own shift was clamped to protect content containment,
+// the icon can still end up overlapping the zone. Project
 // the icon out to just outside the zone's nearest edge instead of leaving it
 // hidden underneath — "nearest edge" = whichever of the four directions needs
 // the smallest move to clear the zone. Returns `icon` unchanged if it doesn't
@@ -116,7 +115,7 @@ export function projectIconOutsideZone(icon: Rect, zone: Rect, margin: number): 
   return { left: icon.left, top: zone.bottom + margin, right: icon.right, bottom: zone.bottom + margin + h };
 }
 
-// CR-008: the resize handle's own rect, centered on the zone's bottom-right
+// The resize handle's own rect, centered on the zone's bottom-right
 // corner — shared by both hit-testing (onMotionDown) and construction
 // (createHandleElement) so the two never drift apart.
 export function handleRectForZone(zone: Rect): Rect {
@@ -129,11 +128,11 @@ export function handleRectForZone(zone: Rect): Rect {
   };
 }
 
-// CR-008: the bottom-right resize handle drags that corner directly to
+// The bottom-right resize handle drags that corner directly to
 // wherever it's released — simpler than stretchZoneToIcon, since the handle
 // always sits exactly at the corner it moves, so there's nothing to "avoid
 // overlapping" the way the icon can. The top-left corner is untouched.
-// Clamped the same way B-022 clamps the icon's shift: the corner never moves
+// Clamped the same way stretchZoneToIcon clamps the icon's shift: the corner never moves
 // in far enough to exclude the content bbox + margin — full containment
 // always wins over exactly matching the drop point.
 export function growZoneToHandle(

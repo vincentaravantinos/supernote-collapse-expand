@@ -1,6 +1,6 @@
 import { ICON_HIT_PAD, LOG } from '../constants';
 import { padded, rectContains } from '../utils/geometryHelpers';
-import { acquireBusy, releaseBusy } from './busy';
+import { runExclusive } from './operation';
 import { isLandscape } from '../utils/orientation';
 import { expandSections } from './expandAction';
 import { recollapseSections } from './recollapseAction';
@@ -8,7 +8,6 @@ import { buildIconCache, getCachedIcons, PageIconEntry } from './iconPageCache';
 import { ensureAllPermissions } from '../utils/permissions';
 import { isTapDistance, noteGestureDown } from './tapGesture';
 import { getCurrentFilePathOrNull, getCurrentPageNumOrNull } from '../utils/currentFile';
-import { showBusyView, closeBusyView } from '../utils/busyView';
 
 // SPEC.md REQ-090/100/110: requested once, on the first qualifying tap of
 // any kind (hit or miss — we can't tell in advance), silently on denial,
@@ -28,7 +27,7 @@ async function ensureTapPermissions(): Promise<void> {
   );
 }
 
-// BACKLOG #8: a single finger tap directly on a + icon toggles that section
+// A single finger tap directly on a + icon toggles that section
 // (collapsed -> expand, expanded -> recollapse). Pen taps are ignored — they
 // draw ink, so reacting to them would fight the user's drawing.
 let downQualifies = false;
@@ -87,36 +86,23 @@ async function handleTap(x: number, y: number): Promise<void> {
     if (filePath === null) return;
     icons = await buildIconCache(filePath, page);
     hit = findHit(icons, x, y);
-    if (hit) console.error(`${LOG} [B10-PROBE] stale-cache retry recovered a hit x=${x} y=${y}`);
+    if (hit) console.error(`${LOG} stale-cache retry recovered a hit x=${x} y=${y}`);
   }
   if (!hit) return;
 
-  // Another op (button press or live redraw) is in flight — drop this tap
-  // silently rather than alerting, since the user didn't press a button.
-  if (!acquireBusy()) return;
-
-  let viewShown = false;
-  try {
-    viewShown = await showBusyView('tap-toggle');
-
+  // If another op (button press or live redraw) is in flight, runExclusive
+  // drops this tap silently rather than alerting, since the user didn't
+  // press a button.
+  const target = hit;
+  await runExclusive('tap-toggle', async (op) => {
+    await op.showView();
     const filePath = await getCurrentFilePathOrNull();
     if (filePath === null) return;
-
-    if (hit.section.isExpanded) {
-      await recollapseSections([hit.id], filePath, page);
+    op.touched(filePath, page);
+    if (target.section.isExpanded) {
+      await recollapseSections([target.id], filePath, page);
     } else {
-      await expandSections([{ section: hit.section, icon: hit.iconEl }], filePath, page);
+      await expandSections([{ section: target.section, icon: target.iconEl }], filePath, page);
     }
-    // Rebuild (not just invalidate) the icon cache eagerly, while the
-    // working bubble is already up — moves the cost here instead of paying
-    // it silently on the user's next tap.
-    await buildIconCache(filePath, page);
-  } catch (e) {
-    console.error(`${LOG} tap-toggle failed: ${e}`);
-  } finally {
-    if (viewShown) {
-      await closeBusyView('tap-toggle');
-    }
-    releaseBusy();
-  }
+  });
 }

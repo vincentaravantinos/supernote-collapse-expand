@@ -1,23 +1,26 @@
 import { LOG } from '../constants';
 import { closeBusyView } from '../utils/busyView';
 
-// Single-flight guard shared by the button handler (collapse / expand /
-// recollapse) and the motion-driven live redraw. Both mutate the note via
-// insert/delete/reloadFile; running two sequences concurrently interleaves their
-// writes and corrupts the note. Whoever holds the guard runs; others back off.
+// Single-flight guard shared by every note-mutating entry point (see
+// runExclusive) plus the tap cache's duplicate-id self-heal. All of them mutate
+// the note; running two sequences concurrently interleaves their writes and
+// corrupts the note. Whoever holds the guard runs; others back off.
 //
 // Self-healing: a crash mid-operation never runs the `finally` that releases the
-// guard, and handleMainAction's setTimeout watchdog doesn't fire while the host
+// guard, and runExclusive's setTimeout watchdog doesn't fire while the host
 // is dead/idle (JS timers need a pumped loop). So track WHEN the guard was
 // acquired and let a sufficiently stale guard be reacquired regardless — this
 // doesn't depend on any timer firing.
 const STALE_MS = 90000; // longer than any legitimate operation
 
 let busySince: number | null = null;
+// While the holder is waiting on the user (a dialog), however long that takes
+// is not a sign of a crash.
+let awaitingUser = false;
 
 export function acquireBusy(): boolean {
   if (busySince !== null) {
-    if (Date.now() - busySince < STALE_MS) return false;
+    if (awaitingUser || Date.now() - busySince < STALE_MS) return false;
     console.error(`${LOG} busy guard stale (held >${STALE_MS / 1000}s) — self-healing`);
   }
   busySince = Date.now();
@@ -26,6 +29,12 @@ export function acquireBusy(): boolean {
 
 export function releaseBusy(): void {
   busySince = null;
+  awaitingUser = false;
+}
+
+export function setAwaitingUser(waiting: boolean): void {
+  awaitingUser = waiting;
+  if (!waiting && busySince !== null) busySince = Date.now(); // the wait doesn't count toward staleness
 }
 
 export function isBusy(): boolean {

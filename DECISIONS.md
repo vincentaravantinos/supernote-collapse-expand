@@ -17,6 +17,33 @@ Each entry should capture:
 
 ---
 
+## 2026-09-29 — Finger tap is the primary toggle; the menu button only runs secondary actions (CR-011/012/013)
+
+**Decision.** A finger tap on an icon/name expands or collapses one section.
+The lasso-menu button no longer toggles a single section; it infers the set
+of applicable *secondary* actions from the selection (collapse new content,
+name/rename, expand-all/collapse-all across several sections), runs the only
+one directly, asks when several apply, and explains the finger tap when none
+does. All such dialogs are rendered in the plugin's own view (the "working"
+card, in a dialog mode), not via `showRattaDialog`.
+
+**Alternatives considered.**
+- *Keep the button as a toggle and disambiguate name-vs-toggle with
+  heuristics / a three-button dialog.* Rejected: every rule to avoid the
+  dialog on common lassos (icon + adjacent name) added complexity, and in
+  practice the button was only used for the non-toggle actions anyway.
+- *Remove multi-section actions from the button too.* Rejected: tapping
+  several icons is slower than one lasso; kept, with a dialog only for a
+  mixed collapsed/expanded selection.
+- *Native `showRattaDialog`.* Rejected: no title parameter, so it shows a
+  generic "Prompt" (reported to Ratta).
+
+**Constraint.** The plugin view only runs JS on native events, so the
+dialog's state is set before the view is shown; the busy guard's watchdog and
+stale check are suspended while waiting on the user.
+
+---
+
 ## 2026-09-28 — Duplicate-id self-heal scoped to collapsed sections only, hooked into the existing icon-cache scan (CR-010)
 
 **Decision.** `buildIconCache` (already scanning every `CE_PLUG` icon on

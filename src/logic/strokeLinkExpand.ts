@@ -58,7 +58,7 @@ async function insertBatch(filePath: string, page: number, batch: any[]): Promis
 // page, since the caller deferred its inserts here), bundle masks with the first
 // link's members (masks first → underneath), and defer all other content + the
 // links to one final batch — visible directly, without needing a reload of its
-// own on this SDK build (see BUGS/B-017.md). One reload per stroke link (for the
+// own. One reload per stroke link (for the
 // member-num recovery above). Returns true iff every insert succeeded.
 export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<boolean> {
   const { filePath, page, collapsedElements, sectionId, emrDelta, pageMaxX, pageMaxY, dx, dy, maskElements, otherElements } = ctx;
@@ -102,14 +102,9 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
     // (masks are geometry; other strokes wait for the final batch; earlier
     // links' members are already in knownNums).
     //
-    // B-018: reloadFile() before this read was confirmed reliably hanging
-    // (5s timeout, every attempt) specifically when this whole path is
-    // triggered from the icon-drag redraw (iconMoveRedraw.ts) — not from a
-    // normal button-triggered Expand. Try a plain read FIRST (no reload) on
-    // every attempt; only fall back to a timeout-guarded reload on the 2nd/
-    // 3rd attempt if the plain read came up short. This tests, per call,
-    // whether the reload is even needed here at all, instead of paying its
-    // hang risk unconditionally.
+    // reloadFile() before this read reliably hangs when this path runs from
+    // the icon-drag redraw. Try a plain read first; only fall back to a
+    // timeout-guarded reload on the 2nd/3rd attempt if it came up short.
     let memberNums: number[] = [];
     let els: any[] = [];
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -139,8 +134,7 @@ export async function rebuildStrokeLinks(ctx: StrokeLinkExpandCtx): Promise<bool
   }
 
   // Build the links (members' nums now known) and insert them with the remaining
-  // content in one final batch — visible directly on this SDK build (see
-  // BUGS/B-017.md), no reload of its own needed.
+  // content in one final batch — visible directly, no reload of its own needed.
   const linkEls: any[] = [];
   for (const p of pending) {
     const el = await buildStrokeLink(p.data, page, tag, p.memberNums, p.rect);

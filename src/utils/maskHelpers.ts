@@ -9,12 +9,10 @@ import { PageSize } from './elementSerializer';
 // accepts only 0x00 black, 0x9D dark gray, 0xC9 light gray, 0xFE white; white
 // blends with the page so the area reads blank inside the outline.
 //
-// CR-007/REQ-300: built as STROKE elements, not GEO_polygon — a GEO_polygon's
-// full bounding box counts as "hit" by a lasso regardless of visible ink,
-// which let any lasso inside the zone sweep in the whole mask/border (B-021).
-// A STROKE is hit-tested by its actually-rendered pixels instead, confirmed
-// on-device: a near-white stroke became fully unselectable while a lasso
-// touching both it and separate real content selected only the real content.
+// REQ-300: built as STROKE elements, not GEO_polygon — a GEO_polygon's full
+// bounding box counts as "hit" by a lasso regardless of visible ink, so any
+// lasso inside the zone would sweep in the whole mask/border. A STROKE is
+// hit-tested by its rendered pixels, so a near-white one is unselectable.
 const MASK_PEN_COLOR = 0xFE;
 const MASK_PEN_TYPE = 10; // penType 0 is rejected by the API
 // At thickness=18000 the stroke renders a ~180-wide band (~90 per side) —
@@ -36,9 +34,8 @@ const BORDER_PEN_TYPE = 10; // solid; penType 0 is rejected
 const BORDER_THICKNESS = 400;
 
 // Constant per-point pressure for a synthesized stroke (there's no real pen
-// gesture behind these). Leading suspect for why an earlier hand-built stroke
-// (no pressures set at all) failed to render during this feature's B-021
-// investigation — set explicitly here rather than left empty.
+// gesture behind these) — a hand-built stroke with no pressures set may not
+// render.
 const SYNTHETIC_PRESSURE = 1.0;
 
 // Convert a Rect's corners (android page px, as getRectPoints/GEO_polygon used
@@ -143,7 +140,7 @@ export async function createMaskElements(
   return result;
 }
 
-// CR-008: resize handle — a small TEXT glyph (same construction as the
+// Resize handle — a small TEXT glyph (same construction as the
 // section's own icon), centered on the zone's bottom-right corner so it
 // straddles the border, visually marking the exact draggable point. A real,
 // persisted page element (not a plugin-view overlay) so it never blocks

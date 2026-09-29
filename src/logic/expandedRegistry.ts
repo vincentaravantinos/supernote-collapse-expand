@@ -2,9 +2,8 @@ import { Rect } from 'sn-plugin-lib';
 
 export interface ExpandedEntry {
   iconRect: Rect; // last-known icon position, updated after each redraw
-  // CR-008: the section's current mask/border boundary (iconRect + relativeRect,
+  // The section's current mask/border boundary (iconRect + relativeRect,
   // in absolute page coords) — used to compute the resize handle's hit-zone.
-  // Replaces the old contentBBox field, which had no functional reader.
   zoneRect: Rect;
   iconNum?: number; // the icon's numInPage, so recollapse can fetch it directly
 }

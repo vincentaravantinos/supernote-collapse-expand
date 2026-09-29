@@ -57,16 +57,14 @@ async function recollapseOne(
 
   let { masks: maskEls, parts: partEls } = classify(all);
 
-  // B-018: an expanded section should always have at least a mask/frame on
+  // An expanded section should always have at least a mask/frame on
   // the page — finding literally nothing tagged for it is a strong signal
   // the element list this was called with (often the "fast path"'s narrower
   // candidate scan) is stale/incomplete, not that there's genuinely nothing
-  // to recollapse. Confirmed on-device: this exact case silently no-ops
-  // (icon glyph unchanged, nothing deleted, no error) without this check.
-  // Re-fetch the whole page fresh before accepting "nothing found".
+  // to recollapse (it would otherwise silently no-op). Re-fetch the whole page fresh before accepting "nothing found".
   if (maskEls.length === 0 && partEls.length === 0) {
     console.error(`${LOG} recollapse: no tagged elements found for id=${section.id} in the given list (${all.length} el) — re-fetching full page`);
-    await reloadFileWithTimeout(); // B-018: without this, this read can miss a recent write too
+    await reloadFileWithTimeout(); // without this, this read can miss a recent write too
     const freshRes: any = await PluginFileAPI.getElements(page, filePath);
     const fresh: any[] = freshRes?.success && Array.isArray(freshRes.result) ? freshRes.result : [];
     const reclassified = classify(fresh);
@@ -208,16 +206,10 @@ async function recollapseOne(
   }
 
   // Content now durable in the icon. Delete parts + absorbed + mask rings (REAL
-  // file — already visible without an explicit reload on this SDK build, see
-  // BUGS/B-017.md). No saveCurrentNote — it would push the stale cached copy
-  // back over the deletion.
-  // B-018: deleteElements can silently apply to only SOME of a multi-target
-  // call (confirmed: recollapsing a section with a stroke link left the
-  // link's own member strokes + mask/frame behind while everything else in
-  // the same call was removed, with the call still reporting success) — the
-  // same "aggregate success doesn't mean every target landed" class of bug
-  // CR-004 found in batchUpdatePageElements. Don't trust the flag: re-read
-  // and retry whatever's still actually there.
+  // file — already visible without an explicit reload). No saveCurrentNote —
+  // it would push the stale cached copy back over the deletion.
+  // deleteElements can apply to only SOME targets of a multi-target call while
+  // still reporting success — deleteElementsVerified re-reads and retries.
   const numsToDelete = Array.from(numSet);
   if (numsToDelete.length > 0) {
     const tDel = Date.now();
@@ -330,10 +322,6 @@ export async function recollapseSections(
   }
 
   // Dismiss the lasso last — the writes are already visible without an
-  // explicit reload on this SDK build (see BUGS/B-017.md).
+  // explicit reload.
   await dismissLassoAfterDelete('recollapse');
-  // B-017: reloadFile() removed — see collapseAction.ts's identical comment
-  // and BUGS/B-017.md. Terminal call here too, nothing reads afterward.
-  const tReload = Date.now();
-  dlog(`${LOG} PERF recollapse reload=${Date.now() - tReload}ms`);
 }

@@ -1,8 +1,8 @@
 import { PluginFileAPI, Rect } from 'sn-plugin-lib';
 import { LOG } from '../constants';
-import { readUserData, writeSection } from '../utils/userDataManager';
+import { deleteElementsVerified, readUserData, writeSection } from '../utils/userDataManager';
 import { contentBoundingBox, getPageSize, serializeElement } from '../utils/elementSerializer';
-import { findNameElements } from './nameAction';
+import { findNameElements, findUnderlineElements } from './nameAction';
 import { generateSectionId } from './collapseAction';
 import { acquireBusy, releaseBusy } from './busy';
 import { CollapsedElement, CollapseSection } from '../model/types';
@@ -30,7 +30,26 @@ export function getCachedIcons(page: number): PageIconEntry[] | null {
   return cachedPage === page ? cachedIcons : null;
 }
 
-export async function buildIconCache(filePath: string, page: number): Promise<PageIconEntry[]> {
+// Runs a page repair under the busy guard: directly if the caller already
+// holds it (runExclusive's post-operation rebuild), otherwise only if it's
+// free — skipped silently, and tried again next call, if an operation is in
+// flight.
+async function underGuard(locked: boolean, repair: () => Promise<void>): Promise<void> {
+  if (locked) return repair();
+  if (!acquireBusy()) return;
+  try {
+    await repair();
+  } finally {
+    releaseBusy();
+  }
+}
+
+export async function buildIconCache(
+  filePath: string,
+  page: number,
+  opts: { locked?: boolean } = {},
+): Promise<PageIconEntry[]> {
+  const locked = opts.locked ?? false;
   const allRes: any = await PluginFileAPI.getElements(page, filePath);
   const all: any[] = allRes?.success && Array.isArray(allRes.result) ? allRes.result : [];
 
@@ -42,7 +61,7 @@ export async function buildIconCache(filePath: string, page: number): Promise<Pa
     }
   }
 
-  // CR-010/REQ-400: self-heal a duplicated section id (e.g. a native
+  // REQ-400: self-heal a duplicated section id (e.g. a native
   // copy-paste of a collapsed icon) — opportunistic, since this function
   // already scans every icon on the page for other reasons. Only safe for a
   // COLLAPSED colliding icon: an expanded collision also has CE_PART/MASK/
@@ -56,10 +75,8 @@ export async function buildIconCache(filePath: string, page: number): Promise<Pa
   // have duplicated in the first place. (Narrow, accepted exception: a
   // deliberate copy-paste of the icon *together with* its name would leave
   // the pasted name cosmetically orphaned from the healed duplicate — no
-  // data loss, just not picked up as that icon's name anymore.) Guarded by
-  // the same busy lock every other mutation uses, so this never runs
-  // concurrently with an in-flight operation — skipped (silently, tried
-  // again next call) if one already holds it.
+  // data loss, just not picked up as that icon's name anymore.) Runs under
+  // the busy guard (see underGuard), never concurrently with an operation.
   const seenIds = new Set<string>();
   for (const icon of icons) {
     if (!seenIds.has(icon.id)) {
@@ -67,8 +84,7 @@ export async function buildIconCache(filePath: string, page: number): Promise<Pa
       continue;
     }
     if (icon.section.isExpanded) continue;
-    if (!acquireBusy()) continue;
-    try {
+    await underGuard(locked, async () => {
       const healedSection: CollapseSection = { ...icon.section, id: generateSectionId() };
       const { ok } = await writeSection(filePath, page, icon.iconEl, healedSection, icon.iconEl);
       if (ok) {
@@ -77,9 +93,28 @@ export async function buildIconCache(filePath: string, page: number): Promise<Pa
       } else {
         console.error(`${LOG} self-heal: failed to write regenerated id for a duplicated section`);
       }
-    } finally {
-      releaseBusy();
+    });
+  }
+
+  // REQ-660: an underline whose name was erased entirely has nothing left to
+  // be redrawn with — remove it.
+  const orphanNums: number[] = [];
+  const underlineIds = new Set<string>();
+  for (const el of all) {
+    const ud = readUserData(el);
+    if (ud?.kind === 'underline') underlineIds.add(ud.id);
+  }
+  for (const id of underlineIds) {
+    if (findNameElements(all, id).length > 0) continue;
+    for (const el of findUnderlineElements(all, id)) {
+      if (typeof el.numInPage === 'number') orphanNums.push(el.numInPage);
     }
+  }
+  if (orphanNums.length > 0) {
+    await underGuard(locked, async () => {
+      const { ok, remaining } = await deleteElementsVerified(filePath, page, orphanNums);
+      if (!ok) console.error(`${LOG} orphaned underline cleanup: ${remaining.length} element(s) never removed`);
+    });
   }
 
   if (icons.length > 0) {
