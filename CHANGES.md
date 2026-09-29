@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 1.3.0
 
 - Change: a **finger tap** on a section's icon is now *the* way to expand
   or collapse a single section. The lasso menu's Collapse / Expand button
