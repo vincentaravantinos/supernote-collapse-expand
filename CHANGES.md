@@ -1,5 +1,14 @@
 # Changes
 
+## Unreleased
+
+- Fix: collapsing a selection could occasionally create two or three
+  identical sections stacked on top of each other (most likely on large or
+  busy notes). Tapping the icon then seemed to do nothing, collapse
+  everything at once, or create a duplicate. A collapse now always creates
+  exactly one section. Notes already affected need a one-time manual
+  cleanup: expand the stacked copies and delete the extras.
+
 ## 1.3.0
 
 - Change: a **finger tap** on a section's icon is now *the* way to expand

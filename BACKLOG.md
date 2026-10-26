@@ -45,6 +45,7 @@ an item once the user confirms it's done.
 ## Closed bugs
 | ID | Symptom |
 |---|---|
+| B-031 | One note kept failing on Collapse/Expand: a single Collapse had created three stacked identical sections (a stale read made it re-insert the icon). Fixed: re-read instead of re-insert, extra copies removed; verified on-device by fault injection. |
 | B-028 | After dragging a named, expanded section's icon inward, the name ended up under the content. Fixed — name follows the icon's final position; confirmed on-device. |
 | B-027 | Resize/expand ended in "couldn't complete the expand" although it worked (icon write judged failed on stale read-backs after reloadFile timeouts). Fixed — read-back retried before re-sending; confirmed on-device. |
 | B-026 | Naming showed "Couldn't set the section name" although it was set (stale verification read after a reloadFile timeout). Fixed — the check now re-reads up to 3 times; confirmed on-device. |

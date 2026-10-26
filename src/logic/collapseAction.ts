@@ -163,10 +163,13 @@ export async function collapseAction(op: Operation, filePath: string, page: numb
   // landing. This is the single highest-stakes write in the
   // whole plugin: it's the only backup of the original content, and the
   // very next step deletes that content from the page. Don't trust the
-  // flag — verify the icon is actually there before proceeding, retrying
-  // the insert (up to 3 attempts) if not.
+  // flag — verify the icon is actually there before proceeding. A reported
+  // failure is safe to retry (nothing landed); after a reported success only
+  // the READ is retried — a stale read (the reload can skip a refresh) would
+  // re-insert an icon that already landed, leaving stacked duplicate sections.
   let insertRes: any;
   let iconLanded = false;
+  let landedIcons: any[] = [];
   for (let attempt = 0; attempt < 3 && !iconLanded; attempt++) {
     insertRes = await PluginFileAPI.insertElements(filePath, page, [iconEl]);
     if (!insertRes?.success) {
@@ -174,10 +177,14 @@ export async function collapseAction(op: Operation, filePath: string, page: numb
       if (isUnstableNoteError(insertRes)) break; // note not stable — retrying won't help
       continue;
     }
-    await reloadFileWithTimeout(); // without this, the read below can miss a just-landed insert
-    const check = await getPageElements(filePath, page);
-    iconLanded = check.some((el) => el.userData === payload);
-    if (!iconLanded) console.error(`${LOG} collapse: icon insert reported success but wasn't found on re-read (attempt ${attempt}) — retrying`);
+    for (let readAttempt = 0; readAttempt < 3 && !iconLanded; readAttempt++) {
+      await reloadFileWithTimeout(); // without this, the read below can miss a just-landed insert
+      const check = await getPageElements(filePath, page);
+      landedIcons = check.filter((el) => el.userData === payload);
+      iconLanded = landedIcons.length > 0;
+      if (!iconLanded) console.error(`${LOG} collapse: icon insert reported success but wasn't found on re-read (read attempt ${readAttempt}) — re-reading`);
+    }
+    break; // never re-insert after a reported success
   }
   if (!iconLanded) {
     // Nothing deleted yet — the page is exactly as it was, no data lost.
@@ -186,6 +193,18 @@ export async function collapseAction(op: Operation, filePath: string, page: numb
     return;
   }
   dlog(`${LOG} PERF collapse create+insert=${Date.now() - tIns}ms`);
+
+  // Backstop: an insert reported as failed may still have landed, so more than
+  // one copy of the icon can be on the page. Keep one; extras would become
+  // stacked duplicate sections once the duplicate-id repair renames them.
+  const extraNums = landedIcons.slice(1)
+    .map((el) => el.numInPage)
+    .filter((n): n is number => typeof n === 'number');
+  if (extraNums.length > 0) {
+    console.error(`${LOG} collapse: ${landedIcons.length} copies of the icon landed — removing ${extraNums.length} extra`);
+    const { ok } = await deleteElementsVerified(filePath, page, extraNums);
+    if (!ok) console.error(`${LOG} collapse: extra icon copies could not all be removed`);
+  }
 
   // Content is now durable in the icon. Remove the originals by num — NOT
   // deleteLassoElements, which would also delete the non-collapsible

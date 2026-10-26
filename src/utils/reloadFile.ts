@@ -10,11 +10,15 @@ import { LOG } from '../constants';
 const RELOAD_TIMEOUT_MS = 5000;
 
 export async function reloadFileWithTimeout(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
     PluginCommAPI.reloadFile(),
-    new Promise<void>((resolve) => setTimeout(() => {
-      console.error(`${LOG} reloadFile() timed out after ${RELOAD_TIMEOUT_MS}ms — proceeding without it`);
-      resolve();
-    }, RELOAD_TIMEOUT_MS)),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        console.error(`${LOG} reloadFile() timed out after ${RELOAD_TIMEOUT_MS}ms — proceeding without it`);
+        resolve();
+      }, RELOAD_TIMEOUT_MS);
+    }),
   ]);
+  clearTimeout(timer); // else the timeout message still fires after a reload that resolved
 }
