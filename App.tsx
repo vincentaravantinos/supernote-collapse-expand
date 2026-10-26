@@ -13,8 +13,11 @@
  */
 
 import React, {useEffect, useRef, useState} from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import {answerDialog, getDialog, getGeneration, subscribe} from './src/logic/workingViewStore';
+import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {answerDialog, getDialog, getGeneration, isDiagOpen, setDiagOpen, subscribe} from './src/logic/workingViewStore';
+import {clearDiag, getDiagLines, subscribeDiag} from './src/utils/diagLog';
+import {closeBusyView} from './src/utils/busyView';
+import {BUILD_TAG} from './src/constants';
 import {cancelStuckOperation} from './src/logic/busy';
 
 const CANCEL_DELAY_MS = 7000;
@@ -43,6 +46,38 @@ function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => subscribe(() => setDialog(getDialog())), []);
+
+  // [B-032] TEMP diagnostic log view.
+  const [diagOpen, setDiagOpenState] = useState(isDiagOpen());
+  const [diagLines, setDiagLines] = useState<string[]>([...getDiagLines()]);
+  useEffect(() => subscribe(() => setDiagOpenState(isDiagOpen())), []);
+  useEffect(() => subscribeDiag(() => setDiagLines([...getDiagLines()])), []);
+
+  if (diagOpen) {
+    return (
+      <View style={styles.backdrop}>
+        <View style={[styles.card, styles.diagCard]}>
+          <Text style={styles.title}>Collapse / Expand — log ({BUILD_TAG})</Text>
+          <Text style={styles.diagHint}>Please take a photo of this (scroll for more) and send it to the developer.</Text>
+          <ScrollView style={styles.diagScroll}>
+            {diagLines.length === 0
+              ? <Text style={styles.diagLine}>(empty)</Text>
+              : diagLines.map((l, i) => <Text key={i} style={styles.diagLine}>{l}</Text>)}
+          </ScrollView>
+          <View style={styles.diagButtons}>
+            <TouchableOpacity style={[styles.button, styles.diagButton]} onPress={clearDiag}>
+              <Text style={styles.buttonText}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.diagButton]}
+              onPress={() => { setDiagOpen(false); closeBusyView('diag'); }}>
+              <Text style={styles.buttonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (dialog) {
     return (
@@ -119,6 +154,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: {fontSize: 15, fontWeight: '700', color: '#000000'},
+  diagCard: {maxWidth: 1200, width: '92%', height: '85%'},
+  diagHint: {fontSize: 13, color: '#000000', marginBottom: 8},
+  diagScroll: {flex: 1, borderWidth: 1, borderColor: '#000000', padding: 6},
+  diagLine: {fontSize: 12, color: '#000000', fontFamily: 'monospace'},
+  diagButtons: {flexDirection: 'row', justifyContent: 'space-between'},
+  diagButton: {flex: 1, marginHorizontal: 6},
 });
 
 export default App;

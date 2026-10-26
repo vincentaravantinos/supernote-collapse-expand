@@ -5,6 +5,7 @@ import { elementsBBox, getPageSize } from '../utils/elementSerializer';
 import { findNameElements, findUnderlineElements } from './nameAction';
 import { generateSectionId } from './collapseAction';
 import { CollapseSection } from '../model/types';
+import { diag, safeJson } from '../utils/diagLog';
 
 // Every CE_PLUG icon (collapsed or expanded) on one page, for cheap tap
 // hit-testing (see iconTapToggle). `iconEl` is the raw element, ready to pass
@@ -42,11 +43,23 @@ export async function buildIconCache(
   const all = await getPageElements(filePath, page);
 
   const icons: PageIconEntry[] = [];
+  let plugCount = 0;
   for (const el of all) {
     const ud = readUserData(el);
-    if (ud?.kind === 'plug' && ud.section?.id && el?.textBox?.textRect) {
-      icons.push({ id: ud.section.id, section: ud.section, iconEl: el, rect: el.textBox.textRect });
+    if (ud?.kind === 'plug' && ud.section?.id) {
+      plugCount++;
+      // [B-032] TEMP: fall back to the saved icon rect if the firmware doesn't
+      // return the text box's rect.
+      const rect = el?.textBox?.textRect ?? ud.section.iconRect;
+      if (!el?.textBox?.textRect) diag(`scan: icon without textRect type=${el?.type} textBox=${safeJson(el?.textBox, 160)} → using saved rect`);
+      if (rect) icons.push({ id: ud.section.id, section: ud.section, iconEl: el, rect });
     }
+  }
+  const textEls = all.filter((el: any) => el?.type === 500);
+  diag(`scan: page=${page} elements=${all.length} text=${textEls.length} icons=${plugCount}${icons[0] ? ` first rect=${safeJson(icons[0].rect)} saved=${safeJson(icons[0].section.iconRect)}` : ''}`);
+  if (plugCount === 0 && textEls.length > 0) {
+    const t = textEls[0];
+    diag(`scan: first text el userData=${typeof t?.userData === 'string' ? `${t.userData.length} chars "${t.userData.slice(0, 12)}"` : safeJson(t?.userData)} textBox=${safeJson(t?.textBox, 160)}`);
   }
 
   // REQ-400: self-heal a duplicated section id (e.g. a native

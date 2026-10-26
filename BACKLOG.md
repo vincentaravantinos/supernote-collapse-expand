@@ -42,6 +42,7 @@ an item once the user confirms it's done.
 | B-025 | A live redraw left a second, collapsed (⊕) copy of an expanded section next to it. The trigger (a redraw running when the handle was only selected) is fixed; how a redraw can create the duplicate is parked, not reproducible. See `BUGS/B-025.md`. |
 | B-029 | Tapping a button in a plugin dialog once left a stroke on the page. Parked — not reproducible on retry. See `BUGS/B-029.md`. |
 | B-030 | Erased a section's name, then tapped the icon: the underline went but the name reappeared. Parked — only seen while reloadFile was timing out; 4 clean runs after a restart. See `BUGS/B-030.md`. |
+| B-032 | Manta on Chauvet 3.30.45 (Reddit report): collapse works, but neither a finger tap nor the menu button expands a collapsed section — nothing happens, not even "Working…". Pending. See `BUGS/B-032.md`. |
 ## Closed bugs
 | ID | Symptom |
 |---|---|

@@ -12,12 +12,21 @@ import {rehydrateExpandedRegistry} from './src/logic/expandAction';
 import {getCurrentFileContext} from './src/utils/currentFile';
 import {PluginManager} from 'sn-plugin-lib';
 import {BUILD_TAG, dlog, LOG, PLUGIN_BUTTON_NAME, PLUGIN_MENU_ID} from './src/constants';
+import {diag, hookConsoleErrors} from './src/utils/diagLog';
+import {setDiagOpen} from './src/logic/workingViewStore';
+import {showBusyView} from './src/utils/busyView';
+
+// [B-032] TEMP remote diagnostics.
+const DIAG_BUTTON_ID = 201;
+const DIAG_BUTTON_NAME = 'Collapse / Expand log';
+hookConsoleErrors();
 
 AppRegistry.registerComponent(appName, () => App);
 
 PluginManager.init();
 // Always logged: confirms which build is actually live after an install.
 console.log(`${LOG} init build=${BUILD_TAG}`);
+diag(`init build=${BUILD_TAG}`);
 
 // type 2 = lasso menu.
 PluginManager.registerButton(2, ['NOTE'], {
@@ -34,9 +43,26 @@ PluginManager.registerButton(2, ['NOTE'], {
   err => console.error(`${LOG} registerButton rejected:`, err),
 );
 
+// [B-032] TEMP: type 1 = sidebar, opens the diagnostic log.
+PluginManager.registerButton(1, ['NOTE'], {
+  id: DIAG_BUTTON_ID,
+  name: DIAG_BUTTON_NAME,
+  icon: Image.resolveAssetSource(require('./assets/icon_plus.png')).uri,
+  showType: 0,
+}).then(
+  res => diag(`registerButton(sidebar) res=${res}`),
+  err => console.error(`${LOG} registerButton(sidebar) rejected:`, err),
+);
+
 PluginManager.registerButtonListener({
   onButtonPress: event => {
     dlog(`${LOG} onButtonPress fired. event=${JSON.stringify(event)}`);
+    diag(`button press id=${event?.id} name=${event?.name}`);
+    if (event?.id === DIAG_BUTTON_ID) {
+      setDiagOpen(true);
+      showBusyView('diag');
+      return;
+    }
     if (event?.id === PLUGIN_MENU_ID && event?.name === PLUGIN_BUTTON_NAME) {
       handleMainAction();
     }
@@ -50,6 +76,7 @@ try {
   PluginManager.registerMotionListener(1, {
     onMsg: m => {
       const a = m?.action;
+      if ((a === 0 || a === 1) && m?.toolType !== 2) diag(`motion ${a === 0 ? 'DOWN' : 'UP'} x=${Math.round(m?.x)} y=${Math.round(m?.y)} tool=${m?.toolType} ptrs=${m?.pointerCount}`);
       if (a === 0) {
         onMotionDown(m?.x, m?.y, m?.toolType, m?.pointerCount);
         onTapDown(m?.x, m?.y, m?.toolType, m?.pointerCount);

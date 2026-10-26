@@ -8,6 +8,7 @@ import { buildIconCache, getCachedIcons, PageIconEntry } from './iconPageCache';
 import { ensureAllPermissions } from '../utils/permissions';
 import { isSingleFinger, isTapDistance, noteGestureDown } from './tapGesture';
 import { getCurrentFilePathOrNull, getCurrentPageNumOrNull } from '../utils/currentFile';
+import { diag, safeJson } from '../utils/diagLog';
 
 // SPEC.md REQ-090/100/110: requested once, on the first qualifying tap of
 // any kind (hit or miss — we can't tell in advance), silently on denial,
@@ -43,9 +44,9 @@ export function onTapDown(x: number, y: number, toolType: number | undefined, po
 export function onTapUp(x: number, y: number, toolType: number | undefined, pointerCount: number | undefined): void {
   const qualifies = downQualifies && isSingleFinger(toolType, pointerCount);
   downQualifies = false;
-  if (!qualifies) return;
-  if (!isTapDistance(x, y)) return; // drag, not a tap
-  void handleTap(x, y);
+  if (!qualifies) { if (toolType !== 2) diag(`tap: not single-finger (tool=${toolType} ptrs=${pointerCount})`); return; }
+  if (!isTapDistance(x, y)) { diag('tap: moved too far (drag)'); return; } // drag, not a tap
+  handleTap(x, y).catch((e) => diag(`tap: THREW ${safeJson(e)}`));
 }
 
 function findHit(icons: PageIconEntry[], x: number, y: number): PageIconEntry | undefined {
@@ -63,6 +64,7 @@ async function handleTap(x: number, y: number): Promise<void> {
   // rather than surprising later once the user is mid-note.
   await ensureTapPermissions();
   const page = await getCurrentPageNumOrNull();
+  diag(`tap: at x=${Math.round(x)} y=${Math.round(y)} page=${page}`);
   if (page === null) return;
 
   let icons = getCachedIcons(page);
@@ -84,7 +86,11 @@ async function handleTap(x: number, y: number): Promise<void> {
     hit = findHit(icons, x, y);
     if (hit) console.error(`${LOG} stale-cache retry recovered a hit x=${x} y=${y}`);
   }
-  if (!hit) return;
+  if (!hit) {
+    diag(`tap: no icon under tap (${icons.length} icon(s) on page: ${icons.slice(0, 4).map((i) => `[${Math.round(i.rect.left)},${Math.round(i.rect.top)},${Math.round(i.rect.right)},${Math.round(i.rect.bottom)}]`).join(' ')})`);
+    return;
+  }
+  diag(`tap: hit section, expanded=${hit.section.isExpanded}`);
 
   // If another op (button press or live redraw) is in flight, runExclusive
   // drops this tap silently rather than alerting, since the user didn't
@@ -100,5 +106,5 @@ async function handleTap(x: number, y: number): Promise<void> {
     } else {
       await expandSections([{ section: target.section, icon: target.iconEl }], filePath, page);
     }
-  });
+  }, { onBusy: () => diag('tap: DROPPED, busy') });
 }

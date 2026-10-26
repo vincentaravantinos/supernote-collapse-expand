@@ -10,6 +10,7 @@ import { handleNameAction } from './logic/nameAction';
 import { runExclusive } from './logic/operation';
 import { isLandscape } from './utils/orientation';
 import { getCurrentFileContext } from './utils/currentFile';
+import { diag, safeJson } from './utils/diagLog';
 
 // Per-action counter + tag bracketing each action's logs with BEGIN/END markers
 // that carry the build stamp (so the trace confirms which build is live).
@@ -21,8 +22,11 @@ export async function handleMainAction() {
     alert('Collapse / Expand doesn\'t work in landscape mode — please switch to portrait.');
     return;
   }
+  diag('menu: pressed');
   await runExclusive('handleMainAction', async (op) => {
+    diag('menu: started');
     const ctx = await getCurrentFileContext();
+    diag(`menu: context ${ctx ? `page=${ctx.page}` : 'NONE'}`);
     if (!ctx) {
       alert('Unable to determine the current note and page.');
       return;
@@ -31,6 +35,7 @@ export async function handleMainAction() {
 
     const elementsRes: any = await PluginCommAPI.getLassoElements();
     const elements: any[] = elementsRes?.success ? (elementsRes.result ?? []) : [];
+    diag(`menu: lasso success=${elementsRes?.success} n=${elements.length} types=${elements.map((e: any) => e?.type).join(',')} tagged=${elements.filter((e: any) => readUserData(e)).length}${elementsRes?.success ? '' : ` err=${safeJson(elementsRes?.error)}`}`);
     if (elements.length === 0) {
       await op.ask('Please make a selection first.', [{ id: 'ok', label: 'OK' }]);
       return;
@@ -119,7 +124,7 @@ export async function handleMainAction() {
     // tap shortcut, so a press while a prior op is still in flight is
     // rejected. Tell the user, so a swallowed press doesn't look like a
     // broken button.
-    onBusy: () => alert('Collapse/Expand is still busy — please wait a moment.'),
+    onBusy: () => { diag('menu: DROPPED, busy'); alert('Collapse/Expand is still busy — please wait a moment.'); },
     errorAlert: 'An error occurred during processing.',
   });
 }

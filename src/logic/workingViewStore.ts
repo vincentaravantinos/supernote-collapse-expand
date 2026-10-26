@@ -53,3 +53,15 @@ export function answerDialog(id: string): void {
   notify();
   resolve?.(id);
 }
+
+// [B-032] TEMP: the diagnostic log view, opened from the sidebar button.
+let diagOpen = false;
+
+export function isDiagOpen(): boolean {
+  return diagOpen;
+}
+
+export function setDiagOpen(open: boolean): void {
+  diagOpen = open;
+  notify();
+}

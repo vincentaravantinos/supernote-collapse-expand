@@ -1,4 +1,5 @@
 import { LOG } from '../constants';
+import { diag } from '../utils/diagLog';
 import { acquireBusy, releaseBusy, setAwaitingUser } from './busy';
 import { buildIconCache } from './iconPageCache';
 import { answerDialog, askInView, DialogButton, notifyShown } from './workingViewStore';
@@ -84,6 +85,8 @@ export async function runExclusive(
   }
   const op = new Operation(context);
   op.armWatchdog();
+  const t0 = Date.now();
+  diag(`op ${context}: start`);
   try {
     await body(op);
   } catch (e) {
@@ -98,5 +101,6 @@ export async function runExclusive(
     op.disarmWatchdog();
     await op.closeView();
     releaseBusy();
+    diag(`op ${context}: end ${Date.now() - t0}ms`);
   }
 }

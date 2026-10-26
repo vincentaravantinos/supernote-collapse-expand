@@ -1,7 +1,12 @@
 # Changes
 
-## Unreleased
+## 1.3.1-beta.1 (beta)
 
+- Beta: a **"Collapse / Expand log"** button in the sidebar shows what the
+  plugin has been doing. If something doesn't work, open it and send a
+  photo of it to the developer.
+- Fix: if your tablet doesn't report an icon's position, tapping the icon
+  now uses the position the plugin saved when the section was created.
 - Fix: collapsing a selection could occasionally create two or three
   identical sections stacked on top of each other (most likely on large or
   busy notes). Tapping the icon then seemed to do nothing, collapse
